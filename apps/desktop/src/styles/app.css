@@ -68,6 +68,12 @@ body {
   gap: 12px;
 }
 
+.button-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .placeholder {
   margin: 0;
   color: #6b7280;
@@ -97,6 +103,16 @@ textarea {
   resize: vertical;
 }
 
+.select {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  background-color: #ffffff;
+}
+
 button {
   border-radius: 10px;
   border: 1px solid #1d4ed8;
@@ -119,6 +135,16 @@ button:disabled {
 button:not(:disabled):hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 12px rgba(37, 99, 235, 0.2);
+}
+
+.button-secondary {
+  border-color: #cbd5f5;
+  background-color: #eff3ff;
+  color: #1e3a8a;
+}
+
+.button-secondary:hover:not(:disabled) {
+  box-shadow: 0 6px 12px rgba(30, 58, 138, 0.15);
 }
 
 pre {
@@ -149,10 +175,93 @@ pre {
   font-size: 14px;
 }
 
+.warning {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 14px;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.device-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.device-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.device-info {
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.status-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-idle {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.status-recording {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-stopped {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-error {
+  background: #fde68a;
+  color: #92400e;
+}
+
+.audio-player {
+  width: 100%;
+}
+
 @media (max-width: 720px) {
   .panel-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .button-row {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .device-row {
+    align-items: stretch;
+  }
+
+  .device-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   button {

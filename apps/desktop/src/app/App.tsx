@@ -5,6 +5,7 @@ import {
   type FocusedFieldInfo,
   type TextInsertResult,
 } from "../lib/tauri";
+import { DictationPanel } from "../features/dictation";
 import "../styles/app.css";
 
 function App() {
@@ -39,12 +40,14 @@ function App() {
     <main className="container">
       <header className="header">
         <div>
-          <h1>Phase 1: Windows OS Access Spike</h1>
+          <h1>Phase 1 + 2: Windows Spike and Dictation</h1>
           <p className="subtitle">
-            Debug panel for focused field detection and text insertion.
+            Debug panels for focus, insertion, and audio capture.
           </p>
         </div>
       </header>
+
+      <DictationPanel />
 
       <section className="panel">
         <div className="panel-header">
