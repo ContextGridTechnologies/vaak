@@ -30,7 +30,10 @@ pub(crate) fn build_focused_field_info(element: &IUIAutomationElement) -> Focuse
     let stable_id = if !automation_id.is_empty() {
         format!("{}:{}", native_handle_value, automation_id)
     } else if !class_name.is_empty() {
-        format!("{}:{}:{}", native_handle_value, class_name, control_type_id_value)
+        format!(
+            "{}:{}:{}",
+            native_handle_value, class_name, control_type_id_value
+        )
     } else {
         format!("{}:{}", native_handle_value, control_type_id_value)
     };

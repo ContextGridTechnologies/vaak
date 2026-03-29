@@ -34,7 +34,7 @@ export function useAudioRecorder(
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current);
+      globalThis.clearInterval(timerRef.current);
       timerRef.current = null;
     }
   };
@@ -114,7 +114,7 @@ export function useAudioRecorder(
       };
 
       recorder.start();
-      timerRef.current = window.setInterval(() => {
+      timerRef.current = globalThis.setInterval(() => {
         if (startTimeRef.current !== null) {
           setElapsedMs(Date.now() - startTimeRef.current);
         }
@@ -128,7 +128,7 @@ export function useAudioRecorder(
 
   const stop = useCallback(() => {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state !== "recording") {
+    if (recorder?.state !== "recording") {
       return;
     }
     recorder.stop();
@@ -146,7 +146,7 @@ export function useAudioRecorder(
     return () => {
       clearTimer();
       const recorder = recorderRef.current;
-      if (recorder && recorder.state === "recording") {
+      if (recorder?.state === "recording") {
         recorder.stop();
       }
       stopTracks(recorder);

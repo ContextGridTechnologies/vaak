@@ -11,11 +11,15 @@ impl ComInit {
     pub(crate) fn new() -> Result<Self, PlatformError> {
         let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
         if hr.is_ok() {
-            return Ok(Self { should_uninit: true });
+            return Ok(Self {
+                should_uninit: true,
+            });
         }
 
         if hr == RPC_E_CHANGED_MODE {
-            return Ok(Self { should_uninit: false });
+            return Ok(Self {
+                should_uninit: false,
+            });
         }
 
         Err(windows_error_hresult("CoInitializeEx", hr))

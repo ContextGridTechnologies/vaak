@@ -5,4 +5,4 @@ mod insert;
 mod uia;
 
 pub(crate) use focus::get_focused_field;
-pub(crate) use insert::{capture_and_insert, insert_text};
+pub(crate) use insert::{capture_and_insert, insert_text, insert_text_for_stable_id};

@@ -1,15 +1,14 @@
 use crate::platform::common::PlatformError;
 use crate::platform::windows::errors::windows_error;
-use windows::core::{BSTR, Interface};
+use windows::core::{Interface, BSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern,
     IUIAutomationValuePattern, UIA_ButtonControlTypeId, UIA_ComboBoxControlTypeId,
     UIA_CustomControlTypeId, UIA_DocumentControlTypeId, UIA_EditControlTypeId,
-    UIA_ListControlTypeId, UIA_ListItemControlTypeId, UIA_PaneControlTypeId,
-    UIA_TextControlTypeId, UIA_TextPatternId, UIA_TreeItemControlTypeId,
-    UIA_ValuePatternId,
+    UIA_ListControlTypeId, UIA_ListItemControlTypeId, UIA_PaneControlTypeId, UIA_TextControlTypeId,
+    UIA_TextPatternId, UIA_TreeItemControlTypeId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetWindowTextLengthW, GetWindowTextW, GA_ROOTOWNER,
@@ -23,8 +22,7 @@ pub(crate) fn create_automation() -> Result<IUIAutomation, PlatformError> {
 pub(crate) fn get_focused_element(
     automation: &IUIAutomation,
 ) -> Result<IUIAutomationElement, PlatformError> {
-    unsafe { automation.GetFocusedElement() }
-        .map_err(|err| windows_error("GetFocusedElement", err))
+    unsafe { automation.GetFocusedElement() }.map_err(|err| windows_error("GetFocusedElement", err))
 }
 
 pub(crate) fn bstr_to_string(value: windows::core::Result<BSTR>) -> String {

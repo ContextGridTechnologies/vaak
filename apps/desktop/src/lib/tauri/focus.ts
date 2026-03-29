@@ -23,6 +23,19 @@ export type CaptureInsertResult = {
   insert: TextInsertResult;
 };
 
+export type SessionHotkeyEvent = {
+  mode: "dictation" | "command";
+  phase: "start" | "stop";
+  shortcut: string;
+  field: FocusedFieldInfo | null;
+  error: string | null;
+};
+
+export type HotkeyBindings = {
+  dictation: string;
+  command: string;
+};
+
 export async function getFocusedField(): Promise<FocusedFieldInfo> {
   return invoke("get_focused_field");
 }
@@ -35,4 +48,14 @@ export async function captureAndInsert(
   text: string,
 ): Promise<CaptureInsertResult> {
   return invoke("capture_and_insert", { text });
+}
+
+export async function insertIntoActiveTarget(
+  text: string,
+): Promise<TextInsertResult> {
+  return invoke("insert_into_active_target", { text });
+}
+
+export async function getHotkeyBindings(): Promise<HotkeyBindings> {
+  return invoke("get_hotkey_bindings");
 }

@@ -3,7 +3,7 @@ use crate::platform::windows::com::ComInit;
 use crate::platform::windows::focus::build_focused_field_info;
 use crate::platform::windows::uia::{create_automation, get_focused_element};
 use std::mem::size_of;
-use windows::core::{BSTR, Interface};
+use windows::core::{Interface, BSTR};
 use windows::Win32::UI::Accessibility::{
     IUIAutomationElement, IUIAutomationValuePattern, UIA_ValuePatternId,
 };
@@ -16,6 +16,25 @@ pub(crate) fn insert_text(text: &str) -> Result<TextInsertResult, PlatformError>
     let _com = ComInit::new()?;
     let automation = create_automation()?;
     let element = get_focused_element(&automation)?;
+    insert_text_for_element(&element, text)
+}
+
+pub(crate) fn insert_text_for_stable_id(
+    text: &str,
+    stable_id: &str,
+) -> Result<TextInsertResult, PlatformError> {
+    let _com = ComInit::new()?;
+    let automation = create_automation()?;
+    let element = get_focused_element(&automation)?;
+    let field = build_focused_field_info(&element);
+
+    if field.stable_id != stable_id {
+        return Err(PlatformError::new(
+            "target_changed",
+            "Focused field changed before insertion",
+        ));
+    }
+
     insert_text_for_element(&element, text)
 }
 
