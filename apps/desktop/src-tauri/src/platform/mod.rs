@@ -20,9 +20,25 @@ pub fn insert_text(text: &str) -> Result<TextInsertResult, PlatformError> {
     windows::insert_text(text)
 }
 
+#[cfg(windows)]
+pub fn insert_text_for_stable_id(
+    text: &str,
+    stable_id: &str,
+) -> Result<TextInsertResult, PlatformError> {
+    windows::insert_text_for_stable_id(text, stable_id)
+}
+
 #[cfg(not(windows))]
 pub fn insert_text(_text: &str) -> Result<TextInsertResult, PlatformError> {
     Err(PlatformError::unsupported("insert_text"))
+}
+
+#[cfg(not(windows))]
+pub fn insert_text_for_stable_id(
+    _text: &str,
+    _stable_id: &str,
+) -> Result<TextInsertResult, PlatformError> {
+    Err(PlatformError::unsupported("insert_text_for_stable_id"))
 }
 
 #[cfg(windows)]

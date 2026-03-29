@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp:*)",
+      "Bash(cp \"D:/Blue Voice/blue-gray-voice/.gitignore\" \"D:/Blue Voice/blue-gray-voice/.editorconfig\" \"D:/vaak/\")",
+      "Bash(cp -r \"D:/Blue Voice/blue-gray-voice/.claude\" \"D:/vaak/\")"
+    ]
+  }
+}

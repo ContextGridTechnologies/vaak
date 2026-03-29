@@ -1,129 +1,56 @@
-# BlueVoice.ai Roadmap and Goals
+# BlueVoice.ai Roadmap
 
-This document defines the product goal and a phased development plan for the desktop "voice OS" app.
+This document is the high-level product roadmap. Detailed planning, status, tasks, and verification live in `docs/phases/`.
 
 ## Product Goal
 
-Build a cross-platform (Windows, macOS) desktop app that:
+Build a cross-platform desktop app (Windows first, macOS second) that:
 
-- Listens to the user's voice on-demand.
-- Detects the focused text field in any app.
+- Listens to the user's voice on demand.
+- Detects the focused text field in another app.
 - Inserts transcribed or LLM-generated text into that field.
-- Supports command mode for OS actions (example: "turn on dark mode").
+- Supports command mode for safe system actions.
 
 ## Success Criteria (v1)
 
 - Reliable dictation into focused fields across common apps.
-- Fast and stable: low latency, no crashes during dictation.
+- Fast and stable behavior with low user-visible latency.
 - Clear permissions flow and secure API key storage.
-- Simple UI with status, hotkey control, and settings.
+- Simple UX with visible status, hotkey control, and settings.
 
-## Non-Goals (initial)
+## Non-Goals (v1)
 
-- No full local LLM or offline STT in v1.
-- No enterprise or multi-user features.
-- No mobile app in v1.
+- Full local LLM or offline STT by default.
+- Enterprise/multi-user features.
+- Mobile app support.
 
 ## Guiding Principles
 
-- OS-first reliability: correctness over flashy UI.
-- Capability-driven architecture: UI calls capabilities, not OS-specific logic.
-- Minimize permissions: request only when needed.
-- Fast iteration: start cloud-first, upgrade later.
+- OS-first reliability over flashy UI.
+- Capability-first architecture (UI calls capabilities, not OS-specific code).
+- Least-privilege permission requests.
+- Fast cloud-first iteration with a path to stronger local/backend controls.
 
-## Phased Roadmap
+## Phase Index
 
-### Phase 0: Foundation (now)
+- Phase 0 - Foundation: `docs/phases/PHASE_0_FOUNDATION.md`
+- Phase 1 - OS Access: `docs/phases/PHASE_1_OS_ACCESS.md`
+- Phase 2 - Dictation Pipeline: `docs/phases/PHASE_2_DICTATION.md`
+- Phase 3 - Command Mode: `docs/phases/PHASE_3_COMMAND_MODE.md`
+- Phase 4 - UX and Settings: `docs/phases/PHASE_4_UX_SETTINGS.md`
+- Phase 5 - Reliability and Packaging: `docs/phases/PHASE_5_PACKAGING.md`
+- Phase 6 - Backend Integration: `docs/phases/PHASE_6_BACKEND.md`
 
-- Tauri + React + TypeScript + Rust scaffold.
-- Build and run on Windows (in progress).
-- Basic documentation in `docs/`.
+## Current Snapshot
 
-Exit criteria:
+- Phase 0: complete.
+- Phase 1: in progress (Windows complete, macOS deferred).
+- Phase 2: in progress (microphone selection/capture complete; STT integration pending).
+- Phase 3-6: planned.
 
-- App runs locally with a blank UI.
-- Toolchain and prerequisites are stable and repeatable.
+## Cross-Phase Definition of Done
 
-### Phase 1: OS Access Spike
-
-Goal: prove we can detect focus and insert text.
-
-Windows:
-
-- Detect focused text field (UI Automation).
-- Insert text into field (UIA/TSF or input injection).
-
-macOS:
-
-- Accessibility permission flow.
-- Focused field detection (AXUIElement).
-- Insert text (AX + CGEvent).
-
-Exit criteria:
-
-- A small test app can detect and insert text in both OSes.
-
-### Phase 2: Dictation Pipeline (MVP)
-
-- Microphone capture + push-to-talk toggle.
-- STT integration (cloud provider, API key).
-- Insert transcription into focused field.
-- Basic error handling and logging.
-
-Exit criteria:
-
-- End-to-end dictation works in real apps with acceptable latency.
-
-### Phase 3: Command Mode (MVP)
-
-- Intent parsing (LLM).
-- Safe system actions (dark mode, open app, etc.).
-- Permissions check + confirmation UX for risky commands.
-
-Exit criteria:
-
-- 3 to 5 reliable commands per OS with clear UX.
-
-### Phase 4: UX and Settings
-
-- Onboarding and permission screens.
-- API key entry + model selection.
-- Tray icon + global hotkey.
-- Minimal design system.
-
-Exit criteria:
-
-- Usable daily driver for early testers.
-
-### Phase 5: Reliability and Packaging
-
-- Crash and error logging (local).
-- Performance profiling + latency goals.
-- App signing and installers.
-- Release automation (manual steps OK initially).
-
-Exit criteria:
-
-- Beta release ready for external users.
-
-### Phase 6: Backend Integration (later)
-
-- Separate backend repo.
-- Account-based API key management.
-- Usage metering and billing hooks.
-
-Exit criteria:
-
-- Users can sign in and use managed API keys.
-
-## Risks and Unknowns
-
-- Accessibility APIs vary across apps and OS versions.
-- Text insertion reliability differs per app.
-- LLM latency and cost can impact UX.
-
-## Definition of Done for Each Phase
-
-- Documented requirements and success criteria.
-- Working demo video or recorded test.
-- Test checklist for Windows and macOS.
+- Requirements and exit criteria are documented in the phase file.
+- Tasks and test checklist are explicit and checkable.
+- Evidence is recorded in the phase log.
+- Status reflects actual implementation state.

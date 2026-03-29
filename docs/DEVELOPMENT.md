@@ -1,6 +1,6 @@
 # Development Guide
 
-This document covers local setup and the **current development tasks**. It complements `docs/ROADMAP.md`.
+This document covers local setup and troubleshooting. Phase plans and status live under `docs/phases/`.
 
 ## Prerequisites (Windows)
 
@@ -35,6 +35,20 @@ npm install
 npm run tauri dev
 ```
 
+## Build the App
+
+```powershell
+cd apps/desktop
+npm run build
+```
+
+## Where to Find Planning and Status
+
+- Product roadmap: `docs/ROADMAP.md`
+- Phase-by-phase execution and progress: `docs/phases/`
+- Architecture details: `docs/ARCHITECTURE.md`
+- Repo layout conventions: `docs/PROJECT_STRUCTURE.md`
+
 ## Common Issues
 
 - Port 1420 already in use:
@@ -44,33 +58,3 @@ npm run tauri dev
   - Install Build Tools with C++ workload, or run the VS dev shell.
 - `kernel32.lib` missing:
   - Install a Windows SDK and use the VS dev shell.
-
-## Current Focus: Phase 1 (Windows OS Access Spike)
-
-Goal: prove we can detect the focused text field and insert text into it.
-
-### Tasks
-
-1) **Focused field detection**
-   - Implement Windows UI Automation integration in Rust.
-   - Return: window title, control name, role/type, and a stable identifier.
-2) **Text insertion**
-   - Insert text into the focused field using UI Automation or input injection.
-   - Provide a fallback path if UIA insertion fails.
-3) **Rust ⇄ UI bridge**
-   - Add Tauri commands in `apps/desktop/src-tauri/src/commands/`.
-   - Add typed TS wrappers in `apps/desktop/src/lib/tauri/`.
-4) **Minimal test UI**
-   - A debug panel that shows focused field info.
-   - A text box to send test insertion.
-
-### Exit Criteria
-
-- A Windows build can:
-  - Detect the active text field in at least two apps (e.g., Notepad + Chrome).
-  - Insert text with a single UI button press.
-
-### Notes
-
-- Windows code should live in `apps/desktop/src-tauri/src/platform/windows`.
-- Keep platform APIs behind traits in `apps/desktop/src-tauri/src/platform/common`.
