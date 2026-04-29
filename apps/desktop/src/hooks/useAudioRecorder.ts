@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type RecorderStatus = "idle" | "recording" | "stopped" | "error";
+export type RecorderStatus = "idle" | "recording" | "stopped" | "error";
 
 type RecorderState = {
   status: RecorderStatus;
@@ -30,7 +30,9 @@ export function useAudioRecorder(
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number | null>(null);
-  const timerRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof globalThis.setInterval> | null>(
+    null,
+  );
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
