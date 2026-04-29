@@ -6,7 +6,6 @@
   "permissions": [
     "core:default",
     "core:window:allow-minimize",
-    "global-shortcut:default",
     "opener:default"
   ]
 }

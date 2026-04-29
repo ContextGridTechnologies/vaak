@@ -1,14 +1,25 @@
 import { useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  Alert,
+  Button,
+  Field,
+  JsonPreview,
+  PageShell,
+  Panel,
+} from "../components";
+import { normalizeError } from "../lib/errors";
 import {
   captureAndInsert,
   type FocusedFieldInfo,
+  isTauriRuntime,
+  minimizeCurrentWindow,
   type TextInsertResult,
 } from "../lib/tauri";
 import { DictationPanel } from "../features/dictation";
 import "../styles/app.css";
 
 function App() {
+  const tauriAvailable = isTauriRuntime();
   const [focusedField, setFocusedField] = useState<FocusedFieldInfo | null>(
     null,
   );
@@ -23,9 +34,10 @@ function App() {
     setInsertBusy(true);
     setError(null);
     try {
-      const appWindow = getCurrentWindow();
-      await appWindow.minimize();
-      await sleep(350);
+      await minimizeCurrentWindow();
+      if (tauriAvailable) {
+        await sleep(350);
+      }
       const result = await captureAndInsert(insertValue);
       setFocusedField(result.field);
       setInsertResult(result.insert);
@@ -37,86 +49,70 @@ function App() {
   };
 
   return (
-    <main className="container">
-      <header className="header">
-        <div>
-          <h1>Phase 1 + 2: Windows Spike and Dictation</h1>
-          <p className="subtitle">
-            Debug panels for focus, insertion, and audio capture.
-          </p>
-        </div>
-      </header>
-
+    <PageShell
+      eyebrow="Desktop Spike"
+      title="Phase 1 + 2: Windows Spike and Dictation"
+      subtitle="Debug panels for focus, insertion, and audio capture."
+      notice={
+        !tauriAvailable ? (
+          <Alert variant="info">
+            Running in browser preview mode. Dictation capture works, but
+            native focus and text insertion require `npm run tauri dev`.
+          </Alert>
+        ) : null
+      }
+    >
       <DictationPanel />
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Focused Field</h2>
-        </div>
-        <div className="panel-body">
-          {focusedField ? (
-            <pre>{JSON.stringify(focusedField, null, 2)}</pre>
-          ) : (
-            <p className="placeholder">
-              Use "Capture + Insert" to capture the focused element.
-            </p>
-          )}
-        </div>
-      </section>
+      <Panel
+        title="Focused Field"
+        description="Inspect the active control captured before insertion."
+      >
+        <JsonPreview
+          value={focusedField}
+          emptyMessage='Use "Capture + Insert" to capture the focused element.'
+        />
+      </Panel>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Text Insertion</h2>
-          <button onClick={handleInsert} disabled={insertBusy}>
+      <Panel
+        title="Text Insertion"
+        description="Capture the active field and push a sample string into it."
+        actions={
+          <Button
+            onClick={handleInsert}
+            disabled={insertBusy || !tauriAvailable}
+          >
             {insertBusy ? "Capturing..." : "Capture + Insert"}
-          </button>
-        </div>
-        <div className="panel-body">
-          <p className="hint">
-            This will minimize the app so the target field keeps focus during
-            capture.
-          </p>
-          <label className="field">
-            <span>Text to insert</span>
-            <textarea
-              value={insertValue}
-              onChange={(event) => setInsertValue(event.target.value)}
-              rows={3}
-              placeholder="Type some sample text"
-            />
-          </label>
-          {insertResult && (
-            <div className="result">
-              Inserted via <strong>{insertResult.method}</strong> (
-              {insertResult.characters} characters).
-            </div>
-          )}
-        </div>
-      </section>
+          </Button>
+        }
+      >
+        <Alert variant="info">
+          This minimizes the app so the target field keeps focus during
+          capture.
+        </Alert>
+        <Field label="Text to insert">
+          <textarea
+            className="input input--multiline"
+            value={insertValue}
+            onChange={(event) => setInsertValue(event.target.value)}
+            rows={3}
+            placeholder="Type some sample text"
+          />
+        </Field>
+        {insertResult && (
+          <Alert variant="success">
+            Inserted via <strong>{insertResult.method}</strong> (
+            {insertResult.characters} characters).
+          </Alert>
+        )}
+      </Panel>
 
-      {error && <div className="error">{error}</div>}
-    </main>
+      {error && <Alert variant="error">{error}</Alert>}
+    </PageShell>
   );
 }
 
 export default App;
-
-function normalizeError(err: unknown): string {
-  if (typeof err === "string") {
-    return err;
-  }
-  if (err && typeof err === "object") {
-    const maybeMessage = (err as { message?: string }).message;
-    const maybeCode = (err as { code?: string }).code;
-    if (maybeCode && maybeMessage) {
-      return `${maybeCode}: ${maybeMessage}`;
-    }
-    if (maybeMessage) {
-      return maybeMessage;
-    }
-  }
-  return "Unknown error";
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

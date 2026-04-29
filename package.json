@@ -1,0 +1,10 @@
+{
+  "name": "vaak",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix apps/desktop run dev -- --host 127.0.0.1 --port 1420",
+    "build": "npm --prefix apps/desktop run build",
+    "install:desktop": "npm --prefix apps/desktop install",
+    "tauri": "node scripts/run-tauri.mjs"
+  }
+}

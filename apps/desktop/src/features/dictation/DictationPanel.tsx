@@ -1,16 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import {
+  Alert,
+  Button,
+  Field,
+  Panel,
+  StatusPill,
+} from "../../components";
 import { useAudioDevices } from "../../hooks/useAudioDevices";
+import { normalizeError } from "../../lib/errors";
 import { useAudioRecorder } from "../../hooks/useAudioRecorder";
 import {
   getHotkeyBindings,
   getFocusedField,
   type HotkeyBindings,
   type FocusedFieldInfo,
+  isTauriRuntime,
+  listenToTauriEvent,
   type SessionHotkeyEvent,
 } from "../../lib/tauri";
 
 export function DictationPanel() {
+  const tauriAvailable = isTauriRuntime();
   const {
     devices,
     isLoading,
@@ -115,7 +125,7 @@ export function DictationPanel() {
   }, []);
 
   useEffect(() => {
-    if (!isWindows) {
+    if (!isWindows || !tauriAvailable) {
       return;
     }
 
@@ -136,7 +146,7 @@ export function DictationPanel() {
     return () => {
       cancelled = true;
     };
-  }, [isWindows]);
+  }, [isWindows, tauriAvailable]);
 
   useEffect(() => {
     globalThis.localStorage?.setItem(
@@ -177,14 +187,14 @@ export function DictationPanel() {
   }, [restartOnStop, start, status]);
 
   useEffect(() => {
-    if (!isWindows) {
+    if (!isWindows || !tauriAvailable) {
       return;
     }
 
     let disposed = false;
     let unlisten: (() => void) | undefined;
     const register = async () => {
-      const detach = await listen<SessionHotkeyEvent>(
+      const detach = await listenToTauriEvent<SessionHotkeyEvent>(
         "bluevoice://session-hotkey",
         async (event) => {
           const payload = event.payload;
@@ -244,46 +254,48 @@ export function DictationPanel() {
         unlisten();
       }
     };
-  }, [isWindows, start, startWithFocusCapture, stopHotkeyRecording]);
+  }, [isWindows, start, startWithFocusCapture, stopHotkeyRecording, tauriAvailable]);
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2>Dictation Capture</h2>
+    <Panel
+      title="Dictation Capture"
+      description="Capture microphone audio locally for Phase 2 testing."
+      actions={
         <div className="button-row">
-          <button
+          <Button
             onClick={isRecording ? stopManualRecording : startManualDictation}
             disabled={status === "error"}
           >
             {isRecording ? "Stop Recording" : "Start Recording"}
-          </button>
-          <button
-            className="button-secondary"
+          </Button>
+          <Button
+            variant="secondary"
             onClick={reset}
             disabled={!audioUrl}
           >
             Clear
-          </button>
+          </Button>
         </div>
-      </div>
-      <div className="panel-body">
-        <p className="hint">
-          This captures microphone audio locally for Phase 2 testing.
-        </p>
+      }
+    >
         {isWindows && (
-          <p className="hint">
-            Global hotkeys: hold {hotkeyBindings.dictation} for dictation, hold {" "}
-            {hotkeyBindings.command} for command mode.
-          </p>
+          <Alert variant="info">
+            {tauriAvailable
+              ? `Global hotkeys: hold ${hotkeyBindings.dictation} for dictation, hold ${hotkeyBindings.command} for command mode.`
+              : "Global hotkeys are available only in the Tauri desktop shell."}
+          </Alert>
         )}
-        <div className="device-info">
+        <div className="meta-line">
           Active mode: <strong>{activeMode}</strong>
         </div>
         <div className="device-row">
-          <label className="field">
-            <span>Microphone</span>
+          <Field
+            label="Microphone"
+            hint="Switching devices while recording restarts the recorder automatically."
+            className="device-row__field"
+          >
             <select
-              className="select"
+              className="input"
               value={selectedDeviceId}
               onChange={(event) => {
                 setSelectedDeviceId(event.target.value);
@@ -298,36 +310,36 @@ export function DictationPanel() {
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
           <div className="device-actions">
-            <button
-              className="button-secondary"
+            <Button
+              variant="secondary"
               onClick={refresh}
               disabled={isLoading}
             >
               Refresh
-            </button>
+            </Button>
             {!hasPermission && (
-              <button onClick={requestPermission}>Enable Microphone</button>
+              <Button onClick={requestPermission}>Enable Microphone</Button>
             )}
           </div>
         </div>
-        <div className="device-info">
+        <div className="meta-line">
           Selected: <strong>{selectedLabel}</strong>
           {!hasPermission && " (labels hidden until permission is granted)"}
         </div>
         <div className="status-line">
-          <span className={`status-pill status-${status}`}>{statusLabel}</span>
+          <StatusPill tone={status}>{statusLabel}</StatusPill>
           <span className="status-text">
             {isRecording ? "Recording..." : "Last capture"} {durationLabel}
           </span>
         </div>
         {focusedField && (
-          <div className="result">
+          <Alert variant="success">
             Target field: <strong>{focusedField.controlName || "Unnamed"}</strong>
             {" in "}
             <strong>{focusedField.windowTitle || "Unknown window"}</strong>
-          </div>
+          </Alert>
         )}
         {audioUrl && (
           <audio className="audio-player" controls src={audioUrl}>
@@ -341,12 +353,11 @@ export function DictationPanel() {
             Your browser does not support the audio element.
           </audio>
         )}
-        {fallbackNotice && <div className="warning">{fallbackNotice}</div>}
-        {focusedFieldError && <div className="error">{focusedFieldError}</div>}
-        {deviceError && <div className="error">{deviceError}</div>}
-        {error && <div className="error">{error}</div>}
-      </div>
-    </section>
+        {fallbackNotice && <Alert variant="warning">{fallbackNotice}</Alert>}
+        {focusedFieldError && <Alert variant="error">{focusedFieldError}</Alert>}
+        {deviceError && <Alert variant="error">{deviceError}</Alert>}
+        {error && <Alert variant="error">{error}</Alert>}
+    </Panel>
   );
 }
 
@@ -366,21 +377,4 @@ function getStatusLabel(status: "idle" | "recording" | "stopped" | "error") {
     default:
       return "Idle";
   }
-}
-
-function normalizeError(err: unknown): string {
-  if (typeof err === "string") {
-    return err;
-  }
-  if (err && typeof err === "object") {
-    const maybeMessage = (err as { message?: string }).message;
-    const maybeCode = (err as { code?: string }).code;
-    if (maybeCode && maybeMessage) {
-      return `${maybeCode}: ${maybeMessage}`;
-    }
-    if (maybeMessage) {
-      return maybeMessage;
-    }
-  }
-  return "Unknown error";
 }
