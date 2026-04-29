@@ -84,7 +84,7 @@ enum ActiveMode {
     Command,
 }
 
-pub fn start_hotkey_monitor<R: Runtime + Send + Sync + 'static>(
+pub fn start_hotkey_monitor<R: Runtime + 'static>(
     app: &AppHandle<R>,
     store: &SessionStore,
 ) {

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeTauri } from "./runtime";
 
 export type FocusedFieldInfo = {
   windowTitle: string;
@@ -37,25 +37,25 @@ export type HotkeyBindings = {
 };
 
 export async function getFocusedField(): Promise<FocusedFieldInfo> {
-  return invoke("get_focused_field");
+  return invokeTauri("get_focused_field");
 }
 
 export async function insertText(text: string): Promise<TextInsertResult> {
-  return invoke("insert_text", { text });
+  return invokeTauri("insert_text", { text });
 }
 
 export async function captureAndInsert(
   text: string,
 ): Promise<CaptureInsertResult> {
-  return invoke("capture_and_insert", { text });
+  return invokeTauri("capture_and_insert", { text });
 }
 
 export async function insertIntoActiveTarget(
   text: string,
 ): Promise<TextInsertResult> {
-  return invoke("insert_into_active_target", { text });
+  return invokeTauri("insert_into_active_target", { text });
 }
 
 export async function getHotkeyBindings(): Promise<HotkeyBindings> {
-  return invoke("get_hotkey_bindings");
+  return invokeTauri("get_hotkey_bindings");
 }
