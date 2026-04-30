@@ -1,11 +1,8 @@
 import type { ReactNode } from "react";
 
-import { AppHeader } from "@/components/app";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { AppHeader, StatusBadge } from "@/components/app";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { appSections } from "./navigation";
 
 type AppLayoutProps = {
@@ -18,8 +15,16 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
     <div className="min-h-screen bg-background text-foreground">
       <AppHeader
         eyebrow="Vaak"
-        title="Voice Operations"
-        description="BTC business desktop console"
+        title="Open-source voice input for desktop workflows"
+        description="Dictate, rewrite, and insert polished text across apps."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge tone="success">Local mode active</StatusBadge>
+            <Button size="sm" variant="outline" disabled>
+              Sign in for sync
+            </Button>
+          </div>
+        }
       />
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-5 sm:px-6">
         {notice ? <div>{notice}</div> : null}

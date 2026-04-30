@@ -1,30 +1,15 @@
-import {
-  ActivityIcon,
-  MicIcon,
-  SettingsIcon,
-  TerminalIcon,
-} from "lucide-react";
+import { MicIcon, SettingsIcon } from "lucide-react";
 
 export const appSections = [
   {
     value: "dictation",
-    label: "Dictation",
+    label: "Voice",
     icon: MicIcon,
-  },
-  {
-    value: "command-mode",
-    label: "Command",
-    icon: TerminalIcon,
   },
   {
     value: "settings",
     label: "Settings",
     icon: SettingsIcon,
-  },
-  {
-    value: "diagnostics",
-    label: "Diagnostics",
-    icon: ActivityIcon,
   },
 ] as const;
 

@@ -35,6 +35,10 @@ export function DeviceSelector({
   onRefresh,
   onRequestPermission,
 }: DeviceSelectorProps) {
+  const selectableDevices = deviceOptions.filter(
+    (device) => device.deviceId.trim().length > 0,
+  );
+
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
       <FieldGroup className="flex-1">
@@ -51,7 +55,7 @@ export function DeviceSelector({
             <SelectContent>
               <SelectGroup>
                 <SelectItem value="default">System default</SelectItem>
-                {deviceOptions.map((device, index) => (
+                {selectableDevices.map((device, index) => (
                   <SelectItem key={device.deviceId} value={device.deviceId}>
                     {device.label || `Microphone ${index + 1}`}
                   </SelectItem>

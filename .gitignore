@@ -51,6 +51,8 @@ coverage/
 .cache-loader/
 .eslintcache
 *.cache
+.playwright-cli/
+output/
 
 # OS
 .DS_Store
