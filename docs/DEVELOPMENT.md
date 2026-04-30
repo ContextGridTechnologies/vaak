@@ -1,6 +1,7 @@
 # Development Guide
 
-This document covers local setup and troubleshooting. Phase plans and status live under `docs/phases/`.
+This document covers local setup and troubleshooting. Active product planning
+lives in the top-level docs listed below.
 
 ## Prerequisites (Windows)
 
@@ -45,7 +46,9 @@ npm run build
 ## Where to Find Planning and Status
 
 - Product roadmap: `docs/ROADMAP.md`
-- Phase-by-phase execution and progress: `docs/phases/`
+- Positioning: `docs/POSITIONING.md`
+- Product baseline: `docs/OPEN_SOURCE_PRODUCT_BASELINE.md`
+- Provider strategy: `docs/PROVIDER_STRATEGY.md`
 - Architecture details: `docs/ARCHITECTURE.md`
 - Repo layout conventions: `docs/PROJECT_STRUCTURE.md`
 

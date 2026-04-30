@@ -1,5 +1,17 @@
 ## Run
 
+Vaak is an open-source voice layer for desktop work: speak once, get polished
+text, and insert it into the app you were already using. The current active
+plan is to complete the local bring-your-own-model dictation loop before adding
+optional login, sync, or managed cloud features.
+
+Planning docs:
+
+- `docs/ROADMAP.md`
+- `docs/POSITIONING.md`
+- `docs/OPEN_SOURCE_PRODUCT_BASELINE.md`
+- `docs/PROVIDER_STRATEGY.md`
+
 Install the desktop app dependencies once:
 
 ```bash
