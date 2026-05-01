@@ -1,4 +1,5 @@
 export { AppHeader } from "./AppHeader";
+export { AppScreen, appScreenContentClassName } from "./AppScreen";
 export { EmptyState } from "./EmptyState";
 export { FeatureTile } from "./FeatureTile";
 export { JsonPreview } from "./JsonPreview";

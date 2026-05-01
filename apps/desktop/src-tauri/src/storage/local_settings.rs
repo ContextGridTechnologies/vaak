@@ -28,6 +28,26 @@ struct LocalSettings {
     selected_speech_provider: String,
     #[serde(default)]
     provider_configs: BTreeMap<String, ProviderConfig>,
+    #[serde(default)]
+    onboarding: OnboardingState,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingState {
+    pub completed: bool,
+    pub current_step: String,
+    pub selected_mode: Option<String>,
+}
+
+impl Default for OnboardingState {
+    fn default() -> Self {
+        Self {
+            completed: false,
+            current_step: "modeChoice".to_string(),
+            selected_mode: None,
+        }
+    }
 }
 
 impl Default for LocalSettings {
@@ -36,6 +56,7 @@ impl Default for LocalSettings {
             version: SETTINGS_VERSION,
             selected_speech_provider: default_selected_speech_provider(),
             provider_configs: BTreeMap::new(),
+            onboarding: OnboardingState::default(),
         }
     }
 }
@@ -124,6 +145,28 @@ impl LocalSettingsStore {
             .provider_configs
             .insert(provider_id.to_string(), config.clone());
         self.save_unlocked(&settings)
+    }
+
+    pub fn onboarding_state(&self) -> Result<OnboardingState, ProviderError> {
+        let _guard = self.lock()?;
+        Ok(self.load_unlocked()?.onboarding)
+    }
+
+    pub fn save_onboarding_mode(&self, mode: &str) -> Result<OnboardingState, ProviderError> {
+        let mode = mode.trim();
+        if !matches!(mode, "local" | "sync" | "managed") {
+            return Err(
+                ProviderFailure::InvalidRequest("unsupported onboarding mode".to_string()).into(),
+            );
+        }
+
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        settings.onboarding.selected_mode = Some(mode.to_string());
+        settings.onboarding.current_step = "desktopReadiness".to_string();
+        settings.onboarding.completed = false;
+        self.save_unlocked(&settings)?;
+        Ok(settings.onboarding)
     }
 
     fn load_unlocked(&self) -> Result<LocalSettings, ProviderError> {
@@ -276,5 +319,29 @@ mod tests {
             .unwrap();
 
         assert_eq!(loaded, Some(local_config));
+    }
+
+    #[test]
+    fn persists_onboarding_mode_in_local_settings() {
+        let dir = temp_config_dir("onboarding-mode");
+        let store = LocalSettingsStore::new(&dir);
+
+        let initial = store.onboarding_state().unwrap();
+        assert!(!initial.completed);
+        assert_eq!(initial.current_step, "modeChoice");
+        assert_eq!(initial.selected_mode, None);
+
+        let saved = store.save_onboarding_mode("local").unwrap();
+        assert!(!saved.completed);
+        assert_eq!(saved.current_step, "desktopReadiness");
+        assert_eq!(saved.selected_mode.as_deref(), Some("local"));
+
+        let reloaded = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
+        assert_eq!(reloaded.current_step, "desktopReadiness");
+        assert_eq!(reloaded.selected_mode.as_deref(), Some("local"));
+
+        let json = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(json.contains("\"onboarding\""));
+        assert!(json.contains("\"selectedMode\""));
     }
 }
