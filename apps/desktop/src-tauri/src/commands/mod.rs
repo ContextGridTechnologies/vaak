@@ -8,7 +8,7 @@ use crate::providers::{
     speech, ProviderConfig, ProviderStatus, TranscriptResult, TranscriptionInput,
 };
 use crate::session::{HotkeyBindings, SessionStore};
-use crate::storage::LocalSettingsStore;
+use crate::storage::{LocalSettingsStore, OnboardingState};
 use tauri::{AppHandle, Emitter, State};
 
 const SPEECH_PROVIDER_CHANGED_EVENT: &str = "vaak://speech-provider-changed";
@@ -162,6 +162,21 @@ pub fn test_speech_provider(
     speech::validate_provider_id(&provider_id)?;
     let status = speech::provider_status(&provider_id, &settings)?;
     ensure_provider_ready(status)
+}
+
+#[tauri::command]
+pub fn get_onboarding_state(
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<OnboardingState, ProviderError> {
+    settings.onboarding_state()
+}
+
+#[tauri::command]
+pub fn save_onboarding_mode(
+    settings: State<'_, LocalSettingsStore>,
+    mode: String,
+) -> Result<OnboardingState, ProviderError> {
+    settings.save_onboarding_mode(&mode)
 }
 
 #[tauri::command]

@@ -6,6 +6,7 @@ import { isTauriRuntime } from "../lib/tauri";
 import { CommandModePanel } from "../features/command-mode";
 import { DiagnosticsPanel } from "../features/diagnostics";
 import { DictationPanel } from "../features/dictation";
+import { OnboardingGate } from "../features/onboarding";
 import { SettingsPanel } from "../features/settings";
 import "../styles/globals.css";
 
@@ -14,32 +15,34 @@ function App() {
 
   return (
     <AppProviders>
-      <AppLayout
-        notice={
-          !tauriAvailable ? (
-            <PermissionCallout>
-              Browser preview mode. Native focus and text insertion require
-              `npm run tauri dev`.
-            </PermissionCallout>
-          ) : null
-        }
-      >
-        <TabsContent value="dictation" className="flex flex-col gap-4">
-          <DictationPanel />
-        </TabsContent>
+      <OnboardingGate>
+        <AppLayout
+          notice={
+            !tauriAvailable ? (
+              <PermissionCallout>
+                Browser preview mode. Native focus and text insertion require
+                `npm run tauri dev`.
+              </PermissionCallout>
+            ) : null
+          }
+        >
+          <TabsContent value="dictation" className="flex flex-col gap-4">
+            <DictationPanel />
+          </TabsContent>
 
-        <TabsContent value="command-mode" className="flex flex-col gap-4">
-          <CommandModePanel />
-        </TabsContent>
+          <TabsContent value="command-mode" className="flex flex-col gap-4">
+            <CommandModePanel />
+          </TabsContent>
 
-        <TabsContent value="settings" className="flex flex-col gap-4">
-          <SettingsPanel />
-        </TabsContent>
+          <TabsContent value="settings" className="flex flex-col gap-4">
+            <SettingsPanel />
+          </TabsContent>
 
-        <TabsContent value="diagnostics">
-          <DiagnosticsPanel tauriAvailable={tauriAvailable} />
-        </TabsContent>
-      </AppLayout>
+          <TabsContent value="diagnostics">
+            <DiagnosticsPanel tauriAvailable={tauriAvailable} />
+          </TabsContent>
+        </AppLayout>
+      </OnboardingGate>
     </AppProviders>
   );
 }
