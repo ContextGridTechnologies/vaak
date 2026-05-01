@@ -7,29 +7,29 @@
 
 :root {
   font-family: "Geist Variable", "Aptos", "Segoe UI", sans-serif;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.5;
   font-weight: 400;
   color: var(--foreground);
   background-color: var(--background);
-  --background: oklch(0.985 0.004 95);
-  --foreground: oklch(0.19 0.018 255);
+  --background: oklch(0.988 0.002 95);
+  --foreground: oklch(0.24 0.006 255);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.19 0.018 255);
+  --card-foreground: oklch(0.24 0.006 255);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.19 0.018 255);
+  --popover-foreground: oklch(0.24 0.006 255);
   --primary: oklch(0.72 0.16 65);
   --primary-foreground: oklch(0.16 0.025 70);
-  --secondary: oklch(0.955 0.006 255);
-  --secondary-foreground: oklch(0.22 0.018 255);
-  --muted: oklch(0.955 0.006 255);
-  --muted-foreground: oklch(0.48 0.018 255);
-  --accent: oklch(0.94 0.035 75);
-  --accent-foreground: oklch(0.22 0.018 255);
+  --secondary: oklch(0.972 0.002 95);
+  --secondary-foreground: oklch(0.24 0.006 255);
+  --muted: oklch(0.965 0.002 95);
+  --muted-foreground: oklch(0.5 0.01 255);
+  --accent: oklch(0.955 0.012 78);
+  --accent-foreground: oklch(0.24 0.006 255);
   --destructive: oklch(0.58 0.2 25);
   --destructive-foreground: oklch(0.98 0.006 95);
-  --border: oklch(0.9 0.008 255);
-  --input: oklch(0.9 0.008 255);
+  --border: oklch(0.92 0.004 95);
+  --input: oklch(0.92 0.004 95);
   --ring: oklch(0.72 0.16 65);
   --success: oklch(0.58 0.12 155);
   --success-foreground: oklch(0.98 0.006 95);
@@ -48,7 +48,7 @@
   --chart-3: oklch(0.54 0.08 255);
   --chart-4: oklch(0.78 0.14 78);
   --chart-5: oklch(0.58 0.2 25);
-  --sidebar: oklch(0.975 0.004 95);
+  --sidebar: oklch(0.984 0.002 95);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
@@ -61,8 +61,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    linear-gradient(180deg, oklch(0.985 0.004 95) 0%, oklch(0.965 0.006 255) 100%);
+  background: var(--background);
 }
 
 html[data-window="voice-capsule"],

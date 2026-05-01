@@ -18,7 +18,7 @@ export function FeatureTile({
   return (
     <div
       className={cn(
-        "flex min-w-0 items-start gap-3 rounded-lg border bg-card p-3",
+        "flex min-w-0 items-start gap-2.5 rounded-lg border bg-card p-2.5",
         className,
       )}
     >
@@ -28,7 +28,7 @@ export function FeatureTile({
       />
       <div className="min-w-0">
         <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <p className="text-[0.9rem] text-muted-foreground">{description}</p>
       </div>
     </div>
   );

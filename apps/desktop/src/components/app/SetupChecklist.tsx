@@ -49,7 +49,7 @@ export function SetupChecklist({ items, className }: SetupChecklistProps) {
         return (
           <div
             key={item.id}
-            className="flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between"
+            className="flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-2.5 sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="flex min-w-0 gap-3">
               <Icon

@@ -36,6 +36,24 @@ export async function minimizeCurrentWindow(): Promise<void> {
   await getCurrentWindow().minimize();
 }
 
+export async function toggleMaximizeCurrentWindow(): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().toggleMaximize();
+}
+
+export async function closeCurrentWindow(): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().close();
+}
+
 export async function listenToTauriEvent<T>(
   event: string,
   handler: (event: EventPayload<T>) => void | Promise<void>,

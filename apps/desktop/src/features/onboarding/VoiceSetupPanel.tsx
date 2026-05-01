@@ -25,8 +25,8 @@ export function VoiceSetupPanel({
   });
 
   return (
-    <div className="flex flex-col gap-4">
-      <section className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
           <div className="min-w-0">
             <h2 className="text-base font-medium leading-snug text-foreground">
@@ -38,7 +38,7 @@ export function VoiceSetupPanel({
             </p>
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-2.5 md:grid-cols-3">
           <FeatureTile
             icon={MicIcon}
             title="Dictate anywhere"
@@ -55,7 +55,7 @@ export function VoiceSetupPanel({
             description="Core setup does not require a Vaak account or backend."
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge tone="success">Local mode active</StatusBadge>
           <StatusBadge tone="neutral">Provider setup next</StatusBadge>
           <StatusBadge tone="neutral">Floating capture planned</StatusBadge>
