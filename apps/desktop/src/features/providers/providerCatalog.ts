@@ -3,7 +3,7 @@ export type ProviderCategory = "speech-to-text" | "rewrite";
 export type ProviderSetupStatus = "not-configured" | "configured" | "coming-soon";
 
 export type ProviderCatalogItem = {
-  id: "openai" | "deepgram" | "groq";
+  id: "openai" | "azure-openai" | "deepgram" | "groq";
   name: string;
   description: string;
   categories: ProviderCategory[];
@@ -21,6 +21,15 @@ export const providerCatalog: ProviderCatalogItem[] = [
     credentialLabel: "OpenAI API key",
     setupStatus: "not-configured",
     modelHint: "Speech-to-text and OpenAI-compatible rewrite models",
+  },
+  {
+    id: "azure-openai",
+    name: "Azure OpenAI",
+    description: "Use Azure OpenAI deployments for local transcription.",
+    categories: ["speech-to-text"],
+    credentialLabel: "Azure OpenAI API key",
+    setupStatus: "not-configured",
+    modelHint: "Azure OpenAI endpoint and transcription deployment",
   },
   {
     id: "deepgram",
