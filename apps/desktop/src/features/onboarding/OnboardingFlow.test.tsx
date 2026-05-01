@@ -26,12 +26,29 @@ describe("OnboardingGate", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Choose how Vaak starts" }),
+      await screen.findByRole("heading", { name: "Choose how to use Vaak" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Local setup")).toBeInTheDocument();
+    expect(screen.getByText("No account required")).toBeInTheDocument();
+    expect(screen.getByText("Bring your own provider key")).toBeInTheDocument();
+    expect(screen.getByText("Settings stay on this device")).toBeInTheDocument();
     expect(screen.getByText("Sign in for sync")).toBeInTheDocument();
+    expect(
+      screen.getByText("Sync dictionary, snippets, and preferences later."),
+    ).toBeInTheDocument();
     expect(screen.getByText("Managed Vaak")).toBeInTheDocument();
-    expect(screen.getByTestId("app-screen-content")).toHaveClass("max-w-6xl");
+    expect(
+      screen.getByText(
+        "Use Vaak without provider setup when managed plans are available.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Coming soon")).toHaveLength(4);
+    expect(screen.queryByText("Coming later")).not.toBeInTheDocument();
+    expect(screen.queryByText("Available now")).not.toBeInTheDocument();
+    expect(screen.queryByText("Optional account path")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("You can change this later in Settings."),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
 
     expectTauriCommand(tauri, "get_onboarding_state", undefined);

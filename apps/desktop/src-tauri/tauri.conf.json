@@ -17,7 +17,8 @@
         "width": 1120,
         "height": 760,
         "minWidth": 960,
-        "minHeight": 680
+        "minHeight": 680,
+        "decorations": false
       },
       {
         "label": "voice-capsule",

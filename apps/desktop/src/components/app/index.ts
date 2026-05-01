@@ -1,5 +1,6 @@
 export { AppHeader } from "./AppHeader";
 export { AppScreen, appScreenContentClassName } from "./AppScreen";
+export { ChoiceCard, type ChoiceCardProps } from "./ChoiceCard";
 export { EmptyState } from "./EmptyState";
 export { FeatureTile } from "./FeatureTile";
 export { JsonPreview } from "./JsonPreview";

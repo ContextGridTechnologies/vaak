@@ -33,7 +33,7 @@ export function SectionPanel({
   footerClassName,
 }: SectionPanelProps) {
   return (
-    <Card className={cn("rounded-lg shadow-none", className)}>
+    <Card size="sm" className={cn("rounded-lg shadow-none", className)}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {description ? (
@@ -41,7 +41,7 @@ export function SectionPanel({
         ) : null}
         {actions ? <CardAction>{actions}</CardAction> : null}
       </CardHeader>
-      <CardContent className={cn("flex flex-col gap-3", contentClassName)}>
+      <CardContent className={cn("flex flex-col gap-2.5", contentClassName)}>
         {children}
       </CardContent>
       {footer ? <CardFooter className={footerClassName}>{footer}</CardFooter> : null}

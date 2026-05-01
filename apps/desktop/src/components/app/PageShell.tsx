@@ -24,12 +24,12 @@ export function PageShell({
   return (
     <main
       className={cn(
-        "mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-7",
+        "mx-auto flex w-full max-w-[64rem] flex-col gap-4 px-4 py-4 sm:px-6 sm:py-6",
         className,
       )}
     >
-      <header className="flex flex-col gap-4 rounded-lg border bg-card px-4 py-4 text-card-foreground shadow-sm sm:px-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <header className="flex flex-col gap-3 rounded-lg border bg-card px-4 py-3 text-card-foreground shadow-sm sm:px-5">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 flex-col gap-2">
             {eyebrow ? (
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
@@ -37,7 +37,7 @@ export function PageShell({
               </p>
             ) : null}
             <div className="flex flex-col gap-1">
-              <h1 className="text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
+              <h1 className="text-xl font-semibold leading-tight text-foreground sm:text-2xl">
                 {title}
               </h1>
               {subtitle ? (

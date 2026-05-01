@@ -17,7 +17,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
       title="Open-source voice input for desktop workflows"
       description="Dictate, rewrite, and insert polished text across apps."
       actions={
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge tone="success">Local mode active</StatusBadge>
           <Button size="sm" variant="outline" disabled>
             Sign in for sync
@@ -26,7 +26,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
       }
     >
       {notice ? <div>{notice}</div> : null}
-      <Tabs defaultValue="dictation" className="gap-4">
+      <Tabs defaultValue="dictation" className="gap-3">
         <div className="overflow-x-auto">
           <TabsList className="w-max min-w-full justify-start sm:min-w-0">
             {appSections.map((section) => {

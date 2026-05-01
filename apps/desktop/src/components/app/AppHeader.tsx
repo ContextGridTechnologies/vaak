@@ -22,13 +22,13 @@ export function AppHeader({
   return (
     <header
       className={cn(
-        "border-b bg-background/95",
+        "border-b bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/80",
         className,
       )}
     >
       <div
         className={cn(
-          "mx-auto flex w-full max-w-6xl flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-8",
+          "mx-auto flex w-full max-w-[68rem] flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6",
           contentClassName,
         )}
       >

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { AppHeader } from "./AppHeader";
 
 export const appScreenContentClassName =
-  "mx-auto flex w-full max-w-6xl flex-col gap-5 px-5 py-6 sm:px-8 lg:py-7";
+  "mx-auto flex w-full max-w-[68rem] flex-col gap-4 px-4 py-5 sm:px-6 lg:py-6";
 
 type AppScreenProps = {
   eyebrow?: string;
@@ -27,7 +27,7 @@ export function AppScreen({
   contentClassName,
 }: AppScreenProps) {
   return (
-    <div className={cn("min-h-screen bg-background text-foreground", className)}>
+    <div className={cn("min-h-full bg-background text-foreground", className)}>
       <AppHeader
         eyebrow={eyebrow}
         title={title}
