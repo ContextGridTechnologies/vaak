@@ -40,7 +40,7 @@ export function useDictationSession() {
   });
   const [activeMode, setActiveMode] = useState<ActiveMode>("idle");
   const lastDeviceIdRef = useRef<string>("default");
-  const { status, error, audioUrl, elapsedMs, start, stop, reset } =
+  const { status, error, audioBlob, audioUrl, elapsedMs, start, stop, reset } =
     useAudioRecorder({
       deviceId: selectedDeviceId,
     });
@@ -272,6 +272,7 @@ export function useDictationSession() {
 
   return {
     activeMode,
+    audioBlob,
     audioUrl,
     deviceError,
     deviceOptions,

@@ -5,6 +5,7 @@ export type RecorderStatus = "idle" | "recording" | "stopped" | "error";
 type RecorderState = {
   status: RecorderStatus;
   error: string | null;
+  audioBlob: Blob | null;
   audioUrl: string | null;
   elapsedMs: number;
 };
@@ -25,6 +26,7 @@ export function useAudioRecorder(
   const { deviceId } = options;
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -108,6 +110,7 @@ export function useAudioRecorder(
         const blob = new Blob(chunksRef.current, {
           type: recorder.mimeType || "audio/webm",
         });
+        setAudioBlob(blob);
         releaseAudioUrl(URL.createObjectURL(blob));
         setElapsedMs(durationMs);
         setStatus("stopped");
@@ -138,6 +141,7 @@ export function useAudioRecorder(
 
   const reset = useCallback(() => {
     clearTimer();
+    setAudioBlob(null);
     releaseAudioUrl(null);
     setElapsedMs(0);
     setStatus("idle");
@@ -152,6 +156,7 @@ export function useAudioRecorder(
         recorder.stop();
       }
       stopTracks(recorder);
+      setAudioBlob(null);
       releaseAudioUrl(null);
     };
   }, [releaseAudioUrl]);
@@ -159,6 +164,7 @@ export function useAudioRecorder(
   return {
     status,
     error,
+    audioBlob,
     audioUrl,
     elapsedMs,
     start,

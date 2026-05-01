@@ -65,6 +65,13 @@ body {
     linear-gradient(180deg, oklch(0.985 0.004 95) 0%, oklch(0.965 0.006 255) 100%);
 }
 
+html[data-window="voice-capsule"],
+body[data-window="voice-capsule"] {
+  min-height: 100vh;
+  overflow: hidden;
+  background: transparent;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", "Aptos", "Segoe UI", sans-serif;
