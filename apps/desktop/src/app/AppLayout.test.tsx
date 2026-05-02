@@ -78,6 +78,20 @@ describe("AppLayout", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("uses an independent main scroll region so the sidebar stays static", () => {
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+      </AppLayout>,
+    );
+
+    expect(screen.getByTestId("app-shell")).toHaveClass("overflow-hidden");
+    expect(screen.getByTestId("app-content-scroll-region")).toHaveClass(
+      "min-h-0",
+      "overflow-y-auto",
+    );
+  });
+
   it("persists sidebar collapse state through the app shell preferences", async () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("get_app_shell_preferences", {
@@ -125,5 +139,33 @@ describe("AppLayout", () => {
         "collapsed",
       ),
     );
+  });
+
+  it("collapses the sidebar automatically on narrow viewports", async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 480,
+    });
+
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+      </AppLayout>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("app-sidebar")).toHaveAttribute(
+        "data-state",
+        "collapsed",
+      ),
+    );
+
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: originalWidth,
+    });
   });
 });

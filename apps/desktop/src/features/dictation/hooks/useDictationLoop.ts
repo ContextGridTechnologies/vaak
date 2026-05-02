@@ -5,11 +5,15 @@ import {
   getSelectedSpeechProvider,
   insertIntoActiveTarget,
   listenToTauriEvent,
+  saveDictationRecord,
   SPEECH_PROVIDER_CHANGED_EVENT,
+  targetSnapshotFromFocusedField,
   transcribeRecording,
+  type DictationRecordDraft,
   type SpeechProviderId,
   type TextInsertResult,
 } from "@/lib/tauri";
+import type { FocusedFieldInfo } from "@/lib/tauri";
 
 export type DictationLifecycleState =
   | "idle"
@@ -34,9 +38,13 @@ type ActiveMode = "idle" | "dictation" | "command";
 
 export type DictationLoopSession = {
   audioBlob: Blob | null;
+  dictationTrigger: "hotkey" | "manual" | null;
   completedMode: ActiveMode | null;
+  focusedField: FocusedFieldInfo | null;
   focusedFieldError: string | null;
   isRecording: boolean;
+  recordingEndedAt: string | null;
+  recordingStartedAt: string | null;
   recorderError: string | null;
 };
 
@@ -164,13 +172,32 @@ export function useDictationLoop(
       });
 
       let text: string;
+      let transcriptionResult: Awaited<ReturnType<typeof transcribeRecording>>;
       try {
-        const result = await transcribeRecording({
+        transcriptionResult = await transcribeRecording({
           providerId,
           audioBlob,
         });
-        text = result.text;
+        text = transcriptionResult.text;
       } catch (err) {
+        await persistDraft({
+          provider: {
+            modelId: null,
+            providerId,
+          },
+          session,
+          transcript: {
+            characterCount: 0,
+            finalText: "",
+            rawText: "",
+          },
+          insertion: {
+            errorCode: "transcription_failed",
+            errorMessage: `${label}: ${normalizeError(err)}`,
+            method: null,
+            status: "failed",
+          },
+        });
         if (!cancelled) {
           setLoopState({
             error: {
@@ -191,6 +218,24 @@ export function useDictationLoop(
       }
 
       if (!text.trim()) {
+        await persistDraft({
+          provider: {
+            modelId: transcriptionResult.model,
+            providerId: transcriptionResult.providerId,
+          },
+          session,
+          transcript: {
+            characterCount: 0,
+            finalText: text,
+            rawText: text,
+          },
+          insertion: {
+            errorCode: null,
+            errorMessage: null,
+            method: null,
+            status: "skipped",
+          },
+        });
         setLoopState({
           error: null,
           insertResult: null,
@@ -211,6 +256,24 @@ export function useDictationLoop(
 
       try {
         const insertResult = await insertIntoActiveTarget(text);
+        await persistDraft({
+          provider: {
+            modelId: transcriptionResult.model,
+            providerId: transcriptionResult.providerId,
+          },
+          session,
+          transcript: {
+            characterCount: text.length,
+            finalText: text,
+            rawText: text,
+          },
+          insertion: {
+            errorCode: null,
+            errorMessage: null,
+            method: insertResult.method,
+            status: "inserted",
+          },
+        });
         if (!cancelled) {
           setLoopState({
             error: null,
@@ -221,8 +284,26 @@ export function useDictationLoop(
           });
         }
       } catch (err) {
+        const message = `Insertion failed: ${normalizeError(err)}`;
+        await persistDraft({
+          provider: {
+            modelId: transcriptionResult.model,
+            providerId: transcriptionResult.providerId,
+          },
+          session,
+          transcript: {
+            characterCount: text.length,
+            finalText: text,
+            rawText: text,
+          },
+          insertion: {
+            errorCode: "insertion_failed",
+            errorMessage: message,
+            method: null,
+            status: "failed",
+          },
+        });
         if (!cancelled) {
-          const message = `Insertion failed: ${normalizeError(err)}`;
           setLoopState({
             error: {
               kind: "insertion",
@@ -246,8 +327,12 @@ export function useDictationLoop(
     providerId,
     session.audioBlob,
     session.completedMode,
+    session.dictationTrigger,
+    session.focusedField,
     session.focusedFieldError,
     session.isRecording,
+    session.recordingEndedAt,
+    session.recordingStartedAt,
     session.recorderError,
   ]);
 
@@ -295,4 +380,72 @@ export function useDictationLoop(
     session.isRecording,
     session.recorderError,
   ]);
+}
+
+async function persistDraft(input: {
+  provider: DictationRecordDraft["provider"];
+  session: DictationLoopSession;
+  transcript: DictationRecordDraft["transcript"];
+  insertion: DictationRecordDraft["insertion"];
+}) {
+  if (!input.session.focusedField || !input.session.dictationTrigger) {
+    return;
+  }
+
+  try {
+    await saveDictationRecord({
+      mode: "dictation",
+      trigger: input.session.dictationTrigger,
+      capturedAt:
+        input.session.recordingStartedAt ??
+        input.session.recordingEndedAt ??
+        new Date().toISOString(),
+      startedAt: input.session.recordingStartedAt,
+      endedAt: input.session.recordingEndedAt,
+      target: targetSnapshotFromFocusedField(
+        input.session.focusedField,
+        classifyInputKind(input.session.focusedField),
+      ),
+      provider: input.provider,
+      transcript: input.transcript,
+      insertion: input.insertion,
+    });
+  } catch (err) {
+    console.error("Failed to save dictation record", err);
+  }
+}
+
+function classifyInputKind(
+  field: FocusedFieldInfo,
+): DictationRecordDraft["target"]["inputKind"] {
+  const haystack = [
+    field.controlType,
+    field.className,
+    field.frameworkId,
+    field.controlName,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    haystack.includes("terminal") ||
+    haystack.includes("termcontrol") ||
+    haystack.includes("cascadia")
+  ) {
+    return "terminal";
+  }
+
+  if (field.controlType === "Document") {
+    return "editor";
+  }
+
+  if (haystack.includes("chrome") || haystack.includes("edge") || haystack.includes("browser")) {
+    return "browser";
+  }
+
+  if (field.controlType === "Edit" || field.controlType === "Text") {
+    return "text";
+  }
+
+  return "unknown";
 }

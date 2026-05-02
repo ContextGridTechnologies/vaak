@@ -7,11 +7,15 @@ const {
   getSelectedSpeechProvider,
   insertIntoActiveTarget,
   listenToTauriEvent,
+  saveDictationRecord,
+  targetSnapshotFromFocusedField,
   transcribeRecording,
 } = vi.hoisted(() => ({
   getSelectedSpeechProvider: vi.fn(),
   insertIntoActiveTarget: vi.fn(),
   listenToTauriEvent: vi.fn(),
+  saveDictationRecord: vi.fn(),
+  targetSnapshotFromFocusedField: vi.fn(),
   transcribeRecording: vi.fn(),
 }));
 
@@ -20,15 +24,32 @@ vi.mock("@/lib/tauri", () => ({
   getSelectedSpeechProvider,
   insertIntoActiveTarget,
   listenToTauriEvent,
+  saveDictationRecord,
+  targetSnapshotFromFocusedField,
   transcribeRecording,
 }));
 
 function session(overrides: Partial<DictationLoopSession> = {}) {
   return {
+    dictationTrigger: "hotkey",
     completedMode: "dictation",
     audioBlob: null,
+    focusedField: {
+      automationId: "message-input",
+      className: "Chrome_WidgetWin_1",
+      controlName: "Message",
+      controlType: "Edit",
+      controlTypeId: 50004,
+      currentValue: "",
+      frameworkId: "Win32",
+      nativeWindowHandle: 42,
+      stableId: "window:42/control:message-input",
+      windowTitle: "Discord",
+    },
     focusedFieldError: null,
     isRecording: false,
+    recordingEndedAt: "2026-05-02T08:30:04.000Z",
+    recordingStartedAt: "2026-05-02T08:30:01.000Z",
     recorderError: null,
     ...overrides,
   } satisfies DictationLoopSession;
@@ -47,6 +68,20 @@ describe("useDictationLoop", () => {
       method: "send_input",
     });
     listenToTauriEvent.mockResolvedValue(() => {});
+    saveDictationRecord.mockResolvedValue(undefined);
+    targetSnapshotFromFocusedField.mockImplementation((field) => ({
+      stableId: field.stableId,
+      windowTitle: field.windowTitle,
+      controlName: field.controlName,
+      controlType: field.controlType,
+      controlTypeId: field.controlTypeId,
+      automationId: field.automationId,
+      frameworkId: field.frameworkId,
+      className: field.className,
+      nativeWindowHandle: field.nativeWindowHandle,
+      inputKind: "text",
+      currentValue: null,
+    }));
     transcribeRecording.mockResolvedValue({
       durationMs: 1200,
       model: "gpt-4o-mini-transcribe",
@@ -122,6 +157,27 @@ describe("useDictationLoop", () => {
     await waitFor(() => {
       expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello");
     });
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trigger: "hotkey",
+        mode: "dictation",
+        provider: {
+          modelId: "gpt-4o-mini-transcribe",
+          providerId: "openai",
+        },
+        transcript: {
+          characterCount: 5,
+          finalText: "hello",
+          rawText: "hello",
+        },
+        insertion: {
+          errorCode: null,
+          errorMessage: null,
+          method: "send_input",
+          status: "inserted",
+        },
+      }),
+    );
 
     expect(result.current.state).toBe("inserted");
     expect(result.current.transcript).toBe("hello");

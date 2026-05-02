@@ -12,6 +12,8 @@ use crate::session::{
     command_binding_label, normalize_dictation_hotkey_label, HotkeyBindings,
     DEFAULT_DICTATION_BINDING_LABEL,
 };
+use super::dictation_records::LocalIdentity;
+use uuid::Uuid;
 
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const SETTINGS_VERSION: u32 = 1;
@@ -40,6 +42,8 @@ struct LocalSettings {
     onboarding: OnboardingState,
     #[serde(default)]
     app_shell: AppShellPreferences,
+    #[serde(default)]
+    identity: Option<LocalIdentity>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -95,6 +99,7 @@ impl Default for LocalSettings {
             hotkeys: HotkeySettings::default(),
             onboarding: OnboardingState::default(),
             app_shell: AppShellPreferences::default(),
+            identity: None,
         }
     }
 }
@@ -255,6 +260,19 @@ impl LocalSettingsStore {
         Ok(settings.microphone_selection)
     }
 
+    pub fn local_identity(&self) -> Result<LocalIdentity, ProviderError> {
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        if ensure_local_identity(&mut settings) {
+            self.save_unlocked(&settings)?;
+        }
+
+        settings.identity.ok_or_else(|| {
+            ProviderFailure::SettingsStore("missing local identity after initialization".to_string())
+                .into()
+        })
+    }
+
     pub fn save_onboarding_mode(&self, mode: &str) -> Result<OnboardingState, ProviderError> {
         let mode = mode.trim();
         if !matches!(mode, "local" | "sync" | "managed") {
@@ -360,6 +378,19 @@ fn build_hotkey_bindings(dictation: &str) -> Result<HotkeyBindings, ProviderErro
     })
 }
 
+fn ensure_local_identity(settings: &mut LocalSettings) -> bool {
+    if settings.identity.is_some() {
+        return false;
+    }
+
+    settings.identity = Some(LocalIdentity {
+        user_id: Uuid::new_v4().to_string(),
+        installation_id: Uuid::new_v4().to_string(),
+        device_id: Uuid::new_v4().to_string(),
+    });
+    true
+}
+
 fn validate_microphone_selection(selection: &MicrophoneSelection) -> Result<(), ProviderError> {
     match selection {
         MicrophoneSelection::System => Ok(()),
@@ -377,6 +408,7 @@ mod tests {
     use crate::providers::ProviderConfig;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use uuid::Uuid;
 
     fn temp_config_dir(name: &str) -> std::path::PathBuf {
         let suffix = SystemTime::now()
@@ -630,6 +662,59 @@ mod tests {
         let json = fs::read_to_string(dir.join("settings.json")).unwrap();
         assert!(json.contains("\"hotkeys\""));
         assert!(json.contains("\"dictation\": \"Ctrl+Shift\""));
+    }
+
+    #[test]
+    fn generates_and_persists_local_identity() {
+        let dir = temp_config_dir("local-identity");
+        let store = LocalSettingsStore::new(&dir);
+
+        let identity = store.local_identity().unwrap();
+
+        assert!(Uuid::parse_str(&identity.user_id).is_ok());
+        assert!(Uuid::parse_str(&identity.installation_id).is_ok());
+        assert!(Uuid::parse_str(&identity.device_id).is_ok());
+
+        let reloaded = LocalSettingsStore::new(&dir).local_identity().unwrap();
+        assert_eq!(reloaded, identity);
+
+        let json = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(json.contains("\"identity\""));
+        assert!(json.contains(&identity.user_id));
+        assert!(json.contains(&identity.installation_id));
+    }
+
+    #[test]
+    fn backfills_identity_into_existing_settings_files() {
+        let dir = temp_config_dir("identity-migration");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("settings.json"),
+            r#"{
+  "version": 1,
+  "selectedSpeechProvider": "openai",
+  "providerConfigs": {},
+  "hotkeys": {
+    "dictation": "Ctrl+Win"
+  },
+  "onboarding": {
+    "completed": false,
+    "currentStep": "modeChoice",
+    "selectedMode": null
+  }
+}"#,
+        )
+        .unwrap();
+
+        let identity = LocalSettingsStore::new(&dir).local_identity().unwrap();
+
+        assert!(Uuid::parse_str(&identity.user_id).is_ok());
+        assert!(Uuid::parse_str(&identity.installation_id).is_ok());
+        assert!(Uuid::parse_str(&identity.device_id).is_ok());
+
+        let json = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(json.contains("\"identity\""));
+        assert!(json.contains("\"dictation\": \"Ctrl+Win\""));
     }
 
     #[test]

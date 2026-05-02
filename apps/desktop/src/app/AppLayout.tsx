@@ -30,9 +30,30 @@ type AppLayoutProps = {
   children: ReactNode;
 };
 
+const COMPACT_VIEWPORT_MAX_WIDTH = 960;
+
 export function AppLayout({ notice, children }: AppLayoutProps) {
   const [activeSection, setActiveSection] = useState<AppSection>("home");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [compactViewport, setCompactViewport] = useState(() =>
+    isCompactViewport(),
+  );
+  const [sidebarPreferenceOpen, setSidebarPreferenceOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isCompactViewport());
+
+  useEffect(() => {
+    const syncViewport = () => {
+      const compact = isCompactViewport();
+      setCompactViewport(compact);
+      setSidebarOpen(compact ? false : sidebarPreferenceOpen);
+    };
+
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+
+    return () => {
+      window.removeEventListener("resize", syncViewport);
+    };
+  }, [sidebarPreferenceOpen]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -41,7 +62,9 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
 
     void getAppShellPreferences()
       .then((preferences) => {
-        setSidebarOpen(!preferences.sidebarCollapsed);
+        const preferredOpen = !preferences.sidebarCollapsed;
+        setSidebarPreferenceOpen(preferredOpen);
+        setSidebarOpen(isCompactViewport() ? false : preferredOpen);
       })
       .catch((error: unknown) => {
         console.error("Failed to load app shell preferences", error);
@@ -49,7 +72,8 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
   }, []);
 
   const handleSidebarOpenChange = useCallback((open: boolean) => {
-    setSidebarOpen(open);
+    setSidebarPreferenceOpen(open);
+    setSidebarOpen(compactViewport ? false : open);
 
     if (!isTauriRuntime()) {
       return;
@@ -60,7 +84,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
         console.error("Failed to save app shell preferences", error);
       },
     );
-  }, []);
+  }, [compactViewport]);
 
   return (
     <Tabs
@@ -72,7 +96,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
         open={sidebarOpen}
         onOpenChange={handleSidebarOpenChange}
         data-testid="app-shell"
-        className="h-full min-h-full bg-background text-foreground"
+        className="h-full min-h-full overflow-hidden bg-background text-foreground"
       >
         <Sidebar
           data-testid="app-sidebar"
@@ -145,11 +169,24 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
             </SidebarMenu>
           </SidebarFooter>
         </Sidebar>
-        <SidebarInset className="min-w-0">
+        <SidebarInset className="min-w-0 overflow-hidden">
           {notice ? <div className="border-b px-4 py-3">{notice}</div> : null}
-          <div className="flex-1 p-0">{children}</div>
+          <div
+            data-testid="app-content-scroll-region"
+            className="min-h-0 flex-1 overflow-y-auto p-0"
+          >
+            {children}
+          </div>
         </SidebarInset>
       </SidebarProvider>
     </Tabs>
   );
+}
+
+function isCompactViewport() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.innerWidth < COMPACT_VIEWPORT_MAX_WIDTH;
 }

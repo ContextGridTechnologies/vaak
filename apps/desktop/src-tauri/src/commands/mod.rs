@@ -9,7 +9,8 @@ use crate::providers::{
 };
 use crate::session::{HotkeyBindings, SessionStore};
 use crate::storage::{
-    AppShellPreferences, LocalSettingsStore, MicrophoneSelection, OnboardingState,
+    AppShellPreferences, DictationRecordDraftV1, DictationRecordV1,
+    LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection, OnboardingState,
 };
 use tauri::{AppHandle, Emitter, State};
 
@@ -66,6 +67,23 @@ pub fn save_dictation_hotkey(
         .set_dictation_hotkey(&bindings.dictation)
         .map_err(ProviderFailure::InvalidRequest)?;
     Ok(bindings)
+}
+
+#[tauri::command]
+pub fn save_dictation_record(
+    draft: DictationRecordDraftV1,
+    settings: State<'_, LocalSettingsStore>,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<DictationRecordV1, ProviderError> {
+    records.save(&settings, draft)
+}
+
+#[tauri::command]
+pub fn get_recent_dictation_records(
+    limit: Option<usize>,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<Vec<DictationRecordV1>, ProviderError> {
+    records.list_recent(limit.unwrap_or(12))
 }
 
 #[tauri::command]

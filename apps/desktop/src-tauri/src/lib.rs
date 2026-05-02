@@ -20,10 +20,17 @@ pub fn run() {
             }
             let settings_store =
                 storage::LocalSettingsStore::from_app(app.handle()).map_err(|err| err.message)?;
+            settings_store
+                .local_identity()
+                .map_err(|err| err.message.clone())?;
+            let records_store = storage::LocalDictationRecordStore::new(
+                app.path().app_config_dir().map_err(|err| err.to_string())?,
+            );
             let bindings = settings_store
                 .hotkey_bindings()
                 .map_err(|err| err.message.clone())?;
             app.manage(settings_store);
+            app.manage(records_store);
             let session = app.state::<session::SessionStore>();
             session
                 .set_dictation_hotkey(&bindings.dictation)
@@ -39,6 +46,8 @@ pub fn run() {
             commands::insert_into_active_target,
             commands::get_hotkey_bindings,
             commands::save_dictation_hotkey,
+            commands::save_dictation_record,
+            commands::get_recent_dictation_records,
             commands::save_provider_key,
             commands::save_provider_config,
             commands::save_speech_provider_setup,

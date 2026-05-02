@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vaak.dev/schemas/dictation-record.v1.schema.json",
+  "title": "DictationRecordV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordId",
+    "userId",
+    "installationId",
+    "deviceId",
+    "sessionId",
+    "mode",
+    "trigger",
+    "platform",
+    "capturedAt",
+    "target",
+    "transcript",
+    "insertion"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "recordId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "userId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "installationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deviceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sessionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["dictation", "command"]
+    },
+    "trigger": {
+      "type": "string",
+      "enum": ["hotkey", "manual", "api"]
+    },
+    "platform": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capturedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "startedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "endedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stableId",
+        "windowTitle",
+        "controlName",
+        "controlType",
+        "controlTypeId",
+        "automationId",
+        "frameworkId",
+        "className",
+        "nativeWindowHandle",
+        "inputKind",
+        "currentValue"
+      ],
+      "properties": {
+        "stableId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "windowTitle": {
+          "type": "string"
+        },
+        "controlName": {
+          "type": "string"
+        },
+        "controlType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "controlTypeId": {
+          "type": "integer"
+        },
+        "automationId": {
+          "type": "string"
+        },
+        "frameworkId": {
+          "type": "string"
+        },
+        "className": {
+          "type": "string"
+        },
+        "nativeWindowHandle": {
+          "type": "integer"
+        },
+        "inputKind": {
+          "type": "string",
+          "enum": ["text", "editor", "terminal", "browser", "unknown"]
+        },
+        "currentValue": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "provider": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["providerId", "modelId"],
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modelId": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "transcript": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rawText", "finalText", "characterCount"],
+      "properties": {
+        "rawText": {
+          "type": "string"
+        },
+        "finalText": {
+          "type": "string"
+        },
+        "characterCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "insertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "method", "errorCode", "errorMessage"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["inserted", "skipped", "failed"]
+        },
+        "method": {
+          "type": ["string", "null"]
+        },
+        "errorCode": {
+          "type": ["string", "null"]
+        },
+        "errorMessage": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}
