@@ -33,6 +33,12 @@ export type DictationInsertionOutcome = {
   errorMessage: string | null;
 };
 
+export type DictationRecordingDiagnostics = {
+  startupMs: number;
+  streamAcquisitionMs: number;
+  reusedWarmStream: boolean;
+};
+
 export type DictationRecordDraft = {
   sessionId?: string | null;
   mode: "dictation" | "command";
@@ -40,6 +46,7 @@ export type DictationRecordDraft = {
   capturedAt: string;
   startedAt: string | null;
   endedAt: string | null;
+  recording?: DictationRecordingDiagnostics | null;
   target: DictationTargetSnapshot;
   provider: DictationProviderContext | null;
   transcript: DictationTranscript;

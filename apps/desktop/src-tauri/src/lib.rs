@@ -15,11 +15,18 @@ pub fn run() {
         .plugin(build_log_plugin())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
-                windowing::prepare_voice_capsule_window(&voice_capsule)?;
-            }
             let settings_store =
                 storage::LocalSettingsStore::from_app(app.handle()).map_err(|err| err.message)?;
+            let onboarding_completed = settings_store
+                .onboarding_state()
+                .map_err(|err| err.message.clone())?
+                .completed;
+            if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
+                windowing::prepare_voice_capsule_window(&voice_capsule)?;
+                if onboarding_completed {
+                    windowing::show_voice_capsule_window(&voice_capsule)?;
+                }
+            }
             settings_store
                 .local_identity()
                 .map_err(|err| err.message.clone())?;

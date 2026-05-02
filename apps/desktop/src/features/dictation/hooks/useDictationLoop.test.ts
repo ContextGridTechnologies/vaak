@@ -48,6 +48,11 @@ function session(overrides: Partial<DictationLoopSession> = {}) {
     },
     focusedFieldError: null,
     isRecording: false,
+    recordingMetrics: {
+      reusedWarmStream: true,
+      startupMs: 24,
+      streamAcquisitionMs: 0,
+    },
     recordingEndedAt: "2026-05-02T08:30:04.000Z",
     recordingStartedAt: "2026-05-02T08:30:01.000Z",
     recorderError: null,
@@ -169,6 +174,11 @@ describe("useDictationLoop", () => {
           characterCount: 5,
           finalText: "hello",
           rawText: "hello",
+        },
+        recording: {
+          reusedWarmStream: true,
+          startupMs: 24,
+          streamAcquisitionMs: 0,
         },
         insertion: {
           errorCode: null,

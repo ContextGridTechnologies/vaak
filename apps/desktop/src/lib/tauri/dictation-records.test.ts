@@ -28,6 +28,11 @@ describe("dictation record Tauri API", () => {
         capturedAt: "2026-05-02T08:30:00Z",
         startedAt: null,
         endedAt: null,
+        recording: {
+          startupMs: 42,
+          streamAcquisitionMs: 18,
+          reusedWarmStream: false,
+        },
         target: {
           stableId: "target-1",
           windowTitle: "Discord",
@@ -75,6 +80,11 @@ describe("dictation record Tauri API", () => {
       capturedAt: "2026-05-02T08:30:00Z",
       startedAt: null,
       endedAt: null,
+      recording: {
+        startupMs: 42,
+        streamAcquisitionMs: 18,
+        reusedWarmStream: false,
+      },
       target: {
         stableId: "target-1",
         windowTitle: "Discord",
@@ -108,6 +118,11 @@ describe("dictation record Tauri API", () => {
       capturedAt: "2026-05-02T08:30:00Z",
       startedAt: null,
       endedAt: null,
+      recording: {
+        startupMs: 42,
+        streamAcquisitionMs: 18,
+        reusedWarmStream: false,
+      },
       target: {
         stableId: "target-1",
         windowTitle: "Discord",

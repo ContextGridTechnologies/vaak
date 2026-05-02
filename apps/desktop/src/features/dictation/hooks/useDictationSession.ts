@@ -61,6 +61,8 @@ export function useDictationSession() {
     audioUrl,
     elapsedMs,
     activeMicrophone: recordingActiveMicrophone,
+    startupMetrics,
+    prepare,
     start,
     stop,
     reset,
@@ -196,6 +198,14 @@ export function useDictationSession() {
   }, [isWindows, tauriAvailable]);
 
   useEffect(() => {
+    if (!hasPermission || isManualUnavailable) {
+      return;
+    }
+
+    void prepare();
+  }, [hasPermission, isManualUnavailable, prepare]);
+
+  useEffect(() => {
     if (lastDeviceIdRef.current === selectedDeviceId) {
       return;
     }
@@ -224,7 +234,7 @@ export function useDictationSession() {
     let unlisten: (() => void) | undefined;
     const register = async () => {
       const detach = await listenToTauriEvent<SessionHotkeyEvent>(
-        "bluevoice://session-hotkey",
+        "vaak://session-hotkey",
         async (event) => {
           const payload = event.payload;
 
@@ -310,6 +320,7 @@ export function useDictationSession() {
     isWindows,
     dictationTrigger,
     recorderError: error,
+    recordingMetrics: startupMetrics,
     recordingEndedAt,
     recordingStartedAt,
     refresh,

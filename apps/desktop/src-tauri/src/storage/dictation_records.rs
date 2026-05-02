@@ -33,6 +33,8 @@ pub struct DictationRecordV1 {
     pub captured_at: String,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
+    #[serde(default)]
+    pub recording: Option<DictationRecordingDiagnostics>,
     pub target: DictationTargetSnapshot,
     pub provider: Option<DictationProviderContext>,
     pub transcript: DictationTranscript,
@@ -48,10 +50,20 @@ pub struct DictationRecordDraftV1 {
     pub captured_at: String,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
+    #[serde(default)]
+    pub recording: Option<DictationRecordingDiagnostics>,
     pub target: DictationTargetSnapshot,
     pub provider: Option<DictationProviderContext>,
     pub transcript: DictationTranscript,
     pub insertion: DictationInsertionOutcome,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationRecordingDiagnostics {
+    pub startup_ms: usize,
+    pub stream_acquisition_ms: usize,
+    pub reused_warm_stream: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -133,6 +145,7 @@ impl LocalDictationRecordStore {
             captured_at: draft.captured_at,
             started_at: draft.started_at,
             ended_at: draft.ended_at,
+            recording: draft.recording,
             target: draft.target,
             provider: draft.provider,
             transcript: draft.transcript,
@@ -305,6 +318,11 @@ mod tests {
             captured_at: "2026-05-02T08:30:00Z".to_string(),
             started_at: Some("2026-05-02T08:30:01Z".to_string()),
             ended_at: Some("2026-05-02T08:30:04Z".to_string()),
+            recording: Some(DictationRecordingDiagnostics {
+                startup_ms: 42,
+                stream_acquisition_ms: 18,
+                reused_warm_stream: false,
+            }),
             target: DictationTargetSnapshot {
                 stable_id: "window:42/control:message-input".to_string(),
                 window_title: "Discord".to_string(),
@@ -352,6 +370,11 @@ mod tests {
                 "capturedAt": "2026-05-02T08:30:00Z",
                 "startedAt": "2026-05-02T08:30:01Z",
                 "endedAt": "2026-05-02T08:30:04Z",
+                "recording": {
+                    "startupMs": 42,
+                    "streamAcquisitionMs": 18,
+                    "reusedWarmStream": false
+                },
                 "target": {
                     "stableId": "window:42/control:message-input",
                     "windowTitle": "Discord",
@@ -451,6 +474,11 @@ mod tests {
             captured_at: "2026-05-02T08:30:00Z".to_string(),
             started_at: Some("2026-05-02T08:30:01Z".to_string()),
             ended_at: Some("2026-05-02T08:30:04Z".to_string()),
+            recording: Some(DictationRecordingDiagnostics {
+                startup_ms: 42,
+                stream_acquisition_ms: 18,
+                reused_warm_stream: false,
+            }),
             target: DictationTargetSnapshot {
                 stable_id: "window:42/control:message-input".to_string(),
                 window_title: "Discord".to_string(),
@@ -515,6 +543,7 @@ mod tests {
                         captured_at: format!("2026-05-02T08:3{minute}:00Z"),
                         started_at: None,
                         ended_at: None,
+                        recording: None,
                         target: DictationTargetSnapshot {
                             stable_id: format!("target-{minute}"),
                             window_title: "Discord".to_string(),
@@ -563,5 +592,21 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn loads_legacy_records_without_recording_metrics() {
+        let dir = temp_config_dir("dictation-record-legacy");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("dictation-records.jsonl"),
+            r#"{"schemaVersion":1,"recordId":"a86f0b9f-0f5a-48e8-a24f-2851cb4be4df","userId":"3fd61656-c0e8-4b3c-b37f-18d85ed43499","installationId":"9d4f4d32-236d-4f12-b88e-b01eb0fdfca3","deviceId":"560fcc96-03a4-41da-8d2a-95f5db67e6c7","sessionId":"0938f4c2-8f2f-4490-a91e-d408f810090e","mode":"dictation","trigger":"hotkey","platform":"windows","capturedAt":"2026-05-02T08:30:00Z","startedAt":"2026-05-02T08:30:01Z","endedAt":"2026-05-02T08:30:04Z","target":{"stableId":"window:42/control:message-input","windowTitle":"Discord","controlName":"Message","controlType":"Edit","controlTypeId":50004,"automationId":"message-input","frameworkId":"Win32","className":"Chrome_WidgetWin_1","nativeWindowHandle":42,"inputKind":"text","currentValue":null},"provider":null,"transcript":{"rawText":"hello","finalText":"hello","characterCount":5},"insertion":{"status":"inserted","method":"send_input","errorCode":null,"errorMessage":null}}"#,
+        )
+        .unwrap();
+
+        let records = LocalDictationRecordStore::new(&dir).list_recent(1).unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].recording, None);
     }
 }

@@ -12,7 +12,8 @@ use crate::storage::{
     AppShellPreferences, DictationRecordDraftV1, DictationRecordV1,
     LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection, OnboardingState,
 };
-use tauri::{AppHandle, Emitter, State};
+use crate::windowing;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const SPEECH_PROVIDER_CHANGED_EVENT: &str = "vaak://speech-provider-changed";
 
@@ -261,9 +262,15 @@ pub fn save_onboarding_step(
 
 #[tauri::command]
 pub fn complete_onboarding(
+    app: AppHandle,
     settings: State<'_, LocalSettingsStore>,
 ) -> Result<OnboardingState, ProviderError> {
-    settings.complete_onboarding()
+    let saved_state = settings.complete_onboarding()?;
+    if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
+        windowing::show_voice_capsule_window(&voice_capsule)
+            .map_err(ProviderFailure::SettingsStore)?;
+    }
+    Ok(saved_state)
 }
 
 #[tauri::command]

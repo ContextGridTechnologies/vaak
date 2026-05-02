@@ -68,6 +68,28 @@
       "type": ["string", "null"],
       "format": "date-time"
     },
+    "recording": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "startupMs",
+        "streamAcquisitionMs",
+        "reusedWarmStream"
+      ],
+      "properties": {
+        "startupMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "streamAcquisitionMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reusedWarmStream": {
+          "type": "boolean"
+        }
+      }
+    },
     "target": {
       "type": "object",
       "additionalProperties": false,

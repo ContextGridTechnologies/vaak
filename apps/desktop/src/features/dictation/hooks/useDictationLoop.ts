@@ -6,6 +6,7 @@ import {
   insertIntoActiveTarget,
   listenToTauriEvent,
   saveDictationRecord,
+  type DictationRecordingDiagnostics,
   SPEECH_PROVIDER_CHANGED_EVENT,
   targetSnapshotFromFocusedField,
   transcribeRecording,
@@ -43,6 +44,7 @@ export type DictationLoopSession = {
   focusedField: FocusedFieldInfo | null;
   focusedFieldError: string | null;
   isRecording: boolean;
+  recordingMetrics: DictationRecordingDiagnostics | null;
   recordingEndedAt: string | null;
   recordingStartedAt: string | null;
   recorderError: string | null;
@@ -331,6 +333,7 @@ export function useDictationLoop(
     session.focusedField,
     session.focusedFieldError,
     session.isRecording,
+    session.recordingMetrics,
     session.recordingEndedAt,
     session.recordingStartedAt,
     session.recorderError,
@@ -402,6 +405,7 @@ async function persistDraft(input: {
         new Date().toISOString(),
       startedAt: input.session.recordingStartedAt,
       endedAt: input.session.recordingEndedAt,
+      recording: input.session.recordingMetrics,
       target: targetSnapshotFromFocusedField(
         input.session.focusedField,
         classifyInputKind(input.session.focusedField),

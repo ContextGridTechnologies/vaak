@@ -30,7 +30,7 @@ export function DiagnosticsPanel({ tauriAvailable }: DiagnosticsPanelProps) {
   const [focusedField, setFocusedField] = useState<FocusedFieldInfo | null>(
     null,
   );
-  const [insertValue, setInsertValue] = useState("Hello from BlueVoice");
+  const [insertValue, setInsertValue] = useState("Hello from Vaak");
   const [insertResult, setInsertResult] = useState<TextInsertResult | null>(
     null,
   );

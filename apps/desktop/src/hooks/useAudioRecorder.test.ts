@@ -120,7 +120,12 @@ describe("useAudioRecorder", () => {
     expect(result.current.audioBlob?.type).toBe("audio/webm");
     expect(result.current.audioUrl).toBe("blob:recording");
     expect(result.current.elapsedMs).toBe(2000);
-    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(result.current.startupMetrics).toEqual({
+      startupMs: 0,
+      streamAcquisitionMs: 0,
+      reusedWarmStream: false,
+    });
+    expect(track.stop).not.toHaveBeenCalled();
   });
 
   it("uses system microphone constraints in system mode", async () => {
@@ -147,12 +152,14 @@ describe("useAudioRecorder", () => {
     expect(result.current.activeMicrophone?.label).toBe(
       "System selected microphone",
     );
+    expect(result.current.startupMetrics?.reusedWarmStream).toBe(false);
   });
 
   it("revokes generated object URLs when reset", async () => {
+    const trackStop = vi.fn();
     const getUserMedia = vi.fn().mockResolvedValue({
       getAudioTracks: () => [],
-      getTracks: () => [{ stop: vi.fn() }],
+      getTracks: () => [{ stop: trackStop }],
     });
     setMediaDevices({ getUserMedia });
     const { result } = renderHook(() => useAudioRecorder());
@@ -173,5 +180,54 @@ describe("useAudioRecorder", () => {
     expect(result.current.status).toBe("idle");
     expect(result.current.audioBlob).toBeNull();
     expect(result.current.audioUrl).toBeNull();
+    expect(trackStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("warms and reuses the microphone stream across recordings", async () => {
+    const track: MockTrack = {
+      label: "USB microphone",
+      stop: vi.fn(),
+      getSettings: () => ({ deviceId: "usb-mic" }),
+    };
+    const stream = {
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    };
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    setMediaDevices({ getUserMedia });
+    const { result } = renderHook(() =>
+      useAudioRecorder({
+        microphoneSelection: { mode: "manual", deviceId: "usb-mic" },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.prepare();
+    });
+
+    await act(async () => {
+      await result.current.start();
+    });
+    await act(async () => {
+      result.current.stop();
+    });
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(MockMediaRecorder.instances).toHaveLength(2);
+    expect(result.current.startupMetrics).toEqual({
+      startupMs: 0,
+      streamAcquisitionMs: 0,
+      reusedWarmStream: true,
+    });
+    expect(track.stop).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(track.stop).toHaveBeenCalledTimes(1);
   });
 });

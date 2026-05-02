@@ -24,8 +24,11 @@ pub fn prepare_voice_capsule_window(window: &impl VoiceCapsuleWindow) -> Result<
     let physical_height = scaled_dimension(VOICE_CAPSULE_HEIGHT, scale_factor);
     let physical_radius = scaled_dimension(f64::from(VOICE_CAPSULE_CORNER_RADIUS), scale_factor);
     window.apply_capsule_shape(physical_width, physical_height, physical_radius)?;
-    window.show()?;
     Ok(())
+}
+
+pub fn show_voice_capsule_window(window: &impl VoiceCapsuleWindow) -> Result<(), String> {
+    window.show()
 }
 
 fn scaled_dimension(value: f64, scale_factor: f64) -> i32 {
@@ -151,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn primes_voice_capsule_with_transparent_resize_sequence() {
+    fn primes_voice_capsule_with_transparent_resize_sequence_without_showing_it() {
         let window = FakeVoiceCapsuleWindow::default();
 
         prepare_voice_capsule_window(&window).unwrap();
@@ -168,7 +171,6 @@ mod tests {
                     scaled_dimension(VOICE_CAPSULE_HEIGHT, 1.0),
                     VOICE_CAPSULE_CORNER_RADIUS,
                 ),
-                Operation::Show,
             ]
         );
     }
@@ -186,5 +188,14 @@ mod tests {
             .operations
             .borrow()
             .contains(&Operation::ApplyCapsuleShape(72, 42, 42)));
+    }
+
+    #[test]
+    fn shows_voice_capsule_only_when_explicitly_requested() {
+        let window = FakeVoiceCapsuleWindow::default();
+
+        show_voice_capsule_window(&window).unwrap();
+
+        assert_eq!(*window.operations.borrow(), vec![Operation::Show]);
     }
 }
