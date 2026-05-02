@@ -128,6 +128,7 @@ describe("useDictationLoop", () => {
     expect(transcribeRecording).toHaveBeenCalledWith({
       providerId: "openai",
       audioBlob,
+      language: "en",
     });
   });
 

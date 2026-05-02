@@ -181,6 +181,7 @@ export function useDictationLoop(
         transcriptionResult = await transcribeRecording({
           providerId,
           audioBlob,
+          language: "en",
         });
         text = transcriptionResult.text;
       } catch (err) {
