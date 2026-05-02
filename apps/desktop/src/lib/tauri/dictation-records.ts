@@ -39,6 +39,12 @@ export type DictationRecordingDiagnostics = {
   reusedWarmStream: boolean;
 };
 
+export type DictationAudioArtifact = {
+  relativePath: string;
+  mimeType: string;
+  byteLength: number;
+};
+
 export type DictationRecordDraft = {
   sessionId?: string | null;
   mode: "dictation" | "command";
@@ -47,6 +53,7 @@ export type DictationRecordDraft = {
   startedAt: string | null;
   endedAt: string | null;
   recording?: DictationRecordingDiagnostics | null;
+  audio?: DictationAudioArtifact | null;
   target: DictationTargetSnapshot;
   provider: DictationProviderContext | null;
   transcript: DictationTranscript;
@@ -73,6 +80,36 @@ export async function getRecentDictationRecords(
   limit = 12,
 ): Promise<DictationRecord[]> {
   return invokeTauri("get_recent_dictation_records", { limit });
+}
+
+export async function persistDictationAudio(input: {
+  audioBlob: Blob;
+  capturedAt: string;
+}): Promise<DictationAudioArtifact> {
+  const buffer = await input.audioBlob.arrayBuffer();
+  const audioBytes = Array.from(new Uint8Array(buffer));
+
+  return invokeTauri("persist_dictation_audio", {
+    audioBytes,
+    capturedAt: input.capturedAt,
+    mimeType: input.audioBlob.type || "audio/webm",
+  });
+}
+
+export async function loadSavedDictationAudio(
+  relativePath: string,
+): Promise<{ audioBytes: Uint8Array; mimeType: string }> {
+  const result = await invokeTauri<{
+    audioBytes: number[];
+    mimeType: string;
+  }>("load_saved_dictation_audio", {
+    relativePath,
+  });
+
+  return {
+    audioBytes: new Uint8Array(result.audioBytes),
+    mimeType: result.mimeType,
+  };
 }
 
 type TargetLabelInput = {

@@ -8,16 +8,19 @@ import { HomePanel } from "./HomePanel";
 const {
   getRecentDictationRecords,
   isTauriRuntime,
+  loadSavedDictationAudio,
   sanitizeTargetControlName,
 } = vi.hoisted(() => ({
   getRecentDictationRecords: vi.fn(),
   isTauriRuntime: vi.fn(),
+  loadSavedDictationAudio: vi.fn(),
   sanitizeTargetControlName: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
   getRecentDictationRecords,
   isTauriRuntime,
+  loadSavedDictationAudio,
   sanitizeTargetControlName,
 }));
 
@@ -25,6 +28,10 @@ describe("HomePanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isTauriRuntime.mockReturnValue(true);
+    loadSavedDictationAudio.mockResolvedValue({
+      audioBytes: new Uint8Array([1, 2, 3]),
+      mimeType: "audio/webm",
+    });
     sanitizeTargetControlName.mockImplementation(({ controlName, controlType }) =>
       controlName || controlType,
     );
@@ -45,6 +52,11 @@ describe("HomePanel", () => {
         capturedAt: "2025-05-19T10:24:31Z",
         startedAt: null,
         endedAt: null,
+        audio: {
+          relativePath: "recordings/2025/05/19/discord-1.webm",
+          mimeType: "audio/webm",
+          byteLength: 2048,
+        },
         target: {
           stableId: "discord:messagebox:chat-input",
           windowTitle: "#product-launch - Discord",
@@ -95,6 +107,9 @@ describe("HomePanel", () => {
     expect(screen.getAllByText("Discord").length).toBeGreaterThan(0);
     expect(screen.getByText("Message Box")).toBeInTheDocument();
     expect(screen.getAllByText("Inserted").length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: "Play audio for Discord" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Capture record")).not.toBeInTheDocument();
     expect(screen.queryByText("Versioned record")).not.toBeInTheDocument();
   });

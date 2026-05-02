@@ -55,6 +55,8 @@ pub fn run() {
             commands::save_dictation_hotkey,
             commands::save_dictation_record,
             commands::get_recent_dictation_records,
+            commands::persist_dictation_audio,
+            commands::load_saved_dictation_audio,
             commands::save_provider_key,
             commands::save_provider_config,
             commands::save_speech_provider_setup,

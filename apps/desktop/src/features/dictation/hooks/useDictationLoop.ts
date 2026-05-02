@@ -5,6 +5,7 @@ import {
   getSelectedSpeechProvider,
   insertIntoActiveTarget,
   listenToTauriEvent,
+  persistDictationAudio,
   saveDictationRecord,
   type DictationRecordingDiagnostics,
   SPEECH_PROVIDER_CHANGED_EVENT,
@@ -184,6 +185,7 @@ export function useDictationLoop(
         text = transcriptionResult.text;
       } catch (err) {
         await persistDraft({
+          audioBlob,
           provider: {
             modelId: null,
             providerId,
@@ -222,6 +224,7 @@ export function useDictationLoop(
 
       if (!text.trim()) {
         await persistDraft({
+          audioBlob,
           provider: {
             modelId: transcriptionResult.model,
             providerId: transcriptionResult.providerId,
@@ -260,6 +263,7 @@ export function useDictationLoop(
       try {
         const insertResult = await insertIntoActiveTarget(text);
         await persistDraft({
+          audioBlob,
           provider: {
             modelId: transcriptionResult.model,
             providerId: transcriptionResult.providerId,
@@ -289,6 +293,7 @@ export function useDictationLoop(
       } catch (err) {
         const message = `Insertion failed: ${normalizeError(err)}`;
         await persistDraft({
+          audioBlob,
           provider: {
             modelId: transcriptionResult.model,
             providerId: transcriptionResult.providerId,
@@ -387,6 +392,7 @@ export function useDictationLoop(
 }
 
 async function persistDraft(input: {
+  audioBlob: Blob | null;
   provider: DictationRecordDraft["provider"];
   session: DictationLoopSession;
   transcript: DictationRecordDraft["transcript"];
@@ -397,6 +403,21 @@ async function persistDraft(input: {
   }
 
   try {
+    let audio: DictationRecordDraft["audio"] = null;
+    if (input.audioBlob) {
+      try {
+        audio = await persistDictationAudio({
+          audioBlob: input.audioBlob,
+          capturedAt:
+            input.session.recordingStartedAt ??
+            input.session.recordingEndedAt ??
+            new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error("Failed to persist dictation audio", err);
+      }
+    }
+
     await saveDictationRecord({
       mode: "dictation",
       trigger: input.session.dictationTrigger,
@@ -407,6 +428,7 @@ async function persistDraft(input: {
       startedAt: input.session.recordingStartedAt,
       endedAt: input.session.recordingEndedAt,
       recording: input.session.recordingMetrics,
+      audio,
       target: targetSnapshotFromFocusedField(
         input.session.focusedField,
         classifyInputKind(input.session.focusedField),

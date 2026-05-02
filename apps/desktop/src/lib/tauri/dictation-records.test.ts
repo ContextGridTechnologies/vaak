@@ -7,6 +7,8 @@ import {
 
 import {
   getRecentDictationRecords,
+  loadSavedDictationAudio,
+  persistDictationAudio,
   saveDictationRecord,
   targetSnapshotFromFocusedField,
 } from "./dictation-records";
@@ -32,6 +34,11 @@ describe("dictation record Tauri API", () => {
           startupMs: 42,
           streamAcquisitionMs: 18,
           reusedWarmStream: false,
+        },
+        audio: {
+          relativePath: "recordings/2026/05/02/record-1.webm",
+          mimeType: "audio/webm",
+          byteLength: 2048,
         },
         target: {
           stableId: "target-1",
@@ -85,6 +92,11 @@ describe("dictation record Tauri API", () => {
         streamAcquisitionMs: 18,
         reusedWarmStream: false,
       },
+      audio: {
+        relativePath: "recordings/2026/05/02/record-1.webm",
+        mimeType: "audio/webm",
+        byteLength: 2048,
+      },
       target: {
         stableId: "target-1",
         windowTitle: "Discord",
@@ -123,6 +135,11 @@ describe("dictation record Tauri API", () => {
         streamAcquisitionMs: 18,
         reusedWarmStream: false,
       },
+      audio: {
+        relativePath: "recordings/2026/05/02/record-1.webm",
+        mimeType: "audio/webm",
+        byteLength: 2048,
+      },
       target: {
         stableId: "target-1",
         windowTitle: "Discord",
@@ -155,6 +172,55 @@ describe("dictation record Tauri API", () => {
         mode: "dictation",
         trigger: "hotkey",
       }),
+    });
+  });
+
+  it("persists recorded audio through the backend storage command", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("persist_dictation_audio", {
+      relativePath: "recordings/2026/05/02/record-1.webm",
+      mimeType: "audio/webm",
+      byteLength: 3,
+    });
+
+    const audioBlob = new Blob([new Uint8Array([1, 2, 3])], {
+      type: "audio/webm",
+    });
+
+    await expect(
+      persistDictationAudio({
+        audioBlob,
+        capturedAt: "2026-05-02T08:30:00Z",
+      }),
+    ).resolves.toEqual({
+      relativePath: "recordings/2026/05/02/record-1.webm",
+      mimeType: "audio/webm",
+      byteLength: 3,
+    });
+
+    expectTauriCommand(tauri, "persist_dictation_audio", {
+      audioBytes: [1, 2, 3],
+      capturedAt: "2026-05-02T08:30:00Z",
+      mimeType: "audio/webm",
+    });
+  });
+
+  it("loads persisted recorded audio through the backend storage command", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("load_saved_dictation_audio", {
+      audioBytes: [1, 2, 3],
+      mimeType: "audio/webm",
+    });
+
+    await expect(
+      loadSavedDictationAudio("recordings/2026/05/02/record-1.webm"),
+    ).resolves.toEqual({
+      audioBytes: new Uint8Array([1, 2, 3]),
+      mimeType: "audio/webm",
+    });
+
+    expectTauriCommand(tauri, "load_saved_dictation_audio", {
+      relativePath: "recordings/2026/05/02/record-1.webm",
     });
   });
 

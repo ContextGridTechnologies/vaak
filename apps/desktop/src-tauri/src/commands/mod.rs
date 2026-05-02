@@ -9,8 +9,9 @@ use crate::providers::{
 };
 use crate::session::{HotkeyBindings, SessionStore};
 use crate::storage::{
-    AppShellPreferences, DictationRecordDraftV1, DictationRecordV1, LocalDictationRecordStore,
-    LocalSettingsStore, MicrophoneSelection, OnboardingState,
+    AppShellPreferences, DictationAudioArtifact, DictationRecordDraftV1, DictationRecordV1,
+    LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection, OnboardingState,
+    SavedDictationAudio,
 };
 use crate::windowing;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -85,6 +86,24 @@ pub fn get_recent_dictation_records(
     records: State<'_, LocalDictationRecordStore>,
 ) -> Result<Vec<DictationRecordV1>, ProviderError> {
     records.list_recent(limit.unwrap_or(12))
+}
+
+#[tauri::command]
+pub fn persist_dictation_audio(
+    audio_bytes: Vec<u8>,
+    mime_type: String,
+    captured_at: String,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<DictationAudioArtifact, ProviderError> {
+    records.persist_audio(audio_bytes, mime_type, &captured_at)
+}
+
+#[tauri::command]
+pub fn load_saved_dictation_audio(
+    relative_path: String,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<SavedDictationAudio, ProviderError> {
+    records.load_audio(&relative_path)
 }
 
 #[tauri::command]

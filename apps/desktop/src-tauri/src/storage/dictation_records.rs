@@ -6,7 +6,7 @@ use crate::storage::LocalSettingsStore;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -35,6 +35,8 @@ pub struct DictationRecordV1 {
     pub ended_at: Option<String>,
     #[serde(default)]
     pub recording: Option<DictationRecordingDiagnostics>,
+    #[serde(default)]
+    pub audio: Option<DictationAudioArtifact>,
     pub target: DictationTargetSnapshot,
     pub provider: Option<DictationProviderContext>,
     pub transcript: DictationTranscript,
@@ -52,6 +54,8 @@ pub struct DictationRecordDraftV1 {
     pub ended_at: Option<String>,
     #[serde(default)]
     pub recording: Option<DictationRecordingDiagnostics>,
+    #[serde(default)]
+    pub audio: Option<DictationAudioArtifact>,
     pub target: DictationTargetSnapshot,
     pub provider: Option<DictationProviderContext>,
     pub transcript: DictationTranscript,
@@ -64,6 +68,21 @@ pub struct DictationRecordingDiagnostics {
     pub startup_ms: usize,
     pub stream_acquisition_ms: usize,
     pub reused_warm_stream: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationAudioArtifact {
+    pub relative_path: String,
+    pub mime_type: String,
+    pub byte_length: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedDictationAudio {
+    pub audio_bytes: Vec<u8>,
+    pub mime_type: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -146,6 +165,7 @@ impl LocalDictationRecordStore {
             started_at: draft.started_at,
             ended_at: draft.ended_at,
             recording: draft.recording,
+            audio: draft.audio,
             target: draft.target,
             provider: draft.provider,
             transcript: draft.transcript,
@@ -162,6 +182,54 @@ impl LocalDictationRecordStore {
             .lock()
             .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
         self.load_recent_records(limit)
+    }
+
+    pub fn persist_audio(
+        &self,
+        audio_bytes: Vec<u8>,
+        mime_type: String,
+        captured_at: &str,
+    ) -> Result<DictationAudioArtifact, ProviderError> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        let relative_path = build_audio_relative_path(captured_at, &mime_type);
+        let full_path = self.resolve_audio_path(&relative_path)?;
+
+        if let Some(parent) = full_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        }
+
+        fs::write(&full_path, &audio_bytes)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+
+        Ok(DictationAudioArtifact {
+            relative_path,
+            mime_type,
+            byte_length: audio_bytes.len(),
+        })
+    }
+
+    pub fn load_audio(&self, relative_path: &str) -> Result<SavedDictationAudio, ProviderError> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        let full_path = self.resolve_audio_path(relative_path)?;
+        let audio_bytes = fs::read(&full_path)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+
+        Ok(SavedDictationAudio {
+            audio_bytes,
+            mime_type: mime_type_for_extension(
+                full_path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .unwrap_or_default(),
+            ),
+        })
     }
 
     fn append_record(&self, record: &DictationRecordV1) -> Result<(), ProviderError> {
@@ -197,6 +265,19 @@ impl LocalDictationRecordStore {
                     .map_err(|err| ProviderFailure::SettingsStore(err.to_string()).into())
             })
             .collect()
+    }
+
+    fn resolve_audio_path(&self, relative_path: &str) -> Result<PathBuf, ProviderError> {
+        let path = Path::new(relative_path);
+        if !is_safe_relative_audio_path(path) {
+            return Err(ProviderFailure::InvalidRequest("invalid audio path".to_string()).into());
+        }
+
+        let config_dir = self
+            .records_path
+            .parent()
+            .ok_or_else(|| ProviderFailure::SettingsStore("missing config directory".to_string()))?;
+        Ok(config_dir.join(path))
     }
 }
 
@@ -297,6 +378,55 @@ fn fallback_target_label(
     }
 }
 
+fn build_audio_relative_path(captured_at: &str, mime_type: &str) -> String {
+    let date_path = captured_at
+        .split('T')
+        .next()
+        .map(|date| date.replace('-', "/"))
+        .filter(|date| date.len() == 10)
+        .unwrap_or_else(|| "unknown/date".to_string());
+    let extension = extension_for_mime_type(mime_type);
+    format!("recordings/{date_path}/{}.{}", Uuid::new_v4(), extension)
+}
+
+fn extension_for_mime_type(mime_type: &str) -> &'static str {
+    match mime_type {
+        "audio/wav" | "audio/x-wav" => "wav",
+        "audio/mpeg" | "audio/mp3" => "mp3",
+        "audio/ogg" => "ogg",
+        "audio/flac" => "flac",
+        "audio/mp4" | "audio/aac" => "m4a",
+        "audio/webm" => "webm",
+        _ => "webm",
+    }
+}
+
+fn mime_type_for_extension(extension: &str) -> String {
+    match extension {
+        "wav" => "audio/wav",
+        "mp3" => "audio/mpeg",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "m4a" => "audio/mp4",
+        "webm" => "audio/webm",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+fn is_safe_relative_audio_path(path: &Path) -> bool {
+    let mut components = path.components();
+    let Some(Component::Normal(root)) = components.next() else {
+        return false;
+    };
+
+    if root != "recordings" {
+        return false;
+    }
+
+    components.all(|component| matches!(component, Component::Normal(_)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,6 +452,11 @@ mod tests {
                 startup_ms: 42,
                 stream_acquisition_ms: 18,
                 reused_warm_stream: false,
+            }),
+            audio: Some(DictationAudioArtifact {
+                relative_path: "recordings/2026/05/02/a86f0b9f.webm".to_string(),
+                mime_type: "audio/webm".to_string(),
+                byte_length: 2048,
             }),
             target: DictationTargetSnapshot {
                 stable_id: "window:42/control:message-input".to_string(),
@@ -374,6 +509,11 @@ mod tests {
                     "startupMs": 42,
                     "streamAcquisitionMs": 18,
                     "reusedWarmStream": false
+                },
+                "audio": {
+                    "relativePath": "recordings/2026/05/02/a86f0b9f.webm",
+                    "mimeType": "audio/webm",
+                    "byteLength": 2048
                 },
                 "target": {
                     "stableId": "window:42/control:message-input",
@@ -479,6 +619,11 @@ mod tests {
                 stream_acquisition_ms: 18,
                 reused_warm_stream: false,
             }),
+            audio: Some(DictationAudioArtifact {
+                relative_path: "recordings/2026/05/02/a86f0b9f.webm".to_string(),
+                mime_type: "audio/webm".to_string(),
+                byte_length: 2048,
+            }),
             target: DictationTargetSnapshot {
                 stable_id: "window:42/control:message-input".to_string(),
                 window_title: "Discord".to_string(),
@@ -544,6 +689,7 @@ mod tests {
                         started_at: None,
                         ended_at: None,
                         recording: None,
+                        audio: None,
                         target: DictationTargetSnapshot {
                             stable_id: format!("target-{minute}"),
                             window_title: "Discord".to_string(),
@@ -579,6 +725,38 @@ mod tests {
         assert_eq!(recent.len(), 2);
         assert_eq!(recent[0].session_id, "session-2");
         assert_eq!(recent[1].session_id, "session-1");
+    }
+
+    #[test]
+    fn persists_and_loads_recording_audio_with_scoped_relative_paths() {
+        let dir = temp_config_dir("dictation-record-audio");
+        let store = LocalDictationRecordStore::new(&dir);
+
+        let saved = store
+            .persist_audio(
+                vec![1, 2, 3],
+                "audio/webm".to_string(),
+                "2026-05-02T08:30:00Z",
+            )
+            .unwrap();
+
+        assert!(saved.relative_path.starts_with("recordings/2026/05/02/"));
+        assert_eq!(saved.mime_type, "audio/webm");
+        assert_eq!(saved.byte_length, 3);
+
+        let loaded = store.load_audio(&saved.relative_path).unwrap();
+        assert_eq!(loaded.audio_bytes, vec![1, 2, 3]);
+        assert_eq!(loaded.mime_type, "audio/webm");
+    }
+
+    #[test]
+    fn rejects_audio_paths_outside_recordings_scope() {
+        let dir = temp_config_dir("dictation-record-audio-path");
+        let store = LocalDictationRecordStore::new(&dir);
+
+        let err = store.load_audio("../outside.webm").unwrap_err();
+
+        assert_eq!(err.code, "invalid_request");
     }
 
     fn temp_config_dir(name: &str) -> PathBuf {

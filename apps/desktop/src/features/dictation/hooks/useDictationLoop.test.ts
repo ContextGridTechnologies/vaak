@@ -7,6 +7,7 @@ const {
   getSelectedSpeechProvider,
   insertIntoActiveTarget,
   listenToTauriEvent,
+  persistDictationAudio,
   saveDictationRecord,
   targetSnapshotFromFocusedField,
   transcribeRecording,
@@ -14,6 +15,7 @@ const {
   getSelectedSpeechProvider: vi.fn(),
   insertIntoActiveTarget: vi.fn(),
   listenToTauriEvent: vi.fn(),
+  persistDictationAudio: vi.fn(),
   saveDictationRecord: vi.fn(),
   targetSnapshotFromFocusedField: vi.fn(),
   transcribeRecording: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock("@/lib/tauri", () => ({
   getSelectedSpeechProvider,
   insertIntoActiveTarget,
   listenToTauriEvent,
+  persistDictationAudio,
   saveDictationRecord,
   targetSnapshotFromFocusedField,
   transcribeRecording,
@@ -73,6 +76,11 @@ describe("useDictationLoop", () => {
       method: "send_input",
     });
     listenToTauriEvent.mockResolvedValue(() => {});
+    persistDictationAudio.mockResolvedValue({
+      relativePath: "recordings/2026/05/02/recording.webm",
+      mimeType: "audio/webm",
+      byteLength: 3,
+    });
     saveDictationRecord.mockResolvedValue(undefined);
     targetSnapshotFromFocusedField.mockImplementation((field) => ({
       stableId: field.stableId,
@@ -180,6 +188,11 @@ describe("useDictationLoop", () => {
           startupMs: 24,
           streamAcquisitionMs: 0,
         },
+        audio: {
+          relativePath: "recordings/2026/05/02/recording.webm",
+          mimeType: "audio/webm",
+          byteLength: 3,
+        },
         insertion: {
           errorCode: null,
           errorMessage: null,
@@ -191,6 +204,26 @@ describe("useDictationLoop", () => {
 
     expect(result.current.state).toBe("inserted");
     expect(result.current.transcript).toBe("hello");
+  });
+
+  it("continues saving the dictation record when audio persistence fails", async () => {
+    const audioBlob = recordingBlob();
+    persistDictationAudio.mockRejectedValue(new Error("disk unavailable"));
+
+    renderHook(() => useDictationLoop(session({ audioBlob })));
+
+    await waitFor(() => {
+      expect(saveDictationRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audio: null,
+          transcript: {
+            characterCount: 5,
+            finalText: "hello",
+            rawText: "hello",
+          },
+        }),
+      );
+    });
   });
 
   it("skips insertion for empty transcripts", async () => {

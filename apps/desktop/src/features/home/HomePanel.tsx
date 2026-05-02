@@ -5,9 +5,11 @@ import {
   CircleCheckBigIcon,
   CircleSlash2Icon,
   Clock3Icon,
+  LoaderCircleIcon,
   type LucideIcon,
   MessageSquareTextIcon,
   NotebookPenIcon,
+  PlayIcon,
   SquareTerminalIcon,
   StickyNoteIcon,
   TargetIcon,
@@ -33,9 +35,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
+import { AudioPlayback } from "@/features/dictation/components/AudioPlayback";
 import {
   getRecentDictationRecords,
   isTauriRuntime,
+  loadSavedDictationAudio,
   sanitizeTargetControlName,
   type DictationRecord,
 } from "@/lib/tauri";
@@ -55,6 +59,7 @@ type HomeActivity = {
   providerLabel: string;
   capturedAt: string;
   isLatest: boolean;
+  audio: DictationRecord["audio"] | null | undefined;
 };
 
 const POLL_INTERVAL_MS = 3_000;
@@ -269,6 +274,53 @@ type ActivityFeedItemProps = {
 function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
   const RowIcon = activity.icon;
   const ActivityStatusIcon = statusMeta[activity.status].icon;
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isAudioOpen, setIsAudioOpen] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, [audioUrl]);
+
+  const handlePlayAudio = async () => {
+    if (!activity.audio) {
+      return;
+    }
+
+    if (audioUrl) {
+      setIsAudioOpen((current) => !current);
+      return;
+    }
+
+    setIsLoadingAudio(true);
+    setAudioError(null);
+
+    try {
+      const savedAudio = await loadSavedDictationAudio(activity.audio.relativePath);
+      const nextAudioUrl = URL.createObjectURL(
+        new Blob([savedAudio.audioBytes], {
+          type: savedAudio.mimeType,
+        }),
+      );
+      setAudioUrl((current) => {
+        if (current) {
+          URL.revokeObjectURL(current);
+        }
+        return nextAudioUrl;
+      });
+      setIsAudioOpen(true);
+    } catch (error) {
+      console.error("Failed to load saved dictation audio", error);
+      setAudioError("Audio unavailable");
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  };
 
   return (
     <article
@@ -318,6 +370,37 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
               {activity.transcriptPreview}
             </p>
           </div>
+
+          {activity.audio ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void handlePlayAudio();
+                  }}
+                  disabled={isLoadingAudio}
+                  aria-label={`Play audio for ${activity.appName}`}
+                >
+                  {isLoadingAudio ? (
+                    <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
+                  ) : (
+                    <PlayIcon data-icon="inline-start" />
+                  )}
+                  {audioUrl && isAudioOpen ? "Hide audio" : "Play audio"}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {Math.max(1, Math.round(activity.audio.byteLength / 1024))} KB
+                </span>
+              </div>
+              {audioError ? (
+                <div className="text-xs text-destructive">{audioError}</div>
+              ) : null}
+              {isAudioOpen ? <AudioPlayback audioUrl={audioUrl} /> : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </article>
@@ -416,6 +499,7 @@ function mapRecordToActivity(
     providerLabel: formatProviderLabel(record),
     capturedAt: record.capturedAt,
     isLatest: index === 0,
+    audio: record.audio,
   };
 }
 
