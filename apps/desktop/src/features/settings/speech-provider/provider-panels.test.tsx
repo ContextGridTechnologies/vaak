@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderApp } from "@/test/render";
 
 import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
+import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
 import { SAVED_KEY_PLACEHOLDER } from "./types";
 
@@ -15,12 +16,14 @@ describe("speech provider panels", () => {
         isLoading={false}
         isSaving={false}
         isTesting={false}
+        model="gpt-4o-mini-transcribe"
         status={{
           providerId: "openai",
           configured: true,
           configComplete: true,
         }}
         onApiKeyChange={vi.fn()}
+        onModelChange={vi.fn()}
         onSubmit={vi.fn()}
         onTest={vi.fn()}
       />,
@@ -47,6 +50,32 @@ describe("speech provider panels", () => {
         onApiVersionChange={vi.fn()}
         onDeploymentIdChange={vi.fn()}
         onEndpointChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onTest={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByLabelText("API key");
+
+    expect(input).toHaveAttribute("placeholder", SAVED_KEY_PLACEHOLDER);
+    expect(input).toHaveValue("");
+  });
+
+  it("shows a saved ElevenLabs key as a non-copyable star placeholder", () => {
+    renderApp(
+      <ElevenLabsProviderPanel
+        apiKey=""
+        isLoading={false}
+        isSaving={false}
+        isTesting={false}
+        model="scribe_v2"
+        status={{
+          providerId: "elevenlabs",
+          configured: true,
+          configComplete: true,
+        }}
+        onApiKeyChange={vi.fn()}
+        onModelChange={vi.fn()}
         onSubmit={vi.fn()}
         onTest={vi.fn()}
       />,

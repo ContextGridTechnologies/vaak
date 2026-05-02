@@ -159,6 +159,7 @@ mod tests {
             endpoint: Some("https://example.openai.azure.com/".to_string()),
             deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
+            model: None,
         })
         .expect("valid config");
 
@@ -175,6 +176,7 @@ mod tests {
                 endpoint: Some("https://example.openai.azure.com".to_string()),
                 deployment_id: None,
                 api_version: None,
+                model: None,
             }
         ));
     }

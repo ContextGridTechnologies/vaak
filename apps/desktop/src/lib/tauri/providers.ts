@@ -10,6 +10,7 @@ export type ProviderConfig = {
   endpoint?: string;
   deploymentId?: string;
   apiVersion?: string;
+  model?: string;
 };
 
 export type TranscriptResult = {
@@ -19,7 +20,7 @@ export type TranscriptResult = {
   durationMs: number | null;
 };
 
-export type SpeechProviderId = "openai" | "azure-openai";
+export type SpeechProviderId = "openai" | "azure-openai" | "elevenlabs";
 
 export const SPEECH_PROVIDER_CHANGED_EVENT =
   "vaak://speech-provider-changed";

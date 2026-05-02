@@ -13,6 +13,7 @@ import {
 } from "@/lib/tauri";
 
 import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
+import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
 import { ProviderSelector } from "./ProviderSelector";
 import { verifyOnboardingProviderTranscription } from "./onboardingProviderVerification";
@@ -23,6 +24,8 @@ import {
 } from "./status";
 import {
   AZURE_OPENAI_API_VERSION,
+  DEFAULT_ELEVENLABS_MODEL,
+  DEFAULT_OPENAI_MODEL,
   providerLabels,
   type ProviderErrors,
   type ProviderStatuses,
@@ -43,6 +46,11 @@ export function SpeechProviderSettings({
 }: SpeechProviderSettingsProps) {
   const [apiKey, setApiKey] = useState("");
   const [azureApiKey, setAzureApiKey] = useState("");
+  const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
+  const [openAiModel, setOpenAiModel] = useState<string>(DEFAULT_OPENAI_MODEL);
+  const [elevenLabsModel, setElevenLabsModel] = useState<string>(
+    DEFAULT_ELEVENLABS_MODEL,
+  );
   const [azureEndpoint, setAzureEndpoint] = useState("");
   const [azureDeploymentId, setAzureDeploymentId] = useState("");
   const [azureApiVersion, setAzureApiVersion] = useState(
@@ -73,22 +81,38 @@ export function SpeechProviderSettings({
       setIsLoading(true);
       setGlobalError(null);
       try {
-        const [openAiStatus, azureStatus, azureConfig, selectedProvider] =
+        const [
+          openAiStatus,
+          azureStatus,
+          elevenLabsStatus,
+          openAiConfig,
+          azureConfig,
+          elevenLabsConfig,
+          selectedProvider,
+        ] =
           await Promise.all([
             getProviderStatus("openai"),
             getProviderStatus("azure-openai"),
+            getProviderStatus("elevenlabs"),
+            getProviderConfig("openai"),
             getProviderConfig("azure-openai"),
+            getProviderConfig("elevenlabs"),
             getSelectedSpeechProvider(),
           ]);
         if (!disposed) {
           setProviderStatuses({
             openai: openAiStatus,
             "azure-openai": azureStatus,
+            elevenlabs: elevenLabsStatus,
           });
+          setOpenAiModel(openAiConfig?.model ?? DEFAULT_OPENAI_MODEL);
           setAzureEndpoint(azureConfig?.endpoint ?? "");
           setAzureDeploymentId(azureConfig?.deploymentId ?? "");
           setAzureApiVersion(
             azureConfig?.apiVersion ?? AZURE_OPENAI_API_VERSION,
+          );
+          setElevenLabsModel(
+            elevenLabsConfig?.model ?? DEFAULT_ELEVENLABS_MODEL,
           );
           setSelectedProviderId(selectedProvider);
         }
@@ -135,6 +159,11 @@ export function SpeechProviderSettings({
     setApiKey(value);
   };
 
+  const handleOpenAiModelChange = (value: string) => {
+    clearOnboardingVerification("openai");
+    setOpenAiModel(value);
+  };
+
   const handleAzureApiKeyChange = (value: string) => {
     clearOnboardingVerification("azure-openai");
     setAzureApiKey(value);
@@ -153,6 +182,16 @@ export function SpeechProviderSettings({
   const handleAzureApiVersionChange = (value: string) => {
     clearOnboardingVerification("azure-openai");
     setAzureApiVersion(value);
+  };
+
+  const handleElevenLabsApiKeyChange = (value: string) => {
+    clearOnboardingVerification("elevenlabs");
+    setElevenLabsApiKey(value);
+  };
+
+  const handleElevenLabsModelChange = (value: string) => {
+    clearOnboardingVerification("elevenlabs");
+    setElevenLabsModel(value);
   };
 
   const verifySavedProvider = async (providerId: SpeechProviderId) => {
@@ -189,6 +228,9 @@ export function SpeechProviderSettings({
       const status = await saveSpeechProviderSetup({
         providerId: "openai",
         apiKey,
+        config: {
+          model: openAiModel,
+        },
         activate: true,
       });
       setProviderStatuses((current) => ({ ...current, openai: status }));
@@ -260,6 +302,43 @@ export function SpeechProviderSettings({
     }
   };
 
+  const saveElevenLabsKey = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    clearOnboardingVerification("elevenlabs");
+    setProviderErrors((current) => ({ ...current, elevenlabs: undefined }));
+    setProviderTestResults((current) => ({
+      ...current,
+      elevenlabs: undefined,
+    }));
+    setSavingProviderId("elevenlabs");
+
+    try {
+      const status = await saveSpeechProviderSetup({
+        providerId: "elevenlabs",
+        apiKey: elevenLabsApiKey,
+        config: {
+          model: elevenLabsModel,
+        },
+        activate: true,
+      });
+      setProviderStatuses((current) => ({ ...current, elevenlabs: status }));
+      setElevenLabsApiKey("");
+      setSelectedProviderId("elevenlabs");
+      if (isOnboarding) {
+        await verifySavedProvider("elevenlabs");
+      } else {
+        toast.success("ElevenLabs key saved");
+      }
+    } catch (err) {
+      setProviderErrors((current) => ({
+        ...current,
+        elevenlabs: normalizeProviderError("elevenlabs", err),
+      }));
+    } finally {
+      setSavingProviderId(null);
+    }
+  };
+
   const testSelectedProvider = async () => {
     const providerId = selectedProviderId;
     setProviderErrors((current) => ({ ...current, [providerId]: undefined }));
@@ -306,14 +385,16 @@ export function SpeechProviderSettings({
           isLoading={isLoading}
           isSaving={savingProviderId === "openai"}
           isTesting={testingProviderId === "openai"}
+          model={openAiModel}
           showTestButton={!isOnboarding}
           testResult={providerTestResults.openai}
           status={providerStatuses.openai}
           onApiKeyChange={handleOpenAiApiKeyChange}
+          onModelChange={handleOpenAiModelChange}
           onSubmit={saveOpenAiKey}
           onTest={testSelectedProvider}
         />
-      ) : (
+      ) : selectedProviderId === "azure-openai" ? (
         <AzureOpenAiProviderPanel
           apiKey={azureApiKey}
           apiVersion={azureApiVersion}
@@ -331,6 +412,22 @@ export function SpeechProviderSettings({
           onDeploymentIdChange={handleAzureDeploymentIdChange}
           onEndpointChange={handleAzureEndpointChange}
           onSubmit={saveAzureOpenAiSettings}
+          onTest={testSelectedProvider}
+        />
+      ) : (
+        <ElevenLabsProviderPanel
+          apiKey={elevenLabsApiKey}
+          error={providerErrors.elevenlabs}
+          isLoading={isLoading}
+          isSaving={savingProviderId === "elevenlabs"}
+          isTesting={testingProviderId === "elevenlabs"}
+          model={elevenLabsModel}
+          showTestButton={!isOnboarding}
+          testResult={providerTestResults.elevenlabs}
+          status={providerStatuses.elevenlabs}
+          onApiKeyChange={handleElevenLabsApiKeyChange}
+          onModelChange={handleElevenLabsModelChange}
+          onSubmit={saveElevenLabsKey}
           onTest={testSelectedProvider}
         />
       )}

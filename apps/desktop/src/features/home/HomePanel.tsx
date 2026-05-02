@@ -478,6 +478,7 @@ const providerDisplayName: Record<string, string> = {
   openai: "OpenAI",
   deepgram: "Deepgram",
   groq: "Groq",
+  elevenlabs: "ElevenLabs",
   azure_openai: "Azure OpenAI",
   "azure-openai": "Azure OpenAI",
 };

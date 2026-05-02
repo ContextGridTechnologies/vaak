@@ -148,6 +148,8 @@ function getProviderIcon(providerId: ProviderCatalogItem["id"]) {
       return AudioLinesIcon;
     case "groq":
       return ZapIcon;
+    case "elevenlabs":
+      return AudioLinesIcon;
   }
 }
 

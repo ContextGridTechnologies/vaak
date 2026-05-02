@@ -46,5 +46,9 @@ export function ProviderSelector({
 function isSpeechProvider(
   provider: ProviderCatalogItem,
 ): provider is ProviderCatalogItem & { id: SpeechProviderId } {
-  return provider.id === "openai" || provider.id === "azure-openai";
+  return (
+    provider.id === "openai" ||
+    provider.id === "azure-openai" ||
+    provider.id === "elevenlabs"
+  );
 }

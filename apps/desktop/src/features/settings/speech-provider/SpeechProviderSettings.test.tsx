@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { azureReadyStatus, openAiNeedsKeyStatus } from "@/test/fixtures";
 import { renderApp } from "@/test/render";
@@ -20,6 +20,21 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 describe("SpeechProviderSettings", () => {
+  beforeAll(() => {
+    if (!HTMLElement.prototype.hasPointerCapture) {
+      HTMLElement.prototype.hasPointerCapture = () => false;
+    }
+    if (!HTMLElement.prototype.setPointerCapture) {
+      HTMLElement.prototype.setPointerCapture = () => {};
+    }
+    if (!HTMLElement.prototype.releasePointerCapture) {
+      HTMLElement.prototype.releasePointerCapture = () => {};
+    }
+    if (!HTMLElement.prototype.scrollIntoView) {
+      HTMLElement.prototype.scrollIntoView = () => {};
+    }
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     providerApi.getProviderStatus.mockImplementation((providerId: string) => {
@@ -27,6 +42,14 @@ describe("SpeechProviderSettings", () => {
         return Promise.resolve({
           ...azureReadyStatus(),
           configured: false,
+        });
+      }
+
+      if (providerId === "elevenlabs") {
+        return Promise.resolve({
+          providerId: "elevenlabs",
+          configured: false,
+          configComplete: true,
         });
       }
 
@@ -53,10 +76,13 @@ describe("SpeechProviderSettings", () => {
       await screen.findByRole("heading", { name: "OpenAI" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Speech provider")).toBeInTheDocument();
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("combobox")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "OpenAI" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Azure OpenAI" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "ElevenLabs" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Settings" }),
@@ -119,7 +145,7 @@ describe("SpeechProviderSettings", () => {
       expect(providerApi.saveSpeechProviderSetup).toHaveBeenCalledWith({
         providerId: "openai",
         apiKey: "sk-test",
-        config: undefined,
+        config: { model: "gpt-4o-mini-transcribe" },
         activate: true,
       });
       expect(verifyOnboardingProvider).toHaveBeenCalledWith("openai");
@@ -128,5 +154,73 @@ describe("SpeechProviderSettings", () => {
       await screen.findByText("Provider test passed."),
     ).toBeInTheDocument();
     expect(onOnboardingVerifiedChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it("loads and saves the configured OpenAI model", async () => {
+    const user = userEvent.setup();
+    providerApi.getProviderConfig.mockImplementation((providerId: string) => {
+      if (providerId === "openai") {
+        return Promise.resolve({ model: "gpt-4o-transcribe" });
+      }
+
+      return Promise.resolve(null);
+    });
+
+    renderApp(<SpeechProviderSettings variant="settings" />);
+
+    await screen.findByRole("heading", { name: "OpenAI" });
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent(
+      "GPT-4o Transcribe",
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Model" }));
+    await user.click(screen.getByRole("option", { name: "GPT-4o mini Transcribe" }));
+    await user.type(screen.getByLabelText("API key"), "sk-test");
+    await user.click(screen.getByRole("button", { name: "Save and use OpenAI" }));
+
+    await waitFor(() => {
+      expect(providerApi.saveSpeechProviderSetup).toHaveBeenCalledWith({
+        providerId: "openai",
+        apiKey: "sk-test",
+        config: { model: "gpt-4o-mini-transcribe" },
+        activate: true,
+      });
+    });
+  });
+
+  it("saves ElevenLabs with only an API key and activates it", async () => {
+    const user = userEvent.setup();
+    providerApi.getProviderConfig.mockImplementation((providerId: string) => {
+      if (providerId === "elevenlabs") {
+        return Promise.resolve({ model: "scribe_v1" });
+      }
+
+      return Promise.resolve(null);
+    });
+    providerApi.saveSpeechProviderSetup.mockResolvedValue({
+      providerId: "elevenlabs",
+      configured: true,
+      configComplete: true,
+    });
+
+    renderApp(<SpeechProviderSettings variant="settings" />);
+
+    await user.click(await screen.findByRole("button", { name: "ElevenLabs" }));
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent(
+      "Scribe v1",
+    );
+    await user.click(screen.getByRole("combobox", { name: "Model" }));
+    await user.click(screen.getByRole("option", { name: "Scribe v2" }));
+    await user.type(screen.getByLabelText("API key"), "el-test");
+    await user.click(screen.getByRole("button", { name: "Save and use ElevenLabs" }));
+
+    await waitFor(() => {
+      expect(providerApi.saveSpeechProviderSetup).toHaveBeenCalledWith({
+        providerId: "elevenlabs",
+        apiKey: "el-test",
+        config: { model: "scribe_v2" },
+        activate: true,
+      });
+    });
   });
 });

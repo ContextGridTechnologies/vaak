@@ -6,13 +6,13 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use super::dictation_records::LocalIdentity;
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::ProviderConfig;
 use crate::session::{
     command_binding_label, normalize_dictation_hotkey_label, HotkeyBindings,
     DEFAULT_DICTATION_BINDING_LABEL,
 };
-use super::dictation_records::LocalIdentity;
 use uuid::Uuid;
 
 const SETTINGS_FILE_NAME: &str = "settings.json";
@@ -268,8 +268,10 @@ impl LocalSettingsStore {
         }
 
         settings.identity.ok_or_else(|| {
-            ProviderFailure::SettingsStore("missing local identity after initialization".to_string())
-                .into()
+            ProviderFailure::SettingsStore(
+                "missing local identity after initialization".to_string(),
+            )
+            .into()
         })
     }
 
@@ -443,6 +445,7 @@ mod tests {
             endpoint: Some("https://example.openai.azure.com".to_string()),
             deployment_id: Some("whisper".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
+            model: None,
         };
 
         store.save_selected_speech_provider("azure-openai").unwrap();
@@ -477,6 +480,7 @@ mod tests {
             endpoint: Some("https://legacy.openai.azure.com".to_string()),
             deployment_id: Some("legacy-deployment".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
+            model: None,
         };
 
         let migrated = store
@@ -502,6 +506,7 @@ mod tests {
             endpoint: Some("https://local.openai.azure.com".to_string()),
             deployment_id: Some("local-deployment".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
+            model: None,
         };
 
         store

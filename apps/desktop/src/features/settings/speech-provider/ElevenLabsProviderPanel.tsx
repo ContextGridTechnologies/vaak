@@ -19,9 +19,12 @@ import {
 import type { ProviderStatus } from "@/lib/tauri";
 
 import { providerStatusLabel, providerStatusTone } from "./status";
-import { OPENAI_MODELS, SAVED_KEY_PLACEHOLDER } from "./types";
+import {
+  ELEVENLABS_MODELS,
+  SAVED_KEY_PLACEHOLDER,
+} from "./types";
 
-type OpenAiProviderPanelProps = {
+type ElevenLabsProviderPanelProps = {
   apiKey: string;
   error?: string;
   isLoading: boolean;
@@ -37,7 +40,7 @@ type OpenAiProviderPanelProps = {
   onTest: () => void;
 };
 
-export function OpenAiProviderPanel({
+export function ElevenLabsProviderPanel({
   apiKey,
   error,
   isLoading,
@@ -51,7 +54,7 @@ export function OpenAiProviderPanel({
   onModelChange,
   onSubmit,
   onTest,
-}: OpenAiProviderPanelProps) {
+}: ElevenLabsProviderPanelProps) {
   const disabled =
     isLoading ||
     isSaving ||
@@ -63,9 +66,9 @@ export function OpenAiProviderPanel({
       <FieldGroup className="rounded-lg border border-primary/30 bg-card/70 p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <h3 className="text-base font-semibold">OpenAI</h3>
+            <h3 className="text-base font-semibold">ElevenLabs</h3>
             <p className="text-sm text-muted-foreground">
-              Use OpenAI hosted transcription models with your own API key.
+              Use ElevenLabs Scribe transcription with your own API key.
             </p>
           </div>
           <StatusBadge tone={providerStatusTone(status)}>
@@ -76,13 +79,13 @@ export function OpenAiProviderPanel({
         <Field
           className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-center"
         >
-          <FieldLabel htmlFor="openai-model">Model</FieldLabel>
+          <FieldLabel htmlFor="elevenlabs-model">Model</FieldLabel>
           <Select value={model} onValueChange={onModelChange} disabled={isLoading || isSaving}>
-            <SelectTrigger id="openai-model" aria-label="Model" className="w-full">
+            <SelectTrigger id="elevenlabs-model" aria-label="Model" className="w-full">
               <SelectValue placeholder="Select model" />
             </SelectTrigger>
             <SelectContent>
-              {OPENAI_MODELS.map((option) => (
+              {ELEVENLABS_MODELS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -95,13 +98,13 @@ export function OpenAiProviderPanel({
           data-invalid={Boolean(error)}
           className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-start"
         >
-          <FieldLabel htmlFor="openai-api-key">API key</FieldLabel>
+          <FieldLabel htmlFor="elevenlabs-api-key">API key</FieldLabel>
           <div className="flex flex-col gap-2">
             <Input
-              id="openai-api-key"
+              id="elevenlabs-api-key"
               type="password"
               autoComplete="off"
-              placeholder={status?.configured ? SAVED_KEY_PLACEHOLDER : "sk-..."}
+              placeholder={status?.configured ? SAVED_KEY_PLACEHOLDER : "ElevenLabs API key"}
               value={apiKey}
               onChange={(event) => onApiKeyChange(event.target.value)}
               disabled={isLoading || isSaving}
@@ -123,7 +126,7 @@ export function OpenAiProviderPanel({
             className="w-fit"
             disabled={disabled}
           >
-            {isSaving ? "Saving..." : "Save and use OpenAI"}
+            {isSaving ? "Saving..." : "Save and use ElevenLabs"}
           </Button>
           {showTestButton ? (
             <Button

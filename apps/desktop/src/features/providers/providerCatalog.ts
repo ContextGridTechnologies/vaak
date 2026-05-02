@@ -3,7 +3,7 @@ export type ProviderCategory = "speech-to-text" | "rewrite";
 export type ProviderSetupStatus = "not-configured" | "configured" | "coming-soon";
 
 export type ProviderCatalogItem = {
-  id: "openai" | "azure-openai" | "deepgram" | "groq";
+  id: "openai" | "azure-openai" | "deepgram" | "groq" | "elevenlabs";
   name: string;
   description: string;
   categories: ProviderCategory[];
@@ -48,5 +48,14 @@ export const providerCatalog: ProviderCatalogItem[] = [
     credentialLabel: "Groq API key",
     setupStatus: "not-configured",
     modelHint: "Fast speech and rewrite provider paths",
+  },
+  {
+    id: "elevenlabs",
+    name: "ElevenLabs",
+    description: "Use ElevenLabs Scribe for speech-to-text with your own API key.",
+    categories: ["speech-to-text"],
+    credentialLabel: "ElevenLabs API key",
+    setupStatus: "not-configured",
+    modelHint: "Scribe batch transcription",
   },
 ];

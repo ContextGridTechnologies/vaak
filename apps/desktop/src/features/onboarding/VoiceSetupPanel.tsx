@@ -47,7 +47,7 @@ export function VoiceSetupPanel({
           <FeatureTile
             icon={KeyRoundIcon}
             title="Bring your providers"
-            description="Start with local setup for OpenAI, Deepgram, or Groq."
+            description="Start with local setup for OpenAI, ElevenLabs, Deepgram, or Groq."
           />
           <FeatureTile
             icon={CloudOffIcon}
@@ -85,7 +85,7 @@ function getSetupItems({
     {
       id: "speech-provider",
       title: "Speech provider",
-      description: "Choose OpenAI, Deepgram, or Groq for transcription.",
+      description: "Choose OpenAI, ElevenLabs, Deepgram, or Groq for transcription.",
       status: "pending",
       statusLabel: "Not configured",
     },
