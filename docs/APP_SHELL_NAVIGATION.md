@@ -19,7 +19,44 @@ The app shell should feel like a production desktop tool:
 
 Configuration depth should live in Settings, not on the default landing screen.
 
-## Current Problem
+## Implementation Status
+
+Last updated: May 2, 2026.
+
+### Updated
+
+- The post-onboarding app shell now uses a left sidebar instead of the old
+  top tab strip.
+- Sidebar navigation is split into primary and utility areas:
+  - Primary: `Home`, `Account`
+  - Utility/footer: `Settings`, collapse trigger
+- `Home` is the default active section.
+- `Account` is visible but disabled with `Coming soon` treatment.
+- `Settings` is active and placed in the sidebar footer area.
+- The sidebar supports expanded and icon-rail collapsed states.
+- Sidebar collapsed state is persisted through the Rust local settings store
+  under `appShell.sidebarCollapsed`.
+- The title bar keeps the Vaak brand and native window controls.
+- The sidebar no longer repeats the Vaak brand.
+- The Home screen now renders a polished empty state when there is no active
+  voice session.
+- Browser preview notice still renders inside the main content pane.
+
+### Not Updated Yet
+
+- Home does not yet show live microphone readiness, provider readiness, active
+  shortcut, latency, or session status.
+- Home does not yet link directly into specific Settings subsections.
+- Settings has not yet been fully consolidated into separate Speech provider,
+  Microphone, Shortcut, and App preferences sections.
+- Account is still a placeholder and has no auth, sync, billing, or team
+  behavior.
+- Commands and Diagnostics remain hidden from visible navigation.
+- The floating voice control is not yet integrated into the Home empty state as
+  an actionable control.
+- No backend/cloud account path is required or implemented for local dictation.
+
+## Previous Problem
 
 Today the main `Voice` screen is effectively reusing onboarding UI:
 
@@ -38,18 +75,18 @@ This creates four product problems:
 ## Product Decision
 
 After onboarding, the app should open into a simple sidebar-based shell with
-three visible destinations:
+three user-facing destinations:
 
 - Home
 - Settings
 - Account
 
-Only `Home` and `Settings` are active in Milestone 1.
+Only `Home` and `Settings` are active in the current shell.
 
 `Account` can be visible as a product direction signal, but it should clearly
 render as `Coming soon` and must not block local usage.
 
-Do not show `Commands` or `Diagnostics` in the visible primary navigation until
+Do not show `Commands` or `Diagnostics` in the visible navigation until
 those areas are production-ready.
 
 ## Design Principles
@@ -68,9 +105,13 @@ Use a left sidebar as the primary app navigation.
 ```text
 App shell
   Sidebar
-    Home
-    Settings
-    Account
+    Primary
+      Home
+      Account
+
+    Utility/footer
+      Settings
+      collapse trigger
 
   Main content
     selected section
@@ -79,10 +120,13 @@ App shell
 ### Sidebar Requirements
 
 - The sidebar should be always visible on desktop widths.
+- The sidebar should support expanded and icon-rail collapsed states.
+- Collapse preference should persist in local settings.
 - The selected section should be visually obvious.
 - The sidebar should use compact labels and lucide icons.
 - `Account` should show a disabled or muted `Coming soon` treatment.
-- The shell should preserve the existing top-level app header.
+- The shell should preserve the desktop title bar brand and controls without
+  duplicating the brand inside the sidebar.
 
 ## Home Screen
 
@@ -91,7 +135,17 @@ App shell
 Make the default screen feel like the place where the user operates Vaak, not
 the place where they configure every subsystem.
 
-## Home Should Show
+## Current Home Shows
+
+- A centered empty state for no active voice session.
+- Clear `Ready for dictation` messaging.
+- A compact `No active session` status.
+- Non-interactive context chips for:
+  - local-first workspace
+  - provider keys staying with the user
+  - floating control readiness
+
+## Home Should Eventually Show
 
 - current local mode status
 - current hold-to-talk shortcut
@@ -219,19 +273,11 @@ Local dictation stays available without an account.
 
 ## App Header
 
-Keep the current app header direction:
+Keep the custom desktop title bar direction:
 
 - Vaak brand
-- product title
-- short product subtitle
-- local mode badge
-
-The current disabled `Sign in for sync` action can either:
-
-- stay in the header temporarily, or
-- move under the future `Account` section
-
-The sidebar work does not require finalizing that detail immediately.
+- native window controls
+- no duplicated brand block inside the sidebar
 
 ## Component Direction
 
@@ -290,18 +336,23 @@ Implement this one slice at a time.
 
 ### Phase 1: Sidebar Shell
 
-- Replace the top tab strip with a sidebar shell.
-- Add `Home`, `Settings`, and `Account`.
-- Keep unfinished sections hidden from visible navigation.
+- Status: complete.
+- Replaced the top tab strip with a sidebar shell.
+- Added `Home`, `Settings`, and `Account`.
+- Kept unfinished sections hidden from visible navigation.
+- Added persisted icon-rail collapse state.
 
 ### Phase 2: Home Screen
 
-- Create a dedicated `HomePanel`.
-- Remove onboarding-style setup cards from the default screen.
-- Show compact operational status and usage guidance.
+- Status: partially complete.
+- Created a dedicated `HomePanel`.
+- Removed onboarding-style setup cards from the default screen.
+- Added polished no-session empty state.
+- Live operational status and readiness summaries are still pending.
 
 ### Phase 3: Settings Consolidation
 
+- Status: pending.
 - Keep provider setup in Settings.
 - Add microphone and hotkey sections into Settings.
 - Ensure Home links into the relevant settings section instead of duplicating
@@ -309,15 +360,21 @@ Implement this one slice at a time.
 
 ### Phase 4: Account Placeholder
 
-- Add a production-quality placeholder screen.
-- Keep the message explicit that an account is optional for local use.
+- Status: complete for placeholder only.
+- Added a clean Account placeholder.
+- Kept the message explicit that an account is optional for local use.
+- Auth, sync, billing, and team features remain out of scope.
 
 ### Phase 5: Verification
 
-- Add tests for sidebar navigation and default landing behavior.
-- Add tests confirming provider cards are gone from Home.
-- Add tests confirming provider setup remains in Settings.
-- Run typecheck, lint, tests, and build after the shell changes settle.
+- Status: partially complete.
+- Added tests for sidebar navigation and collapse persistence.
+- Added tests for app-shell Tauri preference helpers.
+- Added tests for the Home empty state.
+- Typecheck, lint, test, build, and screenshots have been run for the shell
+  work.
+- Explicit tests confirming provider setup remains in Settings are still
+  pending.
 
 ## Development Notes
 

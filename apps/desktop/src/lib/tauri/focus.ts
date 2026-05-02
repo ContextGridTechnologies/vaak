@@ -40,6 +40,10 @@ export async function getFocusedField(): Promise<FocusedFieldInfo> {
   return invokeTauri("get_focused_field");
 }
 
+export async function captureDictationTarget(): Promise<FocusedFieldInfo> {
+  return invokeTauri("capture_dictation_target");
+}
+
 export async function insertText(text: string): Promise<TextInsertResult> {
   return invokeTauri("insert_text", { text });
 }

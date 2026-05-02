@@ -10,30 +10,32 @@ The app needs reliable insertion into focused text fields across heterogeneous W
 
 ## Decision
 
-Use a two-step insertion strategy:
+Use a target-aware insertion strategy:
 
-1. Attempt UI Automation ValuePattern write on the focused editable control.
-2. If unsupported or rejected, fallback to keyboard input injection via SendInput.
+1. Resolve the best writable target near the active focus instead of assuming `GetFocusedElement()` is the final insertion node.
+2. Prefer caret-preserving insertion for editor, document, browser, and terminal surfaces by attempting clipboard paste first.
+3. If paste fails but the target still looks keyboard-driven, fallback to `SendInput`.
+4. Use UI Automation `ValuePattern.SetValue` only for simple writable controls where caret-preserving insertion is not available.
 
 ## Why
 
-- ValuePattern is direct and robust for compatible native controls.
-- SendInput increases compatibility in apps that do not accept ValuePattern writes.
-- The fallback approach materially improves real-world coverage in early phases.
+- Editor and terminal surfaces usually need caret-preserving behavior instead of whole-value replacement.
+- Clipboard paste and `SendInput` cover browser, Electron, and document-style targets that do not expose a writable value contract.
+- `ValuePattern.SetValue` remains useful for classic form inputs, but only when it does not risk overwriting existing content unexpectedly.
 
 ## Consequences
 
 Positive:
 
-- Better insertion success rate across app types.
-- Clear capability-first behavior exposed to the UI.
+- Better insertion success rate across classic inputs, editors, and terminal-like surfaces.
+- Diagnostics now explain which target was selected and which insertion strategy ran.
 
 Tradeoffs:
 
-- Input injection may be sensitive to focus timing.
-- Cross-app behavior can still vary and requires targeted testing.
+- Paste and input injection remain sensitive to focus timing and app-specific shortcut handling.
+- Cross-app behavior can still vary and requires targeted Windows verification.
 
 ## Follow-ups
 
 - Consider RuntimeId-based identity hardening for focused control tracking.
-- Evaluate optional TextPattern-based insertion support if needed.
+- Expand editor heuristics as more custom surfaces are verified in production logs.

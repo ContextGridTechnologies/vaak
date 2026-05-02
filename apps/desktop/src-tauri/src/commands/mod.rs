@@ -21,6 +21,15 @@ pub fn get_focused_field() -> Result<FocusedFieldInfo, PlatformError> {
 }
 
 #[tauri::command]
+pub fn capture_dictation_target(
+    session: State<'_, SessionStore>,
+) -> Result<FocusedFieldInfo, PlatformError> {
+    let field = platform::get_focused_field()?;
+    session.set_dictation_target(field.clone());
+    Ok(field)
+}
+
+#[tauri::command]
 pub fn insert_text(text: String) -> Result<TextInsertResult, PlatformError> {
     platform::insert_text(&text)
 }
@@ -35,10 +44,10 @@ pub fn insert_into_active_target(
     text: String,
     session: State<'_, SessionStore>,
 ) -> Result<TextInsertResult, PlatformError> {
-    let stable_id = session.get_dictation_target_stable_id().ok_or_else(|| {
+    let captured = session.get_dictation_target().ok_or_else(|| {
         PlatformError::new("no_active_target", "No captured dictation target available")
     })?;
-    platform::insert_text_for_stable_id(&text, &stable_id)
+    platform::insert_text_for_captured_target(&text, &captured)
 }
 
 #[tauri::command]

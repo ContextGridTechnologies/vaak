@@ -1,14 +1,17 @@
 use crate::platform::common::PlatformError;
 use crate::platform::windows::errors::windows_error;
 use windows::core::{Interface, BSTR};
+use windows::Win32::Foundation::BOOL;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Accessibility::{
-    CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern,
+    CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextEditPattern,
+    IUIAutomationTextPattern, IUIAutomationTextPattern2, IUIAutomationTreeWalker,
     IUIAutomationValuePattern, UIA_ButtonControlTypeId, UIA_ComboBoxControlTypeId,
     UIA_CustomControlTypeId, UIA_DocumentControlTypeId, UIA_EditControlTypeId,
-    UIA_ListControlTypeId, UIA_ListItemControlTypeId, UIA_PaneControlTypeId, UIA_TextControlTypeId,
-    UIA_TextPatternId, UIA_TreeItemControlTypeId, UIA_ValuePatternId,
+    UIA_ListControlTypeId, UIA_ListItemControlTypeId, UIA_PaneControlTypeId,
+    UIA_TextControlTypeId, UIA_TextEditPatternId, UIA_TextPattern2Id, UIA_TextPatternId,
+    UIA_TreeItemControlTypeId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetWindowTextLengthW, GetWindowTextW, GA_ROOTOWNER,
@@ -93,8 +96,7 @@ fn get_window_text(hwnd: HWND) -> String {
 }
 
 fn get_value_pattern_text(element: &IUIAutomationElement) -> Option<String> {
-    let pattern = unsafe { element.GetCurrentPattern(UIA_ValuePatternId) }.ok()?;
-    let value_pattern = pattern.cast::<IUIAutomationValuePattern>().ok()?;
+    let value_pattern = get_value_pattern(element)?;
     let value = unsafe { value_pattern.CurrentValue() }.ok()?;
     let text = bstr_to_string(Ok(value));
     if text.is_empty() {
@@ -105,8 +107,7 @@ fn get_value_pattern_text(element: &IUIAutomationElement) -> Option<String> {
 }
 
 fn get_text_pattern_text(element: &IUIAutomationElement) -> Option<String> {
-    let pattern = unsafe { element.GetCurrentPattern(UIA_TextPatternId) }.ok()?;
-    let text_pattern = pattern.cast::<IUIAutomationTextPattern>().ok()?;
+    let text_pattern = get_text_pattern(element)?;
     let range = unsafe { text_pattern.DocumentRange() }.ok()?;
     let text = unsafe { range.GetText(2000) }.ok()?;
     let text = bstr_to_string(Ok(text));
@@ -115,4 +116,83 @@ fn get_text_pattern_text(element: &IUIAutomationElement) -> Option<String> {
     } else {
         Some(text)
     }
+}
+
+pub(crate) fn get_value_pattern(
+    element: &IUIAutomationElement,
+) -> Option<IUIAutomationValuePattern> {
+    let pattern = unsafe { element.GetCurrentPattern(UIA_ValuePatternId) }.ok()?;
+    pattern.cast::<IUIAutomationValuePattern>().ok()
+}
+
+pub(crate) fn get_text_pattern(element: &IUIAutomationElement) -> Option<IUIAutomationTextPattern> {
+    let pattern = unsafe { element.GetCurrentPattern(UIA_TextPatternId) }.ok()?;
+    pattern.cast::<IUIAutomationTextPattern>().ok()
+}
+
+pub(crate) fn get_text_pattern2(
+    element: &IUIAutomationElement,
+) -> Option<IUIAutomationTextPattern2> {
+    let pattern = unsafe { element.GetCurrentPattern(UIA_TextPattern2Id) }.ok()?;
+    pattern.cast::<IUIAutomationTextPattern2>().ok()
+}
+
+pub(crate) fn get_text_edit_pattern(
+    element: &IUIAutomationElement,
+) -> Option<IUIAutomationTextEditPattern> {
+    let pattern = unsafe { element.GetCurrentPattern(UIA_TextEditPatternId) }.ok()?;
+    pattern.cast::<IUIAutomationTextEditPattern>().ok()
+}
+
+pub(crate) fn has_keyboard_focus(element: &IUIAutomationElement) -> bool {
+    current_bool(unsafe { element.CurrentHasKeyboardFocus() })
+}
+
+pub(crate) fn is_keyboard_focusable(element: &IUIAutomationElement) -> bool {
+    current_bool(unsafe { element.CurrentIsKeyboardFocusable() })
+}
+
+pub(crate) fn is_enabled(element: &IUIAutomationElement) -> bool {
+    current_bool(unsafe { element.CurrentIsEnabled() })
+}
+
+pub(crate) fn is_read_only(element: &IUIAutomationElement) -> bool {
+    get_value_pattern(element)
+        .and_then(|pattern| unsafe { pattern.CurrentIsReadOnly() }.ok())
+        .map(BOOL::as_bool)
+        .unwrap_or(false)
+}
+
+pub(crate) fn active_caret_owner(
+    element: &IUIAutomationElement,
+) -> Option<(IUIAutomationElement, bool)> {
+    let text_pattern = get_text_pattern2(element)?;
+    let mut is_active = BOOL(0);
+    let range = unsafe { text_pattern.GetCaretRange(&mut is_active) }.ok()?;
+    let owner = unsafe { range.GetEnclosingElement() }.ok()?;
+    Some((owner, is_active.as_bool()))
+}
+
+pub(crate) fn collect_ancestor_chain(
+    walker: &IUIAutomationTreeWalker,
+    start: &IUIAutomationElement,
+    max_depth: usize,
+) -> Vec<IUIAutomationElement> {
+    let mut current = start.clone();
+    let mut ancestors = Vec::new();
+
+    for _ in 0..max_depth {
+        let parent = unsafe { walker.GetParentElement(&current) };
+        let Ok(parent) = parent else {
+            break;
+        };
+        ancestors.push(parent.clone());
+        current = parent;
+    }
+
+    ancestors
+}
+
+fn current_bool(value: windows::core::Result<BOOL>) -> bool {
+    value.map(BOOL::as_bool).unwrap_or(false)
 }
