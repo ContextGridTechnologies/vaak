@@ -7,6 +7,7 @@ import { DesktopTitleBar } from "./DesktopTitleBar";
 import { AppProviders } from "./AppProviders";
 import { isTauriRuntime } from "../lib/tauri";
 import { AccountPanel } from "../features/account";
+import { HomePanel } from "../features/home";
 import { OnboardingGate } from "../features/onboarding";
 import { SettingsPanel } from "../features/settings";
 import "../styles/globals.css";
@@ -37,7 +38,9 @@ function App() {
                 ) : null
               }
             >
-              <TabsContent value="home" />
+              <TabsContent value="home" className="flex flex-col">
+                <HomePanel />
+              </TabsContent>
 
               <TabsContent value="settings" className="flex flex-col gap-4">
                 <SettingsPanel />
