@@ -29,6 +29,8 @@ struct LocalSettings {
     #[serde(default)]
     provider_configs: BTreeMap<String, ProviderConfig>,
     #[serde(default)]
+    microphone_selection: MicrophoneSelection,
+    #[serde(default)]
     onboarding: OnboardingState,
 }
 
@@ -38,6 +40,18 @@ pub struct OnboardingState {
     pub completed: bool,
     pub current_step: String,
     pub selected_mode: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "mode")]
+pub enum MicrophoneSelection {
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "manual")]
+    Manual {
+        #[serde(rename = "deviceId")]
+        device_id: String,
+    },
 }
 
 impl Default for OnboardingState {
@@ -56,8 +70,15 @@ impl Default for LocalSettings {
             version: SETTINGS_VERSION,
             selected_speech_provider: default_selected_speech_provider(),
             provider_configs: BTreeMap::new(),
+            microphone_selection: MicrophoneSelection::default(),
             onboarding: OnboardingState::default(),
         }
+    }
+}
+
+impl Default for MicrophoneSelection {
+    fn default() -> Self {
+        Self::System
     }
 }
 
@@ -152,6 +173,24 @@ impl LocalSettingsStore {
         Ok(self.load_unlocked()?.onboarding)
     }
 
+    pub fn microphone_selection(&self) -> Result<MicrophoneSelection, ProviderError> {
+        let _guard = self.lock()?;
+        Ok(self.load_unlocked()?.microphone_selection)
+    }
+
+    pub fn save_microphone_selection(
+        &self,
+        selection: MicrophoneSelection,
+    ) -> Result<MicrophoneSelection, ProviderError> {
+        validate_microphone_selection(&selection)?;
+
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        settings.microphone_selection = selection;
+        self.save_unlocked(&settings)?;
+        Ok(settings.microphone_selection)
+    }
+
     pub fn save_onboarding_mode(&self, mode: &str) -> Result<OnboardingState, ProviderError> {
         let mode = mode.trim();
         if !matches!(mode, "local" | "sync" | "managed") {
@@ -163,7 +202,20 @@ impl LocalSettingsStore {
         let _guard = self.lock()?;
         let mut settings = self.load_unlocked()?;
         settings.onboarding.selected_mode = Some(mode.to_string());
-        settings.onboarding.current_step = "desktopReadiness".to_string();
+        settings.onboarding.current_step = "microphoneReadiness".to_string();
+        settings.onboarding.completed = false;
+        self.save_unlocked(&settings)?;
+        Ok(settings.onboarding)
+    }
+
+    pub fn save_onboarding_step(&self, step: &str) -> Result<OnboardingState, ProviderError> {
+        let normalized_step = normalize_onboarding_step(step).ok_or_else(|| {
+            ProviderFailure::InvalidRequest("unsupported onboarding step".to_string())
+        })?;
+
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        settings.onboarding.current_step = normalized_step.to_string();
         settings.onboarding.completed = false;
         self.save_unlocked(&settings)?;
         Ok(settings.onboarding)
@@ -176,8 +228,14 @@ impl LocalSettingsStore {
 
         let raw = fs::read_to_string(&self.settings_path)
             .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
-        serde_json::from_str::<LocalSettings>(&raw)
-            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()).into())
+        let mut settings = serde_json::from_str::<LocalSettings>(&raw)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        validate_microphone_selection(&settings.microphone_selection)?;
+        settings.onboarding.current_step =
+            normalize_onboarding_step(&settings.onboarding.current_step)
+                .unwrap_or("modeChoice")
+                .to_string();
+        Ok(settings)
     }
 
     fn save_unlocked(&self, settings: &LocalSettings) -> Result<(), ProviderError> {
@@ -205,6 +263,28 @@ fn default_version() -> u32 {
 
 fn default_selected_speech_provider() -> String {
     DEFAULT_SPEECH_PROVIDER.to_string()
+}
+
+fn normalize_onboarding_step(step: &str) -> Option<&'static str> {
+    match step.trim() {
+        "modeChoice" => Some("modeChoice"),
+        "desktopReadiness" | "microphoneReadiness" => Some("microphoneReadiness"),
+        "providerSetup" => Some("providerSetup"),
+        "providerTest" => Some("providerTest"),
+        "tryDictation" => Some("tryDictation"),
+        _ => None,
+    }
+}
+
+fn validate_microphone_selection(selection: &MicrophoneSelection) -> Result<(), ProviderError> {
+    match selection {
+        MicrophoneSelection::System => Ok(()),
+        MicrophoneSelection::Manual { device_id } if !device_id.trim().is_empty() => Ok(()),
+        MicrophoneSelection::Manual { .. } => Err(ProviderFailure::InvalidRequest(
+            "manual microphone selection requires a device id".to_string(),
+        )
+        .into()),
+    }
 }
 
 #[cfg(test)]
@@ -333,15 +413,125 @@ mod tests {
 
         let saved = store.save_onboarding_mode("local").unwrap();
         assert!(!saved.completed);
-        assert_eq!(saved.current_step, "desktopReadiness");
+        assert_eq!(saved.current_step, "microphoneReadiness");
         assert_eq!(saved.selected_mode.as_deref(), Some("local"));
 
         let reloaded = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
-        assert_eq!(reloaded.current_step, "desktopReadiness");
+        assert_eq!(reloaded.current_step, "microphoneReadiness");
         assert_eq!(reloaded.selected_mode.as_deref(), Some("local"));
 
         let json = fs::read_to_string(dir.join("settings.json")).unwrap();
         assert!(json.contains("\"onboarding\""));
         assert!(json.contains("\"selectedMode\""));
+    }
+
+    #[test]
+    fn migrates_legacy_desktop_readiness_step_to_microphone_readiness() {
+        let dir = temp_config_dir("onboarding-migrate-step");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("settings.json"),
+            r#"{
+  "version": 1,
+  "selectedSpeechProvider": "openai",
+  "providerConfigs": {},
+  "onboarding": {
+    "completed": false,
+    "currentStep": "desktopReadiness",
+    "selectedMode": "local"
+  }
+}"#,
+        )
+        .unwrap();
+
+        let state = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
+
+        assert_eq!(state.current_step, "microphoneReadiness");
+        assert_eq!(state.selected_mode.as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn saves_onboarding_step_progress_in_local_settings() {
+        let dir = temp_config_dir("onboarding-step");
+        let store = LocalSettingsStore::new(&dir);
+
+        store.save_onboarding_mode("local").unwrap();
+        let saved = store.save_onboarding_step("providerSetup").unwrap();
+
+        assert!(!saved.completed);
+        assert_eq!(saved.current_step, "providerSetup");
+        assert_eq!(saved.selected_mode.as_deref(), Some("local"));
+
+        let reloaded = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
+        assert_eq!(reloaded.current_step, "providerSetup");
+        assert_eq!(reloaded.selected_mode.as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn microphone_selection_defaults_to_system() {
+        let dir = temp_config_dir("microphone-default");
+        let store = LocalSettingsStore::new(&dir);
+
+        assert_eq!(store.microphone_selection().unwrap(), MicrophoneSelection::System);
+    }
+
+    #[test]
+    fn persists_manual_microphone_selection_in_local_settings() {
+        let dir = temp_config_dir("microphone-manual");
+        let store = LocalSettingsStore::new(&dir);
+
+        let saved = store
+            .save_microphone_selection(MicrophoneSelection::Manual {
+                device_id: "usb-mic".to_string(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            saved,
+            MicrophoneSelection::Manual {
+                device_id: "usb-mic".to_string()
+            }
+        );
+        assert_eq!(
+            LocalSettingsStore::new(&dir).microphone_selection().unwrap(),
+            MicrophoneSelection::Manual {
+                device_id: "usb-mic".to_string()
+            }
+        );
+
+        let json = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(json.contains("\"microphoneSelection\""));
+        assert!(json.contains("\"mode\": \"manual\""));
+        assert!(json.contains("\"deviceId\": \"usb-mic\""));
+    }
+
+    #[test]
+    fn rejects_malformed_manual_microphone_selection_payloads() {
+        let dir = temp_config_dir("microphone-invalid");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("settings.json"),
+            r#"{
+  "version": 1,
+  "selectedSpeechProvider": "openai",
+  "providerConfigs": {},
+  "microphoneSelection": {
+    "mode": "manual",
+    "deviceId": ""
+  },
+  "onboarding": {
+    "completed": false,
+    "currentStep": "modeChoice",
+    "selectedMode": null
+  }
+}"#,
+        )
+        .unwrap();
+
+        let err = LocalSettingsStore::new(&dir)
+            .microphone_selection()
+            .unwrap_err();
+
+        assert_eq!(err.code, "invalid_provider_request");
     }
 }

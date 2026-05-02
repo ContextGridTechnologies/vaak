@@ -4,12 +4,15 @@ import {
   getOnboardingState,
   isTauriRuntime,
   saveOnboardingMode,
+  saveOnboardingStep,
   type OnboardingMode,
   type OnboardingState,
 } from "@/lib/tauri";
 
+import { MicrophoneReadinessStep } from "./MicrophoneReadinessStep";
 import { OnboardingLoadingScreen } from "./OnboardingLoadingScreen";
 import { OnboardingModeChoice } from "./OnboardingModeChoice";
+import { ProviderSetupStep } from "./ProviderSetupStep";
 
 type OnboardingGateProps = {
   children: ReactNode;
@@ -66,6 +69,19 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
     }
   }
 
+  async function handleStepChange(step: OnboardingState["currentStep"]) {
+    setError(null);
+
+    try {
+      const savedState = await saveOnboardingStep(step);
+      setState(savedState);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to update setup step.",
+      );
+    }
+  }
+
   if (!isTauriRuntime()) {
     return children;
   }
@@ -74,15 +90,39 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
     return <OnboardingLoadingScreen />;
   }
 
-  if (state && (state.completed || state.currentStep !== "modeChoice")) {
+  if (state?.completed) {
     return children;
   }
 
-  return (
-    <OnboardingModeChoice
-      error={error}
-      savingMode={savingMode}
-      onSelectMode={handleModeSelect}
-    />
-  );
+  if (!state || state.currentStep === "modeChoice") {
+    return (
+      <OnboardingModeChoice
+        error={error}
+        savingMode={savingMode}
+        onSelectMode={handleModeSelect}
+      />
+    );
+  }
+
+  if (state.currentStep === "microphoneReadiness") {
+    return (
+      <MicrophoneReadinessStep
+        error={error}
+        onBack={() => void handleStepChange("modeChoice")}
+        onContinue={() => void handleStepChange("providerSetup")}
+      />
+    );
+  }
+
+  if (state.currentStep === "providerSetup") {
+    return (
+      <ProviderSetupStep
+        error={error}
+        onBack={() => void handleStepChange("microphoneReadiness")}
+        onContinue={() => void handleStepChange("providerTest")}
+      />
+    );
+  }
+
+  return children;
 }

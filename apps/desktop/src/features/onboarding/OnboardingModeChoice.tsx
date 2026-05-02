@@ -1,9 +1,11 @@
-import { InfoIcon, TriangleAlertIcon } from "lucide-react";
+import { TriangleAlertIcon } from "lucide-react";
 
 import { ChoiceCard } from "@/components/app";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { OnboardingMode } from "@/lib/tauri";
 
+import { OnboardingProgressHeader } from "./components/OnboardingProgressHeader";
+import { OnboardingShell } from "./components/OnboardingShell";
 import { onboardingModeCards } from "./onboardingContent";
 
 type OnboardingModeChoiceProps = {
@@ -18,13 +20,17 @@ export function OnboardingModeChoice({
   onSelectMode,
 }: OnboardingModeChoiceProps) {
   return (
-    <div className="min-h-full bg-background text-foreground">
-      <main
-        data-testid="app-screen-content"
-        className="mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-[64rem] flex-col justify-center gap-6 px-4 py-10 sm:px-6 lg:py-14"
-      >
-        <OnboardingSetupHeader />
-
+    <OnboardingShell
+      header={
+        <OnboardingProgressHeader
+          step={1}
+          totalSteps={5}
+          title="Choose how to use Vaak"
+          description="Set up desktop dictation without changing how you work."
+        />
+      }
+      footerHint="You can change this later in Settings."
+    >
         <section className="grid gap-3 md:grid-cols-3">
           {onboardingModeCards.map((mode) => (
             <ChoiceCard
@@ -46,42 +52,12 @@ export function OnboardingModeChoice({
           ))}
         </section>
 
-        <OnboardingSettingsHint />
-
         {error ? (
           <Alert variant="destructive">
             <TriangleAlertIcon aria-hidden={true} />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-      </main>
-    </div>
-  );
-}
-
-function OnboardingSetupHeader() {
-  return (
-    <header className="mx-auto flex max-w-xl flex-col items-center gap-2.5 text-center">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-        VAAK SETUP
-      </p>
-      <div className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
-          Choose how to use Vaak
-        </h1>
-        <p className="text-sm text-muted-foreground sm:text-[0.95rem]">
-          Set up desktop dictation without changing how you work.
-        </p>
-      </div>
-    </header>
-  );
-}
-
-function OnboardingSettingsHint() {
-  return (
-    <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-      <InfoIcon className="size-4 shrink-0" aria-hidden={true} />
-      <span>You can change this later in Settings.</span>
-    </p>
+    </OnboardingShell>
   );
 }

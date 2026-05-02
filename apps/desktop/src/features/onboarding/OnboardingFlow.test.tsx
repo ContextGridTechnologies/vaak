@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderApp } from "@/test/render";
 import {
@@ -10,7 +10,67 @@ import {
 
 import { OnboardingGate } from "./OnboardingFlow";
 
+type MockMediaDevice = {
+  kind: MediaDeviceKind;
+  deviceId: string;
+  label: string;
+};
+
+type MockTrack = {
+  label: string;
+  stop: ReturnType<typeof vi.fn>;
+  getSettings: () => MediaTrackSettings;
+};
+
+const originalMediaDevices = navigator.mediaDevices;
+const originalFetch = globalThis.fetch;
+
+function setMediaDevices(value: Partial<MediaDevices> | undefined) {
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value,
+  });
+}
+
 describe("OnboardingGate", () => {
+  beforeEach(() => {
+    const track: MockTrack = {
+      label: "Default microphone",
+      stop: vi.fn(),
+      getSettings: () => ({ deviceId: "default" }),
+    };
+
+    setMediaDevices({
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      enumerateDevices: vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            kind: "audioinput",
+            deviceId: "default",
+            label: "",
+          },
+        ] satisfies MockMediaDevice[])
+        .mockResolvedValueOnce([
+          {
+            kind: "audioinput",
+            deviceId: "default",
+            label: "Default microphone",
+          },
+        ] satisfies MockMediaDevice[]),
+      getUserMedia: vi.fn().mockResolvedValue({
+        getAudioTracks: () => [track],
+        getTracks: () => [track],
+      }),
+    });
+  });
+
+  afterEach(() => {
+    setMediaDevices(originalMediaDevices);
+    globalThis.fetch = originalFetch;
+  });
+
   it("shows the first-run mode choice before the app shell when onboarding starts", async () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("get_onboarding_state", {
@@ -54,7 +114,7 @@ describe("OnboardingGate", () => {
     expectTauriCommand(tauri, "get_onboarding_state", undefined);
   });
 
-  it("persists local mode and enters the app shell", async () => {
+  it("persists local mode, shows microphone readiness, and then shows provider setup", async () => {
     const user = userEvent.setup();
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("get_onboarding_state", {
@@ -64,7 +124,12 @@ describe("OnboardingGate", () => {
     });
     tauri.resolveCommand("save_onboarding_mode", {
       completed: false,
-      currentStep: "desktopReadiness",
+      currentStep: "microphoneReadiness",
+      selectedMode: "local",
+    });
+    tauri.resolveCommand("save_onboarding_step", {
+      completed: false,
+      currentStep: "providerSetup",
       selectedMode: "local",
     });
 
@@ -78,10 +143,131 @@ describe("OnboardingGate", () => {
       await screen.findByRole("button", { name: "Continue locally" }),
     );
 
+    expect(
+      await screen.findByRole("heading", {
+        name: "Check microphone readiness",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Allow microphone access" }),
+    );
+
     await waitFor(() => {
-      expect(screen.getByText("Voice app shell")).toBeInTheDocument();
+      expect(screen.getAllByText("Currently using: Default microphone")).toHaveLength(
+        1,
+      );
+      expect(screen.getByRole("combobox")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Test microphone" })).toBeInTheDocument();
     });
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Connect a speech provider",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
     expectTauriCommand(tauri, "save_onboarding_mode", { mode: "local" });
+    expectTauriCommand(tauri, "save_onboarding_step", {
+      step: "providerSetup",
+    });
+  });
+
+  it("resumes the microphone readiness step instead of dropping into the app shell", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "microphoneReadiness",
+      selectedMode: "local",
+    });
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Check microphone readiness",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
+  });
+
+  it("resumes provider setup instead of dropping into the app shell", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "providerSetup",
+      selectedMode: "local",
+    });
+    tauri.resolveCommand("get_provider_status", {
+      providerId: "openai",
+      configured: false,
+      configComplete: true,
+    });
+    tauri.resolveCommand("get_provider_config", null);
+    tauri.resolveCommand("get_selected_speech_provider", "openai");
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Connect a speech provider",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Vaak sends audio only to the provider you choose."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Provider keys stay on this device.")).toBeInTheDocument();
+    expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
+  });
+
+  it("saves microphone readiness when going back from provider setup", async () => {
+    const user = userEvent.setup();
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "providerSetup",
+      selectedMode: "local",
+    });
+    tauri.resolveCommand("get_provider_status", {
+      providerId: "openai",
+      configured: false,
+      configComplete: true,
+    });
+    tauri.resolveCommand("get_provider_config", null);
+    tauri.resolveCommand("get_selected_speech_provider", "openai");
+    tauri.resolveCommand("save_onboarding_step", {
+      completed: false,
+      currentStep: "microphoneReadiness",
+      selectedMode: "local",
+    });
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Back" }));
+
+    expectTauriCommand(tauri, "save_onboarding_step", {
+      step: "microphoneReadiness",
+    });
+    expect(
+      await screen.findByRole("heading", {
+        name: "Check microphone readiness",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("keeps setup visible when onboarding state cannot be loaded", async () => {

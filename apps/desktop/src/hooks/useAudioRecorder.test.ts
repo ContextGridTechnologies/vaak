@@ -9,7 +9,9 @@ const originalCreateObjectUrl = URL.createObjectURL;
 const originalRevokeObjectUrl = URL.revokeObjectURL;
 
 type MockTrack = {
+  label?: string;
   stop: ReturnType<typeof vi.fn>;
+  getSettings?: () => MediaTrackSettings;
 };
 
 class MockMediaRecorder {
@@ -80,19 +82,30 @@ describe("useAudioRecorder", () => {
   });
 
   it("records from the selected microphone and publishes a captured blob on stop", async () => {
-    const track: MockTrack = { stop: vi.fn() };
+    const track: MockTrack = {
+      label: "USB microphone",
+      stop: vi.fn(),
+      getSettings: () => ({ deviceId: "usb-mic" }),
+    };
     const getUserMedia = vi.fn().mockResolvedValue({
+      getAudioTracks: () => [track],
       getTracks: () => [track],
     });
     setMediaDevices({ getUserMedia });
     const { result } = renderHook(() =>
-      useAudioRecorder({ deviceId: "usb-mic" }),
+      useAudioRecorder({
+        microphoneSelection: { mode: "manual", deviceId: "usb-mic" },
+      }),
     );
 
     await act(async () => {
       await result.current.start();
     });
     expect(result.current.status).toBe("recording");
+    expect(result.current.activeMicrophone).toEqual({
+      deviceId: "usb-mic",
+      label: "USB microphone",
+    });
     expect(getUserMedia).toHaveBeenCalledWith({
       audio: { deviceId: { exact: "usb-mic" } },
     });
@@ -110,8 +123,35 @@ describe("useAudioRecorder", () => {
     expect(track.stop).toHaveBeenCalledTimes(1);
   });
 
+  it("uses system microphone constraints in system mode", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getAudioTracks: () => [
+        {
+          label: "System selected microphone",
+          stop: vi.fn(),
+          getSettings: () => ({ deviceId: "system-active" }),
+        },
+      ],
+      getTracks: () => [{ stop: vi.fn() }],
+    });
+    setMediaDevices({ getUserMedia });
+    const { result } = renderHook(() =>
+      useAudioRecorder({ microphoneSelection: { mode: "system" } }),
+    );
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(result.current.activeMicrophone?.label).toBe(
+      "System selected microphone",
+    );
+  });
+
   it("revokes generated object URLs when reset", async () => {
     const getUserMedia = vi.fn().mockResolvedValue({
+      getAudioTracks: () => [],
       getTracks: () => [{ stop: vi.fn() }],
     });
     setMediaDevices({ getUserMedia });

@@ -1,3 +1,3 @@
 mod local_settings;
 
-pub use local_settings::{LocalSettingsStore, OnboardingState};
+pub use local_settings::{LocalSettingsStore, MicrophoneSelection, OnboardingState};

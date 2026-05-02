@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  activeMicrophoneFromStream,
+  microphoneConstraints,
+  type ActiveMicrophone,
+  type MicrophoneSelection,
+} from "./useMicrophoneSelection";
 
 export type RecorderStatus = "idle" | "recording" | "stopped" | "error";
 
@@ -8,6 +15,7 @@ type RecorderState = {
   audioBlob: Blob | null;
   audioUrl: string | null;
   elapsedMs: number;
+  activeMicrophone: ActiveMicrophone | null;
 };
 
 type RecorderActions = {
@@ -17,18 +25,28 @@ type RecorderActions = {
 };
 
 type RecorderOptions = {
+  microphoneSelection?: MicrophoneSelection;
   deviceId?: string;
 };
 
 export function useAudioRecorder(
   options: RecorderOptions = {},
 ): RecorderState & RecorderActions {
-  const { deviceId } = options;
+  const microphoneSelection = useMemo<MicrophoneSelection>(
+    () =>
+      options.microphoneSelection ??
+      (options.deviceId && options.deviceId !== "default"
+        ? { mode: "manual", deviceId: options.deviceId }
+        : { mode: "system" }),
+    [options.deviceId, options.microphoneSelection],
+  );
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [activeMicrophone, setActiveMicrophone] =
+    useState<ActiveMicrophone | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number | null>(null);
@@ -77,13 +95,12 @@ export function useAudioRecorder(
     }
 
     try {
-      const constraints =
-        deviceId && deviceId !== "default"
-          ? { audio: { deviceId: { exact: deviceId } } }
-          : { audio: true };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const stream = await navigator.mediaDevices.getUserMedia(
+        microphoneConstraints(microphoneSelection),
+      );
       const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
+      setActiveMicrophone(activeMicrophoneFromStream(stream));
       chunksRef.current = [];
       startTimeRef.current = Date.now();
       setElapsedMs(0);
@@ -100,6 +117,7 @@ export function useAudioRecorder(
         setError(event.error?.message ?? "Recording error.");
         clearTimer();
         stopTracks(recorder);
+        setActiveMicrophone(null);
       };
 
       recorder.onstop = () => {
@@ -128,8 +146,9 @@ export function useAudioRecorder(
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Microphone access failed.");
+      setActiveMicrophone(null);
     }
-  }, [deviceId, releaseAudioUrl]);
+  }, [microphoneSelection, releaseAudioUrl]);
 
   const stop = useCallback(() => {
     const recorder = recorderRef.current;
@@ -146,6 +165,7 @@ export function useAudioRecorder(
     setElapsedMs(0);
     setStatus("idle");
     setError(null);
+    setActiveMicrophone(null);
   }, [releaseAudioUrl]);
 
   useEffect(() => {
@@ -158,6 +178,7 @@ export function useAudioRecorder(
       stopTracks(recorder);
       setAudioBlob(null);
       releaseAudioUrl(null);
+      setActiveMicrophone(null);
     };
   }, [releaseAudioUrl]);
 
@@ -167,6 +188,7 @@ export function useAudioRecorder(
     audioBlob,
     audioUrl,
     elapsedMs,
+    activeMicrophone,
     start,
     stop,
     reset,

@@ -22,4 +22,20 @@ describe("OnboardingModeChoice", () => {
       "py-10",
     );
   });
+
+  it("renders the shared onboarding progress header for step one", () => {
+    renderApp(
+      <OnboardingModeChoice
+        error={null}
+        savingMode={null}
+        onSelectMode={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText("VAAK SETUP")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 5")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Choose how to use Vaak" }),
+    ).toBeInTheDocument();
+  });
 });

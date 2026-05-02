@@ -1,4 +1,11 @@
-import { CheckIcon, KeyRoundIcon } from "lucide-react";
+import {
+  AudioLinesIcon,
+  BotIcon,
+  CheckIcon,
+  CloudCogIcon,
+  KeyRoundIcon,
+  ZapIcon,
+} from "lucide-react";
 
 import { StatusBadge } from "@/components/app";
 import { Button } from "@/components/ui/button";
@@ -10,11 +17,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 import type { ProviderCatalogItem, ProviderSetupStatus } from "./providerCatalog";
 
 type ProviderSetupCardProps = {
   provider: ProviderCatalogItem;
+  mode?: "setup" | "select";
+  selected?: boolean;
+  statusLabel?: string;
+  statusTone?: "neutral" | "success" | "warning";
+  onSelect?: () => void;
 };
 
 const setupStatusLabel: Record<ProviderSetupStatus, string> = {
@@ -32,15 +45,49 @@ const setupStatusTone: Record<
   "coming-soon": "warning",
 };
 
-export function ProviderSetupCard({ provider }: ProviderSetupCardProps) {
+export function ProviderSetupCard({
+  provider,
+  mode = "setup",
+  selected = false,
+  statusLabel,
+  statusTone,
+  onSelect,
+}: ProviderSetupCardProps) {
+  if (mode === "select") {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        aria-label={provider.name}
+        aria-pressed={selected}
+        data-state={selected ? "selected" : "idle"}
+        className={cn(
+          "h-auto min-h-9 w-full justify-center gap-2 rounded-lg px-3 py-2 text-center shadow-sm",
+          selected &&
+            "border-primary bg-primary/5 text-foreground shadow-primary/10 hover:border-primary hover:bg-primary/8",
+        )}
+        onClick={onSelect}
+      >
+        <span className="truncate text-sm font-medium">
+          {provider.name}
+        </span>
+      </Button>
+    );
+  }
+
   return (
     <Card size="sm" className="h-full rounded-lg shadow-none">
       <CardHeader>
-        <CardTitle>{provider.name}</CardTitle>
+        <div className="flex min-w-0 items-center gap-3">
+          <ProviderIcon providerId={provider.id} />
+          <CardTitle>{provider.name}</CardTitle>
+        </div>
         <CardDescription>{provider.description}</CardDescription>
         <CardAction>
-          <StatusBadge tone={setupStatusTone[provider.setupStatus]}>
-            {setupStatusLabel[provider.setupStatus]}
+          <StatusBadge
+            tone={statusTone ?? setupStatusTone[provider.setupStatus]}
+          >
+            {statusLabel ?? setupStatusLabel[provider.setupStatus]}
           </StatusBadge>
         </CardAction>
       </CardHeader>
@@ -68,6 +115,40 @@ export function ProviderSetupCard({ provider }: ProviderSetupCardProps) {
       </CardContent>
     </Card>
   );
+}
+
+function ProviderIcon({
+  providerId,
+  selected = false,
+}: {
+  providerId: ProviderCatalogItem["id"];
+  selected?: boolean;
+}) {
+  const Icon = getProviderIcon(providerId);
+
+  return (
+    <span
+      className={cn(
+        "grid size-10 shrink-0 place-items-center rounded-lg border bg-background text-muted-foreground shadow-sm",
+        selected && "border-primary/25 text-primary shadow-primary/10",
+      )}
+    >
+      <Icon aria-hidden={true} />
+    </span>
+  );
+}
+
+function getProviderIcon(providerId: ProviderCatalogItem["id"]) {
+  switch (providerId) {
+    case "openai":
+      return BotIcon;
+    case "azure-openai":
+      return CloudCogIcon;
+    case "deepgram":
+      return AudioLinesIcon;
+    case "groq":
+      return ZapIcon;
+  }
 }
 
 function formatCategory(category: ProviderCatalogItem["categories"][number]) {

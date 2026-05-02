@@ -15,70 +15,116 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import type { AudioInputDevice } from "@/hooks/useAudioDevices";
+import type { MicrophoneSelection } from "@/hooks/useMicrophoneSelection";
 
 type DeviceSelectorProps = {
   deviceOptions: AudioInputDevice[];
-  selectedDeviceId: string;
+  selection: MicrophoneSelection;
   isLoading: boolean;
   hasPermission: boolean;
-  onSelectDevice: (deviceId: string) => void;
+  manualUnavailableMessage?: string | null;
+  onSelectManual: (deviceId: string) => void;
+  onSelectSystem: () => void;
   onRefresh: () => void;
   onRequestPermission: () => void;
 };
 
 export function DeviceSelector({
   deviceOptions,
-  selectedDeviceId,
+  selection,
   isLoading,
   hasPermission,
-  onSelectDevice,
+  manualUnavailableMessage,
+  onSelectManual,
+  onSelectSystem,
   onRefresh,
   onRequestPermission,
 }: DeviceSelectorProps) {
   const selectableDevices = deviceOptions.filter(
-    (device) => device.deviceId.trim().length > 0,
+    (device) =>
+      device.deviceId.trim().length > 0 && device.deviceId !== "default",
   );
+  const selectedValue =
+    selection.mode === "manual" ? selection.deviceId : "system";
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-      <FieldGroup className="flex-1">
-        <Field>
-          <FieldLabel>Microphone</FieldLabel>
-          <Select
-            value={selectedDeviceId}
-            onValueChange={onSelectDevice}
-            disabled={isLoading}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select microphone" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="default">System default</SelectItem>
-                {selectableDevices.map((device, index) => (
-                  <SelectItem key={device.deviceId} value={device.deviceId}>
-                    {device.label || `Microphone ${index + 1}`}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <FieldDescription>
-            Switching devices while recording restarts the recorder
-            automatically.
-          </FieldDescription>
-        </Field>
-      </FieldGroup>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button variant="secondary" onClick={onRefresh} disabled={isLoading}>
-          {isLoading ? <Spinner data-icon="inline-start" /> : null}
-          {isLoading ? "Refreshing..." : "Refresh"}
-        </Button>
-        {!hasPermission && (
-          <Button onClick={onRequestPermission} disabled={isLoading}>
-            Enable Microphone
-          </Button>
-        )}
+    <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+      <div className="flex flex-col gap-3">
+        <FieldGroup className="min-w-0 flex-1">
+          <Field>
+            <FieldLabel>Microphone</FieldLabel>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select
+                value={selectedValue}
+                onValueChange={(value) => {
+                  if (value === "system") {
+                    onSelectSystem();
+                    return;
+                  }
+                  onSelectManual(value);
+                }}
+                disabled={isLoading}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="h-auto min-h-7 w-full min-w-0 items-start whitespace-normal py-1.5 text-left sm:flex-1 [&_[data-slot=select-value]]:line-clamp-none [&_[data-slot=select-value]]:whitespace-normal"
+                >
+                  <SelectValue placeholder="Select microphone" />
+                </SelectTrigger>
+                <SelectContent
+                  position="popper"
+                  align="start"
+                  className="w-[var(--radix-select-trigger-width)] max-w-[var(--radix-select-trigger-width)]"
+                >
+                  <SelectGroup>
+                    <SelectItem className="items-start py-2 whitespace-normal break-words" value="system">
+                      System selected
+                    </SelectItem>
+                    {selectableDevices.map((device, index) => (
+                      <SelectItem
+                        key={device.deviceId}
+                        className="items-start py-2 whitespace-normal break-words"
+                        value={device.deviceId}
+                      >
+                        {device.label || `Microphone ${index + 1}`}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={onRefresh}
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Spinner data-icon="inline-start" /> : null}
+                  {isLoading ? "Refreshing..." : "Refresh"}
+                </Button>
+                {!hasPermission && (
+                  <Button
+                    size="sm"
+                    onClick={onRequestPermission}
+                    disabled={isLoading}
+                  >
+                    Enable Microphone
+                  </Button>
+                )}
+              </div>
+            </div>
+            <FieldDescription>
+              {selection.mode === "manual"
+                ? "Pinned to a specific input until you switch back to system selected."
+                : "Use system selected unless you need to pin a specific microphone."}
+            </FieldDescription>
+            {manualUnavailableMessage ? (
+              <FieldDescription className="text-destructive">
+                {manualUnavailableMessage}
+              </FieldDescription>
+            ) : null}
+          </Field>
+        </FieldGroup>
       </div>
     </div>
   );

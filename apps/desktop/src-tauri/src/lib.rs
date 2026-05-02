@@ -34,7 +34,10 @@ pub fn run() {
             commands::get_provider_status,
             commands::test_speech_provider,
             commands::get_onboarding_state,
+            commands::get_microphone_selection,
+            commands::save_microphone_selection,
             commands::save_onboarding_mode,
+            commands::save_onboarding_step,
             commands::transcribe_recording
         ])
         .run(tauri::generate_context!())

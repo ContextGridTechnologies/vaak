@@ -1,9 +1,9 @@
 import { VoiceSetupPanel } from "@/features/onboarding";
-import { useAudioDevices } from "@/hooks/useAudioDevices";
+import { useMicrophoneSelection } from "@/hooks/useMicrophoneSelection";
 import { isTauriRuntime } from "@/lib/tauri";
 
 export function DictationPanel() {
-  const { hasPermission } = useAudioDevices();
+  const { hasPermission } = useMicrophoneSelection();
 
   return (
     <VoiceSetupPanel
