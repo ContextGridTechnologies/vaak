@@ -33,7 +33,7 @@ describe("OnboardingModeChoice", () => {
     );
 
     expect(screen.getByText("VAAK SETUP")).toBeInTheDocument();
-    expect(screen.getByText("Step 1 of 5")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 4")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Choose how to use Vaak" }),
     ).toBeInTheDocument();

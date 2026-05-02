@@ -6,8 +6,7 @@ export type OnboardingStep =
   | "modeChoice"
   | "microphoneReadiness"
   | "providerSetup"
-  | "providerTest"
-  | "tryDictation";
+  | "hotkeyReadiness";
 
 export type OnboardingState = {
   completed: boolean;
@@ -33,6 +32,10 @@ export async function saveOnboardingStep(
   step: OnboardingStep,
 ): Promise<OnboardingState> {
   return invokeTauri("save_onboarding_step", { step });
+}
+
+export async function completeOnboarding(): Promise<OnboardingState> {
+  return invokeTauri("complete_onboarding");
 }
 
 export async function getMicrophoneSelection(): Promise<MicrophoneSelection> {

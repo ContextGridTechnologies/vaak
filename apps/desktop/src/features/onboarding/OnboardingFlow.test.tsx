@@ -10,6 +10,26 @@ import {
 
 import { OnboardingGate } from "./OnboardingFlow";
 
+vi.mock("./HotkeyReadinessStep", () => ({
+  HotkeyReadinessStep: ({
+    onBack,
+    onContinue,
+  }: {
+    onBack: () => void;
+    onContinue: () => void;
+  }) => (
+    <div>
+      <h1>Set your hold-to-talk shortcut</h1>
+      <button type="button" onClick={onBack}>
+        Back
+      </button>
+      <button type="button" onClick={onContinue}>
+        Continue
+      </button>
+    </div>
+  ),
+}));
+
 type MockMediaDevice = {
   kind: MediaDeviceKind;
   deviceId: string;
@@ -174,6 +194,93 @@ describe("OnboardingGate", () => {
     expectTauriCommand(tauri, "save_onboarding_step", {
       step: "providerSetup",
     });
+  });
+
+  it("resumes hotkey readiness instead of dropping into the app shell", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "hotkeyReadiness",
+      selectedMode: "local",
+    });
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Set your hold-to-talk shortcut",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
+  });
+
+  it("goes back to provider setup from hotkey readiness", async () => {
+    const user = userEvent.setup();
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "hotkeyReadiness",
+      selectedMode: "local",
+    });
+    tauri.resolveCommand("save_onboarding_step", {
+      completed: false,
+      currentStep: "providerSetup",
+      selectedMode: "local",
+    });
+    tauri.resolveCommand("get_provider_status", {
+      providerId: "openai",
+      configured: false,
+      configComplete: true,
+    });
+    tauri.resolveCommand("get_provider_config", null);
+    tauri.resolveCommand("get_selected_speech_provider", "openai");
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Back" }));
+
+    expectTauriCommand(tauri, "save_onboarding_step", {
+      step: "providerSetup",
+    });
+    expect(
+      await screen.findByRole("heading", {
+        name: "Connect a speech provider",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("completes onboarding from hotkey readiness and enters the app shell", async () => {
+    const user = userEvent.setup();
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "hotkeyReadiness",
+      selectedMode: "local",
+    });
+    tauri.resolveCommand("complete_onboarding", {
+      completed: true,
+      currentStep: "hotkeyReadiness",
+      selectedMode: "local",
+    });
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Continue" }));
+
+    expectTauriCommand(tauri, "complete_onboarding", undefined);
+    expect(await screen.findByText("Voice app shell")).toBeInTheDocument();
   });
 
   it("resumes the microphone readiness step instead of dropping into the app shell", async () => {

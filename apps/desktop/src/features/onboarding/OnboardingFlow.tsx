@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
+  completeOnboarding,
   getOnboardingState,
   isTauriRuntime,
   saveOnboardingMode,
@@ -10,6 +11,7 @@ import {
 } from "@/lib/tauri";
 
 import { MicrophoneReadinessStep } from "./MicrophoneReadinessStep";
+import { HotkeyReadinessStep } from "./HotkeyReadinessStep";
 import { OnboardingLoadingScreen } from "./OnboardingLoadingScreen";
 import { OnboardingModeChoice } from "./OnboardingModeChoice";
 import { ProviderSetupStep } from "./ProviderSetupStep";
@@ -82,6 +84,19 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
     }
   }
 
+  async function handleCompleteOnboarding() {
+    setError(null);
+
+    try {
+      const savedState = await completeOnboarding();
+      setState(savedState);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to finish setup.",
+      );
+    }
+  }
+
   if (!isTauriRuntime()) {
     return children;
   }
@@ -119,7 +134,17 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
       <ProviderSetupStep
         error={error}
         onBack={() => void handleStepChange("microphoneReadiness")}
-        onContinue={() => void handleStepChange("providerTest")}
+        onContinue={() => void handleStepChange("hotkeyReadiness")}
+      />
+    );
+  }
+
+  if (state.currentStep === "hotkeyReadiness") {
+    return (
+      <HotkeyReadinessStep
+        error={error}
+        onBack={() => void handleStepChange("providerSetup")}
+        onContinue={() => void handleCompleteOnboarding()}
       />
     );
   }

@@ -24,7 +24,7 @@ export function OnboardingModeChoice({
       header={
         <OnboardingProgressHeader
           step={1}
-          totalSteps={5}
+          totalSteps={4}
           title="Choose how to use Vaak"
           description="Set up desktop dictation without changing how you work."
         />

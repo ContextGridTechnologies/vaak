@@ -24,18 +24,18 @@
         "label": "voice-capsule",
         "title": "Vaak Voice",
         "url": "/?window=voice-capsule",
-        "width": 320,
-        "height": 76,
-        "minWidth": 320,
-        "minHeight": 76,
-        "maxWidth": 320,
-        "maxHeight": 76,
+        "width": 48,
+        "height": 28,
+        "minWidth": 48,
+        "minHeight": 28,
+        "maxWidth": 48,
+        "maxHeight": 28,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "resizable": false,
         "skipTaskbar": true,
-        "visible": true
+        "visible": false
       }
     ],
     "security": {

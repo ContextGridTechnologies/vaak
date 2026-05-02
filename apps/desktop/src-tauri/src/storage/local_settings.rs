@@ -8,6 +8,10 @@ use tauri::{AppHandle, Manager};
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::ProviderConfig;
+use crate::session::{
+    command_binding_label, normalize_dictation_hotkey_label, HotkeyBindings,
+    DEFAULT_DICTATION_BINDING_LABEL,
+};
 
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const SETTINGS_VERSION: u32 = 1;
@@ -31,7 +35,18 @@ struct LocalSettings {
     #[serde(default)]
     microphone_selection: MicrophoneSelection,
     #[serde(default)]
+    hotkeys: HotkeySettings,
+    #[serde(default)]
     onboarding: OnboardingState,
+    #[serde(default)]
+    app_shell: AppShellPreferences,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HotkeySettings {
+    #[serde(default = "default_dictation_hotkey")]
+    dictation: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -40,6 +55,12 @@ pub struct OnboardingState {
     pub completed: bool,
     pub current_step: String,
     pub selected_mode: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppShellPreferences {
+    pub sidebar_collapsed: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -71,7 +92,9 @@ impl Default for LocalSettings {
             selected_speech_provider: default_selected_speech_provider(),
             provider_configs: BTreeMap::new(),
             microphone_selection: MicrophoneSelection::default(),
+            hotkeys: HotkeySettings::default(),
             onboarding: OnboardingState::default(),
+            app_shell: AppShellPreferences::default(),
         }
     }
 }
@@ -79,6 +102,14 @@ impl Default for LocalSettings {
 impl Default for MicrophoneSelection {
     fn default() -> Self {
         Self::System
+    }
+}
+
+impl Default for HotkeySettings {
+    fn default() -> Self {
+        Self {
+            dictation: default_dictation_hotkey(),
+        }
     }
 }
 
@@ -173,9 +204,42 @@ impl LocalSettingsStore {
         Ok(self.load_unlocked()?.onboarding)
     }
 
+    pub fn app_shell_preferences(&self) -> Result<AppShellPreferences, ProviderError> {
+        let _guard = self.lock()?;
+        Ok(self.load_unlocked()?.app_shell)
+    }
+
+    pub fn save_app_shell_preferences(
+        &self,
+        preferences: AppShellPreferences,
+    ) -> Result<AppShellPreferences, ProviderError> {
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        settings.app_shell = preferences;
+        self.save_unlocked(&settings)?;
+        Ok(settings.app_shell)
+    }
+
     pub fn microphone_selection(&self) -> Result<MicrophoneSelection, ProviderError> {
         let _guard = self.lock()?;
         Ok(self.load_unlocked()?.microphone_selection)
+    }
+
+    pub fn hotkey_bindings(&self) -> Result<HotkeyBindings, ProviderError> {
+        let _guard = self.lock()?;
+        let settings = self.load_unlocked()?;
+        build_hotkey_bindings(&settings.hotkeys.dictation)
+    }
+
+    pub fn save_dictation_hotkey(&self, shortcut: &str) -> Result<HotkeyBindings, ProviderError> {
+        let normalized = normalize_dictation_hotkey_label(shortcut)
+            .map_err(|message| ProviderFailure::InvalidRequest(message))?;
+
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        settings.hotkeys.dictation = normalized.clone();
+        self.save_unlocked(&settings)?;
+        build_hotkey_bindings(&normalized)
     }
 
     pub fn save_microphone_selection(
@@ -221,6 +285,14 @@ impl LocalSettingsStore {
         Ok(settings.onboarding)
     }
 
+    pub fn complete_onboarding(&self) -> Result<OnboardingState, ProviderError> {
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        settings.onboarding.completed = true;
+        self.save_unlocked(&settings)?;
+        Ok(settings.onboarding)
+    }
+
     fn load_unlocked(&self) -> Result<LocalSettings, ProviderError> {
         if !self.settings_path.exists() {
             return Ok(LocalSettings::default());
@@ -231,6 +303,8 @@ impl LocalSettingsStore {
         let mut settings = serde_json::from_str::<LocalSettings>(&raw)
             .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
         validate_microphone_selection(&settings.microphone_selection)?;
+        settings.hotkeys.dictation = normalize_dictation_hotkey_label(&settings.hotkeys.dictation)
+            .map_err(ProviderFailure::InvalidRequest)?;
         settings.onboarding.current_step =
             normalize_onboarding_step(&settings.onboarding.current_step)
                 .unwrap_or("modeChoice")
@@ -265,15 +339,25 @@ fn default_selected_speech_provider() -> String {
     DEFAULT_SPEECH_PROVIDER.to_string()
 }
 
+fn default_dictation_hotkey() -> String {
+    DEFAULT_DICTATION_BINDING_LABEL.to_string()
+}
+
 fn normalize_onboarding_step(step: &str) -> Option<&'static str> {
     match step.trim() {
         "modeChoice" => Some("modeChoice"),
         "desktopReadiness" | "microphoneReadiness" => Some("microphoneReadiness"),
         "providerSetup" => Some("providerSetup"),
-        "providerTest" => Some("providerTest"),
-        "tryDictation" => Some("tryDictation"),
+        "providerTest" | "tryDictation" | "hotkeyReadiness" => Some("hotkeyReadiness"),
         _ => None,
     }
+}
+
+fn build_hotkey_bindings(dictation: &str) -> Result<HotkeyBindings, ProviderError> {
+    Ok(HotkeyBindings {
+        command: command_binding_label(dictation).map_err(ProviderFailure::InvalidRequest)?,
+        dictation: dictation.to_string(),
+    })
 }
 
 fn validate_microphone_selection(selection: &MicrophoneSelection) -> Result<(), ProviderError> {
@@ -451,20 +535,101 @@ mod tests {
     }
 
     #[test]
+    fn migrates_legacy_provider_and_dictation_steps_to_hotkey_readiness() {
+        let dir = temp_config_dir("onboarding-migrate-hotkey-step");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("settings.json"),
+            r#"{
+  "version": 1,
+  "selectedSpeechProvider": "openai",
+  "providerConfigs": {},
+  "onboarding": {
+    "completed": false,
+    "currentStep": "providerTest",
+    "selectedMode": "local"
+  }
+}"#,
+        )
+        .unwrap();
+
+        let state = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
+
+        assert_eq!(state.current_step, "hotkeyReadiness");
+        assert_eq!(state.selected_mode.as_deref(), Some("local"));
+
+        fs::write(
+            dir.join("settings.json"),
+            r#"{
+  "version": 1,
+  "selectedSpeechProvider": "openai",
+  "providerConfigs": {},
+  "onboarding": {
+    "completed": false,
+    "currentStep": "tryDictation",
+    "selectedMode": "local"
+  }
+}"#,
+        )
+        .unwrap();
+
+        let migrated = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
+
+        assert_eq!(migrated.current_step, "hotkeyReadiness");
+    }
+
+    #[test]
     fn saves_onboarding_step_progress_in_local_settings() {
         let dir = temp_config_dir("onboarding-step");
         let store = LocalSettingsStore::new(&dir);
 
         store.save_onboarding_mode("local").unwrap();
-        let saved = store.save_onboarding_step("providerSetup").unwrap();
+        let saved = store.save_onboarding_step("hotkeyReadiness").unwrap();
 
         assert!(!saved.completed);
-        assert_eq!(saved.current_step, "providerSetup");
+        assert_eq!(saved.current_step, "hotkeyReadiness");
         assert_eq!(saved.selected_mode.as_deref(), Some("local"));
 
         let reloaded = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
-        assert_eq!(reloaded.current_step, "providerSetup");
+        assert_eq!(reloaded.current_step, "hotkeyReadiness");
         assert_eq!(reloaded.selected_mode.as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn completes_onboarding_in_local_settings() {
+        let dir = temp_config_dir("onboarding-complete");
+        let store = LocalSettingsStore::new(&dir);
+
+        store.save_onboarding_mode("local").unwrap();
+        store.save_onboarding_step("hotkeyReadiness").unwrap();
+        let saved = store.complete_onboarding().unwrap();
+
+        assert!(saved.completed);
+        assert_eq!(saved.current_step, "hotkeyReadiness");
+        assert_eq!(saved.selected_mode.as_deref(), Some("local"));
+
+        let reloaded = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
+        assert!(reloaded.completed);
+        assert_eq!(reloaded.current_step, "hotkeyReadiness");
+    }
+
+    #[test]
+    fn persists_dictation_hotkey_in_local_settings() {
+        let dir = temp_config_dir("dictation-hotkey");
+        let store = LocalSettingsStore::new(&dir);
+
+        let saved = store.save_dictation_hotkey("Ctrl+Shift").unwrap();
+
+        assert_eq!(saved.dictation, "Ctrl+Shift");
+        assert_eq!(saved.command, "Ctrl+Shift+Alt");
+
+        let reloaded = LocalSettingsStore::new(&dir).hotkey_bindings().unwrap();
+        assert_eq!(reloaded.dictation, "Ctrl+Shift");
+        assert_eq!(reloaded.command, "Ctrl+Shift+Alt");
+
+        let json = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(json.contains("\"hotkeys\""));
+        assert!(json.contains("\"dictation\": \"Ctrl+Shift\""));
     }
 
     #[test]
@@ -472,7 +637,42 @@ mod tests {
         let dir = temp_config_dir("microphone-default");
         let store = LocalSettingsStore::new(&dir);
 
-        assert_eq!(store.microphone_selection().unwrap(), MicrophoneSelection::System);
+        assert_eq!(
+            store.microphone_selection().unwrap(),
+            MicrophoneSelection::System
+        );
+    }
+
+    #[test]
+    fn app_shell_preferences_default_to_expanded_sidebar() {
+        let dir = temp_config_dir("app-shell-defaults");
+        let store = LocalSettingsStore::new(&dir);
+
+        assert!(!store.app_shell_preferences().unwrap().sidebar_collapsed);
+    }
+
+    #[test]
+    fn persists_app_shell_sidebar_collapse_preference() {
+        let dir = temp_config_dir("app-shell-sidebar");
+        let store = LocalSettingsStore::new(&dir);
+
+        let saved = store
+            .save_app_shell_preferences(AppShellPreferences {
+                sidebar_collapsed: true,
+            })
+            .unwrap();
+
+        assert!(saved.sidebar_collapsed);
+        assert!(
+            LocalSettingsStore::new(&dir)
+                .app_shell_preferences()
+                .unwrap()
+                .sidebar_collapsed
+        );
+
+        let json = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(json.contains("\"appShell\""));
+        assert!(json.contains("\"sidebarCollapsed\": true"));
     }
 
     #[test]
@@ -493,7 +693,9 @@ mod tests {
             }
         );
         assert_eq!(
-            LocalSettingsStore::new(&dir).microphone_selection().unwrap(),
+            LocalSettingsStore::new(&dir)
+                .microphone_selection()
+                .unwrap(),
             MicrophoneSelection::Manual {
                 device_id: "usb-mic".to_string()
             }

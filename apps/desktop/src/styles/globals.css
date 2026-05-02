@@ -66,9 +66,55 @@ body {
 
 html[data-window="voice-capsule"],
 body[data-window="voice-capsule"] {
-  min-height: 100vh;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: transparent;
+}
+
+body[data-window="voice-capsule"] #root {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: transparent;
+}
+
+.voice-wave-bar {
+  width: 2px;
+  border-radius: 9999px;
+  background: rgb(167 243 208 / 0.92);
+  box-shadow: 0 0 6px rgb(52 211 153 / 0.32);
+}
+
+.voice-wave-active .voice-wave-bar {
+  transform-origin: center bottom;
+  animation: voice-wave 0.9s ease-in-out infinite;
+}
+
+.voice-wave-active .voice-wave-bar:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.voice-wave-active .voice-wave-bar:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+.voice-wave-active .voice-wave-bar:nth-child(4) {
+  animation-delay: 0.36s;
+}
+
+@keyframes voice-wave {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: scaleY(1.15);
+    opacity: 1;
+  }
 }
 
 @theme inline {
@@ -162,4 +208,12 @@ body[data-window="voice-capsule"] {
   html {
     @apply font-sans;
   }
+}
+
+body[data-window="voice-capsule"] {
+  background: transparent;
+}
+
+body[data-window="voice-capsule"] #root {
+  background: transparent;
 }

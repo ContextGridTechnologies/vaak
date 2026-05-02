@@ -26,6 +26,14 @@ describe("DesktopTitleBar", () => {
     );
   });
 
+  it("keeps the Vaak brand in the custom titlebar", () => {
+    globalScope.__TAURI__ = {};
+
+    renderApp(<DesktopTitleBar />);
+
+    expect(screen.getByText("Vaak")).toBeInTheDocument();
+  });
+
   it("does not render in browser preview", () => {
     renderApp(<DesktopTitleBar />);
 

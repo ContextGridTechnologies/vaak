@@ -6,8 +6,10 @@ import {
 } from "@/test/tauri";
 
 import {
+  completeOnboarding,
   getOnboardingState,
   getMicrophoneSelection,
+  type OnboardingStep,
   saveOnboardingMode,
   saveMicrophoneSelection,
   saveOnboardingStep,
@@ -28,7 +30,12 @@ describe("onboarding Tauri API", () => {
     });
     tauri.resolveCommand("save_onboarding_step", {
       completed: false,
-      currentStep: "providerSetup",
+      currentStep: "hotkeyReadiness",
+      selectedMode: "local",
+    });
+    tauri.resolveCommand("complete_onboarding", {
+      completed: true,
+      currentStep: "hotkeyReadiness",
       selectedMode: "local",
     });
 
@@ -41,16 +48,24 @@ describe("onboarding Tauri API", () => {
       currentStep: "microphoneReadiness",
       selectedMode: "local",
     });
-    await expect(saveOnboardingStep("providerSetup")).resolves.toMatchObject({
-      currentStep: "providerSetup",
+    await expect(
+      saveOnboardingStep("hotkeyReadiness" satisfies OnboardingStep),
+    ).resolves.toMatchObject({
+      currentStep: "hotkeyReadiness",
+      selectedMode: "local",
+    });
+    await expect(completeOnboarding()).resolves.toMatchObject({
+      completed: true,
+      currentStep: "hotkeyReadiness",
       selectedMode: "local",
     });
 
     expectTauriCommand(tauri, "get_onboarding_state", undefined);
     expectTauriCommand(tauri, "save_onboarding_mode", { mode: "local" });
     expectTauriCommand(tauri, "save_onboarding_step", {
-      step: "providerSetup",
+      step: "hotkeyReadiness",
     });
+    expectTauriCommand(tauri, "complete_onboarding", undefined);
   });
 
   it("loads and saves microphone selection through backend commands", async () => {
