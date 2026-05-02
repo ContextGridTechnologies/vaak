@@ -5,6 +5,7 @@ use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::{ProviderStatus, TranscriptResult, TranscriptionInput};
 use crate::storage::LocalSettingsStore;
 
+mod assemblyai;
 mod azure;
 mod elevenlabs;
 mod gemini;
@@ -56,6 +57,11 @@ pub async fn transcribe(
             .transcribe(api_key, input)
             .await
         }
+        assemblyai::PROVIDER_ID => {
+            assemblyai::AssemblyAiSpeechProvider::default()
+                .transcribe(api_key, input)
+                .await
+        }
         elevenlabs::PROVIDER_ID => {
             elevenlabs::ElevenLabsSpeechProvider::default()
                 .transcribe(api_key, input)
@@ -70,6 +76,7 @@ pub fn validate_provider_id(provider_id: &str) -> Result<(), ProviderError> {
     match provider_id {
         openai::PROVIDER_ID
         | azure::PROVIDER_ID
+        | assemblyai::PROVIDER_ID
         | gemini::PROVIDER_ID
         | elevenlabs::PROVIDER_ID => Ok(()),
         _ => Err(ProviderFailure::UnsupportedProvider.into()),
@@ -93,6 +100,10 @@ fn is_config_complete(
             .unwrap_or(false));
     }
 
+    if provider_id == assemblyai::PROVIDER_ID {
+        return Ok(true);
+    }
+
     if provider_id == elevenlabs::PROVIDER_ID {
         return Ok(true);
     }
@@ -111,8 +122,9 @@ fn resolve_transcription_input(
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
 
-    let supports_saved_model =
-        provider_id == openai::PROVIDER_ID || provider_id == elevenlabs::PROVIDER_ID;
+    let supports_saved_model = provider_id == openai::PROVIDER_ID
+        || provider_id == assemblyai::PROVIDER_ID
+        || provider_id == elevenlabs::PROVIDER_ID;
     if !has_explicit_model && supports_saved_model {
         if let Some(model) = config
             .and_then(|provider_config| provider_config.model)
@@ -229,6 +241,18 @@ mod tests {
     }
 
     #[test]
+    fn assemblyai_is_a_supported_provider_id() {
+        assert!(validate_provider_id("assemblyai").is_ok());
+    }
+
+    #[test]
+    fn assemblyai_config_is_complete_without_local_provider_settings() {
+        let settings = LocalSettingsStore::new(&temp_config_dir("assemblyai"));
+
+        assert!(is_config_complete("assemblyai", &settings).unwrap());
+    }
+
+    #[test]
     fn applies_saved_openai_model_when_transcription_input_omits_one() {
         let input = TranscriptionInput {
             audio: vec![1],
@@ -342,5 +366,29 @@ mod tests {
         let resolved = resolve_transcription_input(elevenlabs::PROVIDER_ID, input, None);
 
         assert_eq!(resolved.prompt, None);
+    }
+
+    #[test]
+    fn applies_saved_assemblyai_model_when_transcription_input_omits_one() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/webm".to_string(),
+            language: None,
+            prompt: None,
+            model: None,
+        };
+
+        let resolved = resolve_transcription_input(
+            "assemblyai",
+            input,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some("universal-3-pro".to_string()),
+            }),
+        );
+
+        assert_eq!(resolved.model.as_deref(), Some("universal-3-pro"));
     }
 }

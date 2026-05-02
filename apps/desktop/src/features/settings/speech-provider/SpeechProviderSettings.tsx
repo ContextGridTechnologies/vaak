@@ -12,6 +12,7 @@ import {
   type SpeechProviderId,
 } from "@/lib/tauri";
 
+import { AssemblyAiProviderPanel } from "./AssemblyAiProviderPanel";
 import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
@@ -24,6 +25,7 @@ import {
 } from "./status";
 import {
   AZURE_OPENAI_API_VERSION,
+  DEFAULT_ASSEMBLYAI_MODEL,
   DEFAULT_ELEVENLABS_MODEL,
   DEFAULT_OPENAI_MODEL,
   providerLabels,
@@ -46,8 +48,12 @@ export function SpeechProviderSettings({
 }: SpeechProviderSettingsProps) {
   const [apiKey, setApiKey] = useState("");
   const [azureApiKey, setAzureApiKey] = useState("");
+  const [assemblyAiApiKey, setAssemblyAiApiKey] = useState("");
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
   const [openAiModel, setOpenAiModel] = useState<string>(DEFAULT_OPENAI_MODEL);
+  const [assemblyAiModel, setAssemblyAiModel] = useState<string>(
+    DEFAULT_ASSEMBLYAI_MODEL,
+  );
   const [elevenLabsModel, setElevenLabsModel] = useState<string>(
     DEFAULT_ELEVENLABS_MODEL,
   );
@@ -84,18 +90,22 @@ export function SpeechProviderSettings({
         const [
           openAiStatus,
           azureStatus,
+          assemblyAiStatus,
           elevenLabsStatus,
           openAiConfig,
           azureConfig,
+          assemblyAiConfig,
           elevenLabsConfig,
           selectedProvider,
         ] =
           await Promise.all([
             getProviderStatus("openai"),
             getProviderStatus("azure-openai"),
+            getProviderStatus("assemblyai"),
             getProviderStatus("elevenlabs"),
             getProviderConfig("openai"),
             getProviderConfig("azure-openai"),
+            getProviderConfig("assemblyai"),
             getProviderConfig("elevenlabs"),
             getSelectedSpeechProvider(),
           ]);
@@ -103,6 +113,7 @@ export function SpeechProviderSettings({
           setProviderStatuses({
             openai: openAiStatus,
             "azure-openai": azureStatus,
+            assemblyai: assemblyAiStatus,
             elevenlabs: elevenLabsStatus,
           });
           setOpenAiModel(openAiConfig?.model ?? DEFAULT_OPENAI_MODEL);
@@ -110,6 +121,9 @@ export function SpeechProviderSettings({
           setAzureDeploymentId(azureConfig?.deploymentId ?? "");
           setAzureApiVersion(
             azureConfig?.apiVersion ?? AZURE_OPENAI_API_VERSION,
+          );
+          setAssemblyAiModel(
+            assemblyAiConfig?.model ?? DEFAULT_ASSEMBLYAI_MODEL,
           );
           setElevenLabsModel(
             elevenLabsConfig?.model ?? DEFAULT_ELEVENLABS_MODEL,
@@ -167,6 +181,16 @@ export function SpeechProviderSettings({
   const handleAzureApiKeyChange = (value: string) => {
     clearOnboardingVerification("azure-openai");
     setAzureApiKey(value);
+  };
+
+  const handleAssemblyAiApiKeyChange = (value: string) => {
+    clearOnboardingVerification("assemblyai");
+    setAssemblyAiApiKey(value);
+  };
+
+  const handleAssemblyAiModelChange = (value: string) => {
+    clearOnboardingVerification("assemblyai");
+    setAssemblyAiModel(value);
   };
 
   const handleAzureEndpointChange = (value: string) => {
@@ -302,6 +326,43 @@ export function SpeechProviderSettings({
     }
   };
 
+  const saveAssemblyAiKey = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    clearOnboardingVerification("assemblyai");
+    setProviderErrors((current) => ({ ...current, assemblyai: undefined }));
+    setProviderTestResults((current) => ({
+      ...current,
+      assemblyai: undefined,
+    }));
+    setSavingProviderId("assemblyai");
+
+    try {
+      const status = await saveSpeechProviderSetup({
+        providerId: "assemblyai",
+        apiKey: assemblyAiApiKey,
+        config: {
+          model: assemblyAiModel,
+        },
+        activate: true,
+      });
+      setProviderStatuses((current) => ({ ...current, assemblyai: status }));
+      setAssemblyAiApiKey("");
+      setSelectedProviderId("assemblyai");
+      if (isOnboarding) {
+        await verifySavedProvider("assemblyai");
+      } else {
+        toast.success("AssemblyAI key saved");
+      }
+    } catch (err) {
+      setProviderErrors((current) => ({
+        ...current,
+        assemblyai: normalizeProviderError("assemblyai", err),
+      }));
+    } finally {
+      setSavingProviderId(null);
+    }
+  };
+
   const saveElevenLabsKey = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     clearOnboardingVerification("elevenlabs");
@@ -412,6 +473,22 @@ export function SpeechProviderSettings({
           onDeploymentIdChange={handleAzureDeploymentIdChange}
           onEndpointChange={handleAzureEndpointChange}
           onSubmit={saveAzureOpenAiSettings}
+          onTest={testSelectedProvider}
+        />
+      ) : selectedProviderId === "assemblyai" ? (
+        <AssemblyAiProviderPanel
+          apiKey={assemblyAiApiKey}
+          error={providerErrors.assemblyai}
+          isLoading={isLoading}
+          isSaving={savingProviderId === "assemblyai"}
+          isTesting={testingProviderId === "assemblyai"}
+          model={assemblyAiModel}
+          showTestButton={!isOnboarding}
+          testResult={providerTestResults.assemblyai}
+          status={providerStatuses.assemblyai}
+          onApiKeyChange={handleAssemblyAiApiKeyChange}
+          onModelChange={handleAssemblyAiModelChange}
+          onSubmit={saveAssemblyAiKey}
           onTest={testSelectedProvider}
         />
       ) : (

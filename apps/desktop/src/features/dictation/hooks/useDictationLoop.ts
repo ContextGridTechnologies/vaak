@@ -62,6 +62,7 @@ type DictationLoopState = {
 const providerLabels: Partial<Record<SpeechProviderId, string>> = {
   openai: "OpenAI",
   "azure-openai": "Azure OpenAI",
+  assemblyai: "AssemblyAI",
   elevenlabs: "ElevenLabs",
 };
 

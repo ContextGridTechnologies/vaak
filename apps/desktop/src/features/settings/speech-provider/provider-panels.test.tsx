@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { renderApp } from "@/test/render";
 
+import { AssemblyAiProviderPanel } from "./AssemblyAiProviderPanel";
 import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
@@ -71,6 +72,32 @@ describe("speech provider panels", () => {
         model="scribe_v2"
         status={{
           providerId: "elevenlabs",
+          configured: true,
+          configComplete: true,
+        }}
+        onApiKeyChange={vi.fn()}
+        onModelChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onTest={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByLabelText("API key");
+
+    expect(input).toHaveAttribute("placeholder", SAVED_KEY_PLACEHOLDER);
+    expect(input).toHaveValue("");
+  });
+
+  it("shows a saved AssemblyAI key as a non-copyable star placeholder", () => {
+    renderApp(
+      <AssemblyAiProviderPanel
+        apiKey=""
+        isLoading={false}
+        isSaving={false}
+        isTesting={false}
+        model="universal-3-pro"
+        status={{
+          providerId: "assemblyai",
           configured: true,
           configComplete: true,
         }}

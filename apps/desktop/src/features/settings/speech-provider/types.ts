@@ -20,6 +20,16 @@ export const OPENAI_MODELS = [
     label: "Whisper-1",
   },
 ] as const;
+export const ASSEMBLYAI_MODELS = [
+  {
+    value: "universal-3-pro",
+    label: "Universal-3 Pro",
+  },
+  {
+    value: "universal-2",
+    label: "Universal-2",
+  },
+] as const;
 export const ELEVENLABS_MODELS = [
   {
     value: "scribe_v2",
@@ -31,11 +41,13 @@ export const ELEVENLABS_MODELS = [
   },
 ] as const;
 export const DEFAULT_OPENAI_MODEL = OPENAI_MODELS[0].value;
+export const DEFAULT_ASSEMBLYAI_MODEL = ASSEMBLYAI_MODELS[0].value;
 export const DEFAULT_ELEVENLABS_MODEL = ELEVENLABS_MODELS[0].value;
 
 export const providerLabels: Record<SpeechProviderId, string> = {
   openai: "OpenAI",
   "azure-openai": "Azure OpenAI",
+  assemblyai: "AssemblyAI",
   elevenlabs: "ElevenLabs",
 };
 

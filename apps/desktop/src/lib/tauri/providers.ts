@@ -20,7 +20,11 @@ export type TranscriptResult = {
   durationMs: number | null;
 };
 
-export type SpeechProviderId = "openai" | "azure-openai" | "elevenlabs";
+export type SpeechProviderId =
+  | "openai"
+  | "azure-openai"
+  | "assemblyai"
+  | "elevenlabs";
 
 export const SPEECH_PROVIDER_CHANGED_EVENT =
   "vaak://speech-provider-changed";

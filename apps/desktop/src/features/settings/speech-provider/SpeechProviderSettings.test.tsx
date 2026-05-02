@@ -45,6 +45,14 @@ describe("SpeechProviderSettings", () => {
         });
       }
 
+      if (providerId === "assemblyai") {
+        return Promise.resolve({
+          providerId: "assemblyai",
+          configured: false,
+          configComplete: true,
+        });
+      }
+
       if (providerId === "elevenlabs") {
         return Promise.resolve({
           providerId: "elevenlabs",
@@ -80,6 +88,9 @@ describe("SpeechProviderSettings", () => {
     expect(screen.getByRole("button", { name: "OpenAI" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Azure OpenAI" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "AssemblyAI" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "ElevenLabs" }),
@@ -222,5 +233,56 @@ describe("SpeechProviderSettings", () => {
         activate: true,
       });
     });
+  });
+
+  it("loads, saves, and verifies AssemblyAI with its selected model", async () => {
+    const user = userEvent.setup();
+    const verifyOnboardingProvider = vi.fn().mockResolvedValue({
+      providerId: "assemblyai",
+      model: "universal-3-pro",
+      text: "He began a confused complaint against the wizard who had vanished behind the curtain on the left.",
+      durationMs: 1800,
+    });
+    providerApi.getProviderConfig.mockImplementation((providerId: string) => {
+      if (providerId === "assemblyai") {
+        return Promise.resolve({ model: "universal-2" });
+      }
+
+      return Promise.resolve(null);
+    });
+    providerApi.saveSpeechProviderSetup.mockResolvedValue({
+      providerId: "assemblyai",
+      configured: true,
+      configComplete: true,
+    });
+
+    renderApp(
+      <SpeechProviderSettings
+        variant="onboarding"
+        verifyOnboardingProvider={verifyOnboardingProvider}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "AssemblyAI" }));
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent(
+      "Universal-2",
+    );
+    await user.click(screen.getByRole("combobox", { name: "Model" }));
+    await user.click(screen.getByRole("option", { name: "Universal-3 Pro" }));
+    await user.type(screen.getByLabelText("API key"), "aa-test");
+    await user.click(screen.getByRole("button", { name: "Save and use AssemblyAI" }));
+
+    await waitFor(() => {
+      expect(providerApi.saveSpeechProviderSetup).toHaveBeenCalledWith({
+        providerId: "assemblyai",
+        apiKey: "aa-test",
+        config: { model: "universal-3-pro" },
+        activate: true,
+      });
+      expect(verifyOnboardingProvider).toHaveBeenCalledWith("assemblyai");
+    });
+    expect(
+      await screen.findByText("Provider test passed."),
+    ).toBeInTheDocument();
   });
 });

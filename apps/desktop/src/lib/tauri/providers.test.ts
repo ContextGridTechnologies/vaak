@@ -6,6 +6,7 @@ import {
 } from "@/test/tauri";
 
 import {
+  type SpeechProviderId,
   getProviderConfig,
   getProviderStatus,
   getSelectedSpeechProvider,
@@ -15,6 +16,12 @@ import {
 } from "./providers";
 
 describe("provider Tauri API", () => {
+  it("supports assemblyai in typed speech provider flows", () => {
+    const providerId: SpeechProviderId = "assemblyai";
+
+    expect(providerId).toBe("assemblyai");
+  });
+
   it("maps provider setup to the atomic backend command", async () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("save_speech_provider_setup", {
@@ -114,6 +121,34 @@ describe("provider Tauri API", () => {
 
     expectTauriCommand(tauri, "test_speech_provider", {
       providerId: "azure-openai",
+    });
+  });
+
+  it("serializes AssemblyAI transcription requests with the selected provider id", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("transcribe_recording", {
+      providerId: "assemblyai",
+      model: "universal-3-pro",
+      text: "hello",
+      durationMs: null,
+    });
+
+    await transcribeRecording({
+      providerId: "assemblyai",
+      audioBlob: new Blob([new Uint8Array([4, 5, 6])], {
+        type: "audio/flac",
+      }),
+      language: "en",
+      model: "universal-3-pro",
+    });
+
+    expectTauriCommand(tauri, "transcribe_recording", {
+      providerId: "assemblyai",
+      audioBytes: [4, 5, 6],
+      mimeType: "audio/flac",
+      language: "en",
+      prompt: undefined,
+      model: "universal-3-pro",
     });
   });
 });

@@ -1,3 +1,4 @@
+export { AssemblyAiProviderPanel } from "./AssemblyAiProviderPanel";
 export { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 export { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 export { OpenAiProviderPanel } from "./OpenAiProviderPanel";
@@ -10,6 +11,8 @@ export {
 } from "./status";
 export {
   AZURE_OPENAI_API_VERSION,
+  ASSEMBLYAI_MODELS,
+  DEFAULT_ASSEMBLYAI_MODEL,
   DEFAULT_ELEVENLABS_MODEL,
   DEFAULT_OPENAI_MODEL,
   ELEVENLABS_MODELS,

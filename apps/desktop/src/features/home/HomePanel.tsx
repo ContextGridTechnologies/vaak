@@ -560,6 +560,7 @@ function formatProviderLabel(record: DictationRecord) {
 
 const providerDisplayName: Record<string, string> = {
   openai: "OpenAI",
+  assemblyai: "AssemblyAI",
   deepgram: "Deepgram",
   groq: "Groq",
   elevenlabs: "ElevenLabs",

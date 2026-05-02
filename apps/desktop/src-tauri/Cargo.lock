@@ -90,6 +90,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "thiserror 2.0.17",
+ "tokio",
  "uuid",
  "windows 0.56.0",
  "windows-sys 0.59.0",
