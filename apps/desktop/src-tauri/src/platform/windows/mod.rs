@@ -2,7 +2,10 @@ mod com;
 mod errors;
 mod focus;
 mod insert;
+mod targeting;
 mod uia;
 
 pub(crate) use focus::get_focused_field;
-pub(crate) use insert::{capture_and_insert, insert_text, insert_text_for_stable_id};
+pub(crate) use insert::{
+    capture_and_insert, insert_text, insert_text_for_captured_target, insert_text_for_stable_id,
+};

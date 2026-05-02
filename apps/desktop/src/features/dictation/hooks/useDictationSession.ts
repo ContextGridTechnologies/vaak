@@ -4,7 +4,7 @@ import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useMicrophoneSelection } from "@/hooks/useMicrophoneSelection";
 import { normalizeError } from "@/lib/errors";
 import {
-  getFocusedField,
+  captureDictationTarget,
   getHotkeyBindings,
   type FocusedFieldInfo,
   type HotkeyBindings,
@@ -43,6 +43,7 @@ export function useDictationSession() {
     command: "Ctrl+Win+C",
   });
   const [activeMode, setActiveMode] = useState<ActiveMode>("idle");
+  const [completedMode, setCompletedMode] = useState<ActiveMode | null>(null);
   const selectedDeviceId =
     selection.mode === "manual" ? selection.deviceId : "system";
   const lastDeviceIdRef = useRef<string>("system");
@@ -87,6 +88,7 @@ export function useDictationSession() {
   const startWithFocusCapture = useCallback(
     async (knownField?: FocusedFieldInfo | null) => {
       setFocusedFieldError(null);
+      setCompletedMode(null);
       if (isManualUnavailable) {
         setActiveMode("idle");
         setFocusedFieldError(
@@ -107,7 +109,7 @@ export function useDictationSession() {
       }
 
       const [fieldResult, recordingResult] = await Promise.allSettled([
-        getFocusedField(),
+        captureDictationTarget(),
         start(),
       ]);
 
@@ -130,7 +132,8 @@ export function useDictationSession() {
     [isManualUnavailable, manualUnavailableMessage, start],
   );
 
-  const stopHotkeyRecording = useCallback(() => {
+  const stopHotkeyRecording = useCallback((mode: ActiveMode) => {
+    setCompletedMode(mode);
     setActiveMode("idle");
     stop();
   }, [stop]);
@@ -141,6 +144,7 @@ export function useDictationSession() {
   }, [startWithFocusCapture]);
 
   const stopManualRecording = useCallback(() => {
+    setCompletedMode("dictation");
     setActiveMode("idle");
     stop();
   }, [stop]);
@@ -225,7 +229,7 @@ export function useDictationSession() {
             }
 
             if (payload.phase === "stop") {
-              stopHotkeyRecording();
+              stopHotkeyRecording("dictation");
               return;
             }
           }
@@ -244,7 +248,7 @@ export function useDictationSession() {
             }
 
             if (payload.phase === "stop") {
-              stopHotkeyRecording();
+              stopHotkeyRecording("command");
             }
           }
         },
@@ -277,6 +281,7 @@ export function useDictationSession() {
     activeMode,
     audioBlob,
     audioUrl,
+    completedMode,
     deviceError,
     deviceOptions,
     durationLabel,

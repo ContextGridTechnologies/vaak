@@ -170,4 +170,10 @@ metered or bounded.
 
 ## Current First Step
 
-Build Milestone 1, Step 0: Experience Design Baseline.
+Continue Milestone 1 implementation from the desktop shell baseline:
+
+- app shell, sidebar navigation, account placeholder, and Home empty state are
+  in place
+- next focus is completing the local dictation loop: microphone readiness,
+  provider readiness, hotkey-driven capture, transcription, and insertion into
+  the focused app

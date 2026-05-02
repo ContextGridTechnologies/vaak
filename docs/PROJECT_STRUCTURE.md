@@ -14,12 +14,17 @@ the local BYOM dictation loop is working.
 │     │  ├─ app/                 # app shell and layout
 │     │  ├─ components/          # reusable UI
 │     │  ├─ features/            # product features
+│     │  │  ├─ home/             # default app shell empty/operational state
+│     │  │  ├─ account/          # optional account placeholder
+│     │  │  ├─ settings/         # local provider and app configuration
+│     │  │  └─ onboarding/       # first-run readiness flow
 │     │  ├─ hooks/               # browser/device hooks
 │     │  └─ lib/                 # utilities and Tauri wrappers
 │     └─ src-tauri/
 │        ├─ src/                 # Rust native capabilities
 │        │  ├─ commands/         # Tauri command surface
 │        │  ├─ platform/         # OS-specific focus/insertion code
+│        │  ├─ storage/          # local settings and non-secret preferences
 │        │  └─ session.rs        # session and hotkey state
 │        └─ capabilities/        # Tauri permissions
 ├─ packages/
@@ -39,7 +44,6 @@ apps/desktop/src/features/providers/
 apps/desktop/src/features/settings/
 apps/desktop/src/features/personalization/
 apps/desktop/src/lib/providers/
-apps/desktop/src/lib/storage/
 ```
 
 Suggested responsibilities:
@@ -48,7 +52,9 @@ Suggested responsibilities:
 - `features/settings`: local settings, provider credentials, hotkeys.
 - `features/personalization`: dictionary, snippets, styles.
 - `lib/providers`: provider interfaces and client implementations.
-- `lib/storage`: local config and secure credential wrappers.
+
+Local settings currently flow through Rust `LocalSettingsStore` and typed
+frontend Tauri helpers under `apps/desktop/src/lib/tauri/`.
 
 ## Boundary Rules
 

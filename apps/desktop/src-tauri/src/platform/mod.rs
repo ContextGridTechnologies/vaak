@@ -21,11 +21,20 @@ pub fn insert_text(text: &str) -> Result<TextInsertResult, PlatformError> {
 }
 
 #[cfg(windows)]
+#[allow(dead_code)]
 pub fn insert_text_for_stable_id(
     text: &str,
     stable_id: &str,
 ) -> Result<TextInsertResult, PlatformError> {
     windows::insert_text_for_stable_id(text, stable_id)
+}
+
+#[cfg(windows)]
+pub fn insert_text_for_captured_target(
+    text: &str,
+    captured: &FocusedFieldInfo,
+) -> Result<TextInsertResult, PlatformError> {
+    windows::insert_text_for_captured_target(text, captured)
 }
 
 #[cfg(not(windows))]
@@ -39,6 +48,14 @@ pub fn insert_text_for_stable_id(
     _stable_id: &str,
 ) -> Result<TextInsertResult, PlatformError> {
     Err(PlatformError::unsupported("insert_text_for_stable_id"))
+}
+
+#[cfg(not(windows))]
+pub fn insert_text_for_captured_target(
+    _text: &str,
+    _captured: &FocusedFieldInfo,
+) -> Result<TextInsertResult, PlatformError> {
+    Err(PlatformError::unsupported("insert_text_for_captured_target"))
 }
 
 #[cfg(windows)]
