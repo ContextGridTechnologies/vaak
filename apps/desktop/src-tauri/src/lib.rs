@@ -6,11 +6,13 @@ mod storage;
 mod windowing;
 
 use tauri::Manager;
+use tauri_plugin_log::{Target, TargetKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(session::SessionStore::default())
+        .plugin(build_log_plugin())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
@@ -31,6 +33,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_focused_field,
+            commands::capture_dictation_target,
             commands::insert_text,
             commands::capture_and_insert,
             commands::insert_into_active_target,
@@ -56,4 +59,21 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    let mut builder = tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .target(Target::new(TargetKind::LogDir {
+            file_name: Some("backend".to_string()),
+        }))
+        .level(log::LevelFilter::Info)
+        .level_for("appsdesktop_lib::platform::windows", log::LevelFilter::Trace);
+
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.target(Target::new(TargetKind::Stdout));
+    }
+
+    builder.build()
 }

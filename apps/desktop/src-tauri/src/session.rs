@@ -86,12 +86,16 @@ impl SessionStore {
         }
     }
 
-    pub fn get_dictation_target_stable_id(&self) -> Option<String> {
+    pub fn get_dictation_target(&self) -> Option<FocusedFieldInfo> {
         self.inner
             .lock()
             .ok()
             .and_then(|snapshot| snapshot.last_dictation_target.clone())
-            .map(|field| field.stable_id)
+    }
+
+    #[allow(dead_code)]
+    pub fn get_dictation_target_stable_id(&self) -> Option<String> {
+        self.get_dictation_target().map(|field| field.stable_id)
     }
 
     pub fn hotkey_bindings(&self) -> HotkeyBindings {
