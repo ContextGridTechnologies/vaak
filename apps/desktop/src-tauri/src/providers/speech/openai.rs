@@ -85,6 +85,7 @@ impl SpeechProvider for OpenAiSpeechProvider {
 fn file_name_for_mime(mime_type: &str) -> &'static str {
     match mime_type {
         "audio/wav" => "recording.wav",
+        "audio/flac" | "audio/x-flac" => "recording.flac",
         "audio/mpeg" | "audio/mp3" => "recording.mp3",
         "audio/mp4" => "recording.mp4",
         "audio/m4a" => "recording.m4a",
@@ -100,6 +101,7 @@ mod tests {
     #[test]
     fn selects_extension_from_mime_type() {
         assert_eq!(file_name_for_mime("audio/wav"), "recording.wav");
+        assert_eq!(file_name_for_mime("audio/flac"), "recording.flac");
         assert_eq!(file_name_for_mime("audio/webm"), "recording.webm");
         assert_eq!(
             file_name_for_mime("application/octet-stream"),

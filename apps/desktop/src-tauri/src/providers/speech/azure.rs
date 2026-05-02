@@ -140,6 +140,7 @@ fn required_field(value: Option<String>, label: &str) -> Result<String, Provider
 fn file_name_for_mime(mime_type: &str) -> &'static str {
     match mime_type {
         "audio/wav" => "recording.wav",
+        "audio/flac" | "audio/x-flac" => "recording.flac",
         "audio/mpeg" | "audio/mp3" => "recording.mp3",
         "audio/mp4" => "recording.mp4",
         "audio/m4a" => "recording.m4a",
@@ -176,5 +177,10 @@ mod tests {
                 api_version: None,
             }
         ));
+    }
+
+    #[test]
+    fn selects_flac_extension_from_mime_type() {
+        assert_eq!(file_name_for_mime("audio/flac"), "recording.flac");
     }
 }

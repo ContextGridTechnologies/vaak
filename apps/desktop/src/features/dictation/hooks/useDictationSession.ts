@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useAudioDevices } from "@/hooks/useAudioDevices";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
+import { useMicrophoneSelection } from "@/hooks/useMicrophoneSelection";
 import { normalizeError } from "@/lib/errors";
 import {
   getFocusedField,
@@ -18,16 +18,20 @@ type ActiveMode = "idle" | "dictation" | "command";
 export function useDictationSession() {
   const tauriAvailable = isTauriRuntime();
   const {
+    activeMicrophone: probedActiveMicrophone,
     devices,
     isLoading,
     hasPermission,
     error: deviceError,
     refresh,
-    requestPermission,
-  } = useAudioDevices();
-  const [selectedDeviceId, setSelectedDeviceId] = useState("default");
+    requestMicrophoneAccess,
+    isManualUnavailable,
+    manualUnavailableMessage,
+    selectManual,
+    selectSystem,
+    selection,
+  } = useMicrophoneSelection();
   const [restartOnStop, setRestartOnStop] = useState(false);
-  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [focusedField, setFocusedField] = useState<FocusedFieldInfo | null>(
     null,
   );
@@ -39,11 +43,22 @@ export function useDictationSession() {
     command: "Ctrl+Win+C",
   });
   const [activeMode, setActiveMode] = useState<ActiveMode>("idle");
-  const lastDeviceIdRef = useRef<string>("default");
-  const { status, error, audioBlob, audioUrl, elapsedMs, start, stop, reset } =
-    useAudioRecorder({
-      deviceId: selectedDeviceId,
-    });
+  const selectedDeviceId =
+    selection.mode === "manual" ? selection.deviceId : "system";
+  const lastDeviceIdRef = useRef<string>("system");
+  const {
+    status,
+    error,
+    audioBlob,
+    audioUrl,
+    elapsedMs,
+    activeMicrophone: recordingActiveMicrophone,
+    start,
+    stop,
+    reset,
+  } = useAudioRecorder({
+    microphoneSelection: selection,
+  });
 
   const isRecording = status === "recording";
   const statusLabel = getStatusLabel(status);
@@ -56,9 +71,11 @@ export function useDictationSession() {
     (device) => device.deviceId === selectedDeviceId,
   );
   const selectedLabel =
-    selectedDeviceId === "default"
-      ? "System default"
-      : selectedDevice?.label || "Unknown microphone";
+    recordingActiveMicrophone?.label ??
+    probedActiveMicrophone?.label ??
+    (selection.mode === "system"
+      ? "System selected"
+      : selectedDevice?.label || "Unavailable microphone");
   const isWindows = useMemo(() => {
     const uaPlatform = (
       navigator as Navigator & { userAgentData?: { platform?: string } }
@@ -70,6 +87,14 @@ export function useDictationSession() {
   const startWithFocusCapture = useCallback(
     async (knownField?: FocusedFieldInfo | null) => {
       setFocusedFieldError(null);
+      if (isManualUnavailable) {
+        setActiveMode("idle");
+        setFocusedFieldError(
+          manualUnavailableMessage ??
+            "Selected microphone is unavailable. Choose another device or switch to system selected.",
+        );
+        return;
+      }
 
       if (knownField) {
         setFocusedField(knownField);
@@ -102,7 +127,7 @@ export function useDictationSession() {
         });
       }
     },
-    [start],
+    [isManualUnavailable, manualUnavailableMessage, start],
   );
 
   const stopHotkeyRecording = useCallback(() => {
@@ -121,16 +146,12 @@ export function useDictationSession() {
   }, [stop]);
 
   const selectDevice = useCallback((value: string) => {
-    setSelectedDeviceId(value);
-    setFallbackNotice(null);
-  }, []);
-
-  useEffect(() => {
-    const stored = globalThis.localStorage?.getItem("bluevoice.mic.deviceId");
-    if (stored) {
-      setSelectedDeviceId(stored);
+    if (value === "default" || value === "system") {
+      void selectSystem();
+      return;
     }
-  }, []);
+    void selectManual(value);
+  }, [selectManual, selectSystem]);
 
   useEffect(() => {
     if (!isWindows || !tauriAvailable) {
@@ -157,26 +178,6 @@ export function useDictationSession() {
   }, [isWindows, tauriAvailable]);
 
   useEffect(() => {
-    globalThis.localStorage?.setItem(
-      "bluevoice.mic.deviceId",
-      selectedDeviceId,
-    );
-  }, [selectedDeviceId]);
-
-  useEffect(() => {
-    if (
-      selectedDeviceId !== "default" &&
-      deviceOptions.length > 0 &&
-      !deviceOptions.some((device) => device.deviceId === selectedDeviceId)
-    ) {
-      setFallbackNotice(
-        "Previously selected microphone is unavailable. Switched to system default.",
-      );
-      setSelectedDeviceId("default");
-    }
-  }, [deviceOptions, selectedDeviceId]);
-
-  useEffect(() => {
     if (lastDeviceIdRef.current === selectedDeviceId) {
       return;
     }
@@ -190,9 +191,11 @@ export function useDictationSession() {
   useEffect(() => {
     if (restartOnStop && status === "stopped") {
       setRestartOnStop(false);
-      start();
+      if (!isManualUnavailable) {
+        void start();
+      }
     }
-  }, [restartOnStop, start, status]);
+  }, [isManualUnavailable, restartOnStop, start, status]);
 
   useEffect(() => {
     if (!isWindows || !tauriAvailable) {
@@ -277,7 +280,7 @@ export function useDictationSession() {
     deviceError,
     deviceOptions,
     durationLabel,
-    fallbackNotice,
+    fallbackNotice: manualUnavailableMessage,
     focusedField,
     focusedFieldError,
     hasPermission,
@@ -287,11 +290,14 @@ export function useDictationSession() {
     isWindows,
     recorderError: error,
     refresh,
-    requestPermission,
+    requestPermission: requestMicrophoneAccess,
     reset,
     selectedDeviceId,
     selectedLabel,
+    selection,
+    selectManual,
     selectDevice,
+    selectSystem,
     startManualDictation,
     status,
     statusLabel,

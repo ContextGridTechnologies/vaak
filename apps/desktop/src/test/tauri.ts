@@ -61,6 +61,8 @@ export function expectTauriCommand(
 export function setTauriRuntimeAvailable(): void {
   Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
     configurable: true,
-    value: {},
+    value: {
+      invoke: (command: string, args?: InvokeArgs) => invokeMock(command, args),
+    },
   });
 }

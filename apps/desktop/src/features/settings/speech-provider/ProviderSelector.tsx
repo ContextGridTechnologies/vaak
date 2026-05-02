@@ -4,20 +4,16 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ProviderSetupCard, providerCatalog } from "@/features/providers";
+import type { ProviderCatalogItem } from "@/features/providers";
 import type { SpeechProviderId } from "@/lib/tauri";
 
 type ProviderSelectorProps = {
   selectedProviderId: SpeechProviderId;
   onSelectProvider: (providerId: SpeechProviderId) => void;
 };
+
+const speechProviderCatalog = providerCatalog.filter(isSpeechProvider);
 
 export function ProviderSelector({
   selectedProviderId,
@@ -27,17 +23,17 @@ export function ProviderSelector({
     <FieldGroup>
       <Field>
         <FieldLabel>Speech provider</FieldLabel>
-        <Select value={selectedProviderId} onValueChange={onSelectProvider}>
-          <SelectTrigger className="w-full max-w-xs">
-            <SelectValue placeholder="Choose speech provider" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="openai">OpenAI</SelectItem>
-              <SelectItem value="azure-openai">Azure OpenAI</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(8rem,1fr))]">
+          {speechProviderCatalog.map((provider) => (
+            <ProviderSetupCard
+              key={provider.id}
+              provider={provider}
+              mode="select"
+              selected={selectedProviderId === provider.id}
+              onSelect={() => onSelectProvider(provider.id)}
+            />
+          ))}
+        </div>
         <FieldDescription>
           The floating voice capsule uses this provider for transcription.
           Saving a provider activates it.
@@ -45,4 +41,10 @@ export function ProviderSelector({
       </Field>
     </FieldGroup>
   );
+}
+
+function isSpeechProvider(
+  provider: ProviderCatalogItem,
+): provider is ProviderCatalogItem & { id: SpeechProviderId } {
+  return provider.id === "openai" || provider.id === "azure-openai";
 }

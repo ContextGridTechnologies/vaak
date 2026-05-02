@@ -3,12 +3,14 @@ use crate::platform::common::{
     CaptureInsertResult, FocusedFieldInfo, PlatformError, TextInsertResult,
 };
 use crate::providers::credentials;
-use crate::providers::errors::ProviderError;
+use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::{
     speech, ProviderConfig, ProviderStatus, TranscriptResult, TranscriptionInput,
 };
 use crate::session::{HotkeyBindings, SessionStore};
-use crate::storage::{LocalSettingsStore, OnboardingState};
+use crate::storage::{
+    AppShellPreferences, LocalSettingsStore, MicrophoneSelection, OnboardingState,
+};
 use tauri::{AppHandle, Emitter, State};
 
 const SPEECH_PROVIDER_CHANGED_EVENT: &str = "vaak://speech-provider-changed";
@@ -42,6 +44,19 @@ pub fn insert_into_active_target(
 #[tauri::command]
 pub fn get_hotkey_bindings(session: State<'_, SessionStore>) -> HotkeyBindings {
     session.hotkey_bindings()
+}
+
+#[tauri::command]
+pub fn save_dictation_hotkey(
+    shortcut: String,
+    settings: State<'_, LocalSettingsStore>,
+    session: State<'_, SessionStore>,
+) -> Result<HotkeyBindings, ProviderError> {
+    let bindings = settings.save_dictation_hotkey(&shortcut)?;
+    session
+        .set_dictation_hotkey(&bindings.dictation)
+        .map_err(ProviderFailure::InvalidRequest)?;
+    Ok(bindings)
 }
 
 #[tauri::command]
@@ -172,11 +187,56 @@ pub fn get_onboarding_state(
 }
 
 #[tauri::command]
+pub fn get_app_shell_preferences(
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<AppShellPreferences, ProviderError> {
+    settings.app_shell_preferences()
+}
+
+#[tauri::command]
+pub fn save_app_shell_preferences(
+    settings: State<'_, LocalSettingsStore>,
+    preferences: AppShellPreferences,
+) -> Result<AppShellPreferences, ProviderError> {
+    settings.save_app_shell_preferences(preferences)
+}
+
+#[tauri::command]
+pub fn get_microphone_selection(
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<MicrophoneSelection, ProviderError> {
+    settings.microphone_selection()
+}
+
+#[tauri::command]
+pub fn save_microphone_selection(
+    settings: State<'_, LocalSettingsStore>,
+    selection: MicrophoneSelection,
+) -> Result<MicrophoneSelection, ProviderError> {
+    settings.save_microphone_selection(selection)
+}
+
+#[tauri::command]
 pub fn save_onboarding_mode(
     settings: State<'_, LocalSettingsStore>,
     mode: String,
 ) -> Result<OnboardingState, ProviderError> {
     settings.save_onboarding_mode(&mode)
+}
+
+#[tauri::command]
+pub fn save_onboarding_step(
+    settings: State<'_, LocalSettingsStore>,
+    step: String,
+) -> Result<OnboardingState, ProviderError> {
+    settings.save_onboarding_step(&step)
+}
+
+#[tauri::command]
+pub fn complete_onboarding(
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<OnboardingState, ProviderError> {
+    settings.complete_onboarding()
 }
 
 #[tauri::command]

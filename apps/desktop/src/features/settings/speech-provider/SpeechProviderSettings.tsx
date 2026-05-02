@@ -15,6 +15,7 @@ import {
 import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
 import { ProviderSelector } from "./ProviderSelector";
+import { verifyOnboardingProviderTranscription } from "./onboardingProviderVerification";
 import {
   normalizeProviderError,
   providerStatusLabel,
@@ -27,7 +28,19 @@ import {
   type ProviderStatuses,
 } from "./types";
 
-export function SpeechProviderSettings() {
+type SpeechProviderSettingsProps = {
+  variant?: "settings" | "onboarding";
+  onOnboardingVerifiedChange?: (verified: boolean) => void;
+  verifyOnboardingProvider?: (
+    providerId: SpeechProviderId,
+  ) => Promise<{ text: string }>;
+};
+
+export function SpeechProviderSettings({
+  variant = "settings",
+  onOnboardingVerifiedChange,
+  verifyOnboardingProvider = verifyOnboardingProviderTranscription,
+}: SpeechProviderSettingsProps) {
   const [apiKey, setApiKey] = useState("");
   const [azureApiKey, setAzureApiKey] = useState("");
   const [azureEndpoint, setAzureEndpoint] = useState("");
@@ -51,6 +64,7 @@ export function SpeechProviderSettings() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const selectedStatus = providerStatuses[selectedProviderId];
   const azureHasSavedKey = Boolean(providerStatuses["azure-openai"]?.configured);
+  const isOnboarding = variant === "onboarding";
 
   useEffect(() => {
     let disposed = false;
@@ -98,11 +112,75 @@ export function SpeechProviderSettings() {
 
   const selectProvider = (providerId: SpeechProviderId) => {
     setGlobalError(null);
+    if (isOnboarding) {
+      onOnboardingVerifiedChange?.(false);
+    }
     setSelectedProviderId(providerId);
+  };
+
+  const clearOnboardingVerification = (providerId?: SpeechProviderId) => {
+    if (!isOnboarding) {
+      return;
+    }
+
+    onOnboardingVerifiedChange?.(false);
+
+    if (providerId) {
+      setProviderTestResults((current) => ({ ...current, [providerId]: undefined }));
+    }
+  };
+
+  const handleOpenAiApiKeyChange = (value: string) => {
+    clearOnboardingVerification("openai");
+    setApiKey(value);
+  };
+
+  const handleAzureApiKeyChange = (value: string) => {
+    clearOnboardingVerification("azure-openai");
+    setAzureApiKey(value);
+  };
+
+  const handleAzureEndpointChange = (value: string) => {
+    clearOnboardingVerification("azure-openai");
+    setAzureEndpoint(value);
+  };
+
+  const handleAzureDeploymentIdChange = (value: string) => {
+    clearOnboardingVerification("azure-openai");
+    setAzureDeploymentId(value);
+  };
+
+  const handleAzureApiVersionChange = (value: string) => {
+    clearOnboardingVerification("azure-openai");
+    setAzureApiVersion(value);
+  };
+
+  const verifySavedProvider = async (providerId: SpeechProviderId) => {
+    setProviderErrors((current) => ({ ...current, [providerId]: undefined }));
+    setProviderTestResults((current) => ({ ...current, [providerId]: undefined }));
+    setTestingProviderId(providerId);
+
+    try {
+      await verifyOnboardingProvider(providerId);
+      setProviderTestResults((current) => ({
+        ...current,
+        [providerId]: "Provider test passed.",
+      }));
+      onOnboardingVerifiedChange?.(true);
+    } catch (err) {
+      setProviderErrors((current) => ({
+        ...current,
+        [providerId]: normalizeProviderError(providerId, err),
+      }));
+      onOnboardingVerifiedChange?.(false);
+    } finally {
+      setTestingProviderId(null);
+    }
   };
 
   const saveOpenAiKey = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    clearOnboardingVerification("openai");
     setProviderErrors((current) => ({ ...current, openai: undefined }));
     setProviderTestResults((current) => ({ ...current, openai: undefined }));
     setSavingProviderId("openai");
@@ -116,7 +194,11 @@ export function SpeechProviderSettings() {
       setProviderStatuses((current) => ({ ...current, openai: status }));
       setApiKey("");
       setSelectedProviderId("openai");
-      toast.success("OpenAI key saved");
+      if (isOnboarding) {
+        await verifySavedProvider("openai");
+      } else {
+        toast.success("OpenAI key saved");
+      }
     } catch (err) {
       setProviderErrors((current) => ({
         ...current,
@@ -129,6 +211,7 @@ export function SpeechProviderSettings() {
 
   const saveAzureOpenAiSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    clearOnboardingVerification("azure-openai");
     setProviderErrors((current) => ({ ...current, "azure-openai": undefined }));
     setProviderTestResults((current) => ({
       ...current,
@@ -162,7 +245,11 @@ export function SpeechProviderSettings() {
       }));
       setSelectedProviderId("azure-openai");
       setAzureApiKey("");
-      toast.success("Azure OpenAI settings saved");
+      if (isOnboarding) {
+        await verifySavedProvider("azure-openai");
+      } else {
+        toast.success("Azure OpenAI settings saved");
+      }
     } catch (err) {
       setProviderErrors((current) => ({
         ...current,
@@ -199,16 +286,8 @@ export function SpeechProviderSettings() {
     }
   };
 
-  return (
-    <SectionPanel
-      title="Settings"
-      description="Microphone, hotkey, provider, and app preferences."
-      actions={
-        <StatusBadge tone={providerStatusTone(selectedStatus)}>
-          {providerStatusLabel(selectedStatus)}
-        </StatusBadge>
-      }
-    >
+  const providerSetup = (
+    <>
       {globalError ? (
         <p className="text-sm text-destructive" role="alert">
           {globalError}
@@ -227,9 +306,10 @@ export function SpeechProviderSettings() {
           isLoading={isLoading}
           isSaving={savingProviderId === "openai"}
           isTesting={testingProviderId === "openai"}
+          showTestButton={!isOnboarding}
           testResult={providerTestResults.openai}
           status={providerStatuses.openai}
-          onApiKeyChange={setApiKey}
+          onApiKeyChange={handleOpenAiApiKeyChange}
           onSubmit={saveOpenAiKey}
           onTest={testSelectedProvider}
         />
@@ -244,15 +324,38 @@ export function SpeechProviderSettings() {
           isLoading={isLoading}
           isSaving={savingProviderId === "azure-openai"}
           isTesting={testingProviderId === "azure-openai"}
+          showTestButton={!isOnboarding}
           testResult={providerTestResults["azure-openai"]}
-          onApiKeyChange={setAzureApiKey}
-          onApiVersionChange={setAzureApiVersion}
-          onDeploymentIdChange={setAzureDeploymentId}
-          onEndpointChange={setAzureEndpoint}
+          onApiKeyChange={handleAzureApiKeyChange}
+          onApiVersionChange={handleAzureApiVersionChange}
+          onDeploymentIdChange={handleAzureDeploymentIdChange}
+          onEndpointChange={handleAzureEndpointChange}
           onSubmit={saveAzureOpenAiSettings}
           onTest={testSelectedProvider}
         />
       )}
+    </>
+  );
+
+  if (isOnboarding) {
+    return (
+      <div className="flex flex-col gap-4">
+        {providerSetup}
+      </div>
+    );
+  }
+
+  return (
+    <SectionPanel
+      title="Settings"
+      description="Microphone, hotkey, provider, and app preferences."
+      actions={
+        <StatusBadge tone={providerStatusTone(selectedStatus)}>
+          {providerStatusLabel(selectedStatus)}
+        </StatusBadge>
+      }
+    >
+      {providerSetup}
     </SectionPanel>
   );
 }

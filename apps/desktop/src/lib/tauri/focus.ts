@@ -59,3 +59,9 @@ export async function insertIntoActiveTarget(
 export async function getHotkeyBindings(): Promise<HotkeyBindings> {
   return invokeTauri("get_hotkey_bindings");
 }
+
+export async function saveDictationHotkey(
+  shortcut: string,
+): Promise<HotkeyBindings> {
+  return invokeTauri("save_dictation_hotkey", { shortcut });
+}

@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertCircleIcon,
-  CheckCircle2Icon,
-  ClipboardIcon,
-  MicIcon,
-  PlayIcon,
-  SquareIcon,
-} from "lucide-react";
+import { AlertCircleIcon, MicIcon, SquareIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { useDictationSession } from "@/features/dictation/hooks/useDictationSession";
 import { normalizeError } from "@/lib/errors";
 import {
@@ -20,44 +12,20 @@ import {
 } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
-type CapsuleState = "idle" | "listening" | "transcribing" | "ready" | "error";
+type CapsuleState = "idle" | "listening" | "transcribing" | "error";
+
 const providerLabels: Record<SpeechProviderId, string> = {
   openai: "OpenAI",
   "azure-openai": "Azure OpenAI",
 };
 
-const stateCopy: Record<CapsuleState, { label: string; detail: string }> = {
-  idle: {
-    label: "Vaak ready",
-    detail: "Hold Ctrl + Win",
-  },
-  listening: {
-    label: "Listening",
-    detail: "Release to finish",
-  },
-  transcribing: {
-    label: "Transcribing",
-    detail: "Sending audio",
-  },
-  ready: {
-    label: "Transcript ready",
-    detail: "Copy or play last recording",
-  },
-  error: {
-    label: "Needs attention",
-    detail: "Open Vaak settings",
-  },
-};
-
 export function FloatingVoiceWindow() {
   const session = useDictationSession();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastTranscribedRef = useRef<{
     audioBlob: Blob;
     providerId: SpeechProviderId;
   } | null>(null);
   const [providerId, setProviderId] = useState<SpeechProviderId | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(null);
   const [transcriptionError, setTranscriptionError] = useState<string | null>(
     null,
@@ -67,6 +35,13 @@ export function FloatingVoiceWindow() {
   useEffect(() => {
     document.documentElement.dataset.window = "voice-capsule";
     document.body.dataset.window = "voice-capsule";
+    document.documentElement.classList.add("dark");
+    document.body.classList.add("dark");
+
+    return () => {
+      document.documentElement.classList.remove("dark");
+      document.body.classList.remove("dark");
+    };
   }, []);
 
   useEffect(() => {
@@ -105,10 +80,6 @@ export function FloatingVoiceWindow() {
       unlisten?.();
     };
   }, []);
-
-  useEffect(() => {
-    setIsPlaying(false);
-  }, [session.audioUrl]);
 
   useEffect(() => {
     if (session.isRecording) {
@@ -165,162 +136,88 @@ export function FloatingVoiceWindow() {
     if (isTranscribing) {
       return "transcribing";
     }
-    if (transcript || session.audioUrl) {
-      return "ready";
-    }
     return "idle";
   }, [
+    isTranscribing,
     session.focusedFieldError,
     session.isRecording,
     session.recorderError,
-    session.audioUrl,
-    transcript,
     transcriptionError,
-    isTranscribing,
   ]);
 
-  const copy = stateCopy[state];
-  const Icon = useMemo(() => {
-    if (state === "listening") {
-      return MicIcon;
-    }
-    if (state === "transcribing") {
-      return CheckCircle2Icon;
-    }
-    if (state === "error") {
-      return AlertCircleIcon;
-    }
-    return CheckCircle2Icon;
-  }, [state]);
   const message =
     session.recorderError ||
     session.focusedFieldError ||
     transcriptionError ||
     transcript ||
-    session.focusedField?.windowTitle ||
     (state === "transcribing" && providerId
       ? `Sending audio to ${providerLabels[providerId]}`
       : null) ||
-    (!providerId ? "Loading provider" : null) ||
-    copy.detail;
+    (state === "listening" ? "Recording in progress." : "Recorder ready.");
 
-  const togglePlayback = async () => {
-    const audio = audioRef.current;
-    if (!audio || !session.audioUrl) {
+  const isRecording = state === "listening";
+  const Icon =
+    state === "error" ? AlertCircleIcon : isRecording ? SquareIcon : MicIcon;
+
+  const handleToggleRecording = () => {
+    if (isRecording) {
+      session.stopManualRecording();
       return;
     }
 
-    if (isPlaying) {
-      audio.pause();
-      setIsPlaying(false);
-      return;
-    }
-
-    await audio.play();
-    setIsPlaying(true);
-  };
-
-  const copyTranscript = async () => {
-    if (!transcript) {
-      return;
-    }
-    await navigator.clipboard.writeText(transcript);
+    void session.startManualDictation();
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-transparent p-2">
+    <main className="h-full w-full bg-transparent p-[2px]">
       <section
         className={cn(
-          "flex h-[60px] w-[304px] items-center gap-3 rounded-lg border border-border bg-card/95 px-3 text-card-foreground shadow-lg backdrop-blur",
-          state === "listening" && "border-primary/40",
-          state === "error" && "border-destructive/40",
+          "flex h-full w-full items-center gap-1 overflow-hidden rounded-full border border-white/10 bg-black/70 p-[2px] text-white shadow-[0_4px_12px_rgba(0,0,0,0.24)] backdrop-blur-xl",
+          state === "listening" && "border-emerald-400/45",
+          state === "transcribing" && "border-sky-400/35",
+          state === "error" && "border-rose-500/45",
         )}
         data-tauri-drag-region
-        aria-live="polite"
       >
-        <div
+        <button
+          type="button"
           className={cn(
-            "grid size-9 place-items-center rounded-md border border-border bg-muted text-muted-foreground",
-            state === "listening" && "bg-primary text-primary-foreground",
-            state === "transcribing" && "text-primary",
-            state === "error" && "text-destructive",
+            "flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white transition-colors hover:bg-white/14 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/55 focus-visible:ring-offset-0",
+            state === "listening" && "bg-emerald-400/20 text-emerald-100",
+            state === "error" && "bg-rose-500/18 text-rose-100",
           )}
+          onClick={handleToggleRecording}
+          aria-label={isRecording ? "Stop recording" : "Start recording"}
+          aria-pressed={isRecording}
+        >
+          <Icon className="size-3" aria-hidden="true" />
+        </button>
+
+        <div
+          className="flex h-5 min-w-4 items-center justify-center pr-px"
           data-tauri-drag-region
         >
-          <Icon
-            className={cn(
-              state === "transcribing" && "animate-pulse",
-              session.status === "stopped" && state === "ready" && "text-success",
-            )}
-            aria-hidden="true"
-          />
-        </div>
-
-        <div className="flex min-w-0 flex-1 flex-col" data-tauri-drag-region>
-          <span className="truncate text-sm font-semibold leading-5">
-            {copy.label}
-          </span>
-          <span className="truncate text-xs leading-4 text-muted-foreground">
-            {message}
-          </span>
-        </div>
-
-        {transcript ? (
-          <Button
-            type="button"
-            size="icon"
-            variant="secondary"
-            className="size-8 shrink-0"
-            onClick={copyTranscript}
-            aria-label="Copy transcript"
-          >
-            <ClipboardIcon data-icon="icon" aria-hidden="true" />
-          </Button>
-        ) : null}
-
-        {session.audioUrl ? (
-          <>
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              className="size-8 shrink-0"
-              onClick={togglePlayback}
-              aria-label={isPlaying ? "Stop playback" : "Play last recording"}
+          {isRecording ? (
+            <div
+              className="voice-wave-active flex items-end gap-0.5"
+              aria-label="Recording wave"
             >
-              {isPlaying ? (
-                <SquareIcon data-icon="icon" aria-hidden="true" />
-              ) : (
-                <PlayIcon data-icon="icon" aria-hidden="true" />
-              )}
-            </Button>
-            <audio
-              ref={audioRef}
-              src={session.audioUrl}
-              onEnded={() => setIsPlaying(false)}
-              onPause={() => setIsPlaying(false)}
-            >
-              <track
-                kind="captions"
-                src="data:text/vtt,WEBVTT"
-                srcLang="en"
-                label="captions"
-                default
-              />
-            </audio>
-          </>
-        ) : null}
-
-        <div
-          className={cn(
-            "size-2 rounded-full bg-muted-foreground",
-            state === "listening" && "bg-primary",
-            state === "transcribing" && "bg-warning",
-            state === "ready" && "bg-success",
-            state === "error" && "bg-destructive",
+              <span className="voice-wave-bar h-1.5" />
+              <span className="voice-wave-bar h-2.5" />
+              <span className="voice-wave-bar h-2" />
+            </div>
+          ) : (
+            <div className="flex items-end gap-0.5 opacity-55" aria-hidden="true">
+              <span className="block h-1 w-[2px] rounded-full bg-white/45" />
+              <span className="block h-2 w-[2px] rounded-full bg-white/35" />
+              <span className="block h-1.5 w-[2px] rounded-full bg-white/25" />
+            </div>
           )}
-          aria-hidden="true"
-        />
+        </div>
+
+        <span className="sr-only" aria-live="polite">
+          {message}
+        </span>
       </section>
     </main>
   );

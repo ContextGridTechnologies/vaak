@@ -8,17 +8,70 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 use std::{thread, time::Duration};
 #[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN,
+    GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 
 const HOTKEY_EVENT: &str = "bluevoice://session-hotkey";
-const DICTATION_BINDING_LABEL: &str = "Ctrl+Win";
-const COMMAND_BINDING_LABEL: &str = "Ctrl+Win+Alt";
+pub const DEFAULT_DICTATION_BINDING_LABEL: &str = "Ctrl+Win";
 
-#[derive(Default)]
+#[derive(Clone, Debug)]
+struct ModifierHotkey {
+    ctrl: bool,
+    shift: bool,
+    win: bool,
+    alt: bool,
+}
+
+impl ModifierHotkey {
+    fn command_variant(&self) -> Self {
+        Self {
+            ctrl: self.ctrl,
+            shift: self.shift,
+            win: self.win,
+            alt: true,
+        }
+    }
+
+    fn label(&self) -> String {
+        let mut parts = Vec::new();
+        if self.ctrl {
+            parts.push("Ctrl");
+        }
+        if self.shift {
+            parts.push("Shift");
+        }
+        if self.win {
+            parts.push("Win");
+        }
+        if self.alt {
+            parts.push("Alt");
+        }
+        parts.join("+")
+    }
+
+    #[cfg(windows)]
+    fn is_down(&self) -> bool {
+        (!self.ctrl || is_ctrl_down())
+            && (!self.shift || is_shift_down())
+            && (!self.win || is_win_down())
+            && (!self.alt || is_alt_down())
+    }
+}
+
 pub struct SessionSnapshot {
     pub last_dictation_target: Option<FocusedFieldInfo>,
     pub monitor_started: bool,
+    pub dictation_binding_label: String,
+}
+
+impl Default for SessionSnapshot {
+    fn default() -> Self {
+        Self {
+            last_dictation_target: None,
+            monitor_started: false,
+            dictation_binding_label: DEFAULT_DICTATION_BINDING_LABEL.to_string(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -42,10 +95,37 @@ impl SessionStore {
     }
 
     pub fn hotkey_bindings(&self) -> HotkeyBindings {
-        HotkeyBindings {
-            dictation: DICTATION_BINDING_LABEL.to_string(),
-            command: COMMAND_BINDING_LABEL.to_string(),
+        let dictation = self
+            .inner
+            .lock()
+            .ok()
+            .map(|snapshot| snapshot.dictation_binding_label.clone())
+            .unwrap_or_else(|| DEFAULT_DICTATION_BINDING_LABEL.to_string());
+        let command = command_binding_label(&dictation)
+            .unwrap_or_else(|_| format!("{DEFAULT_DICTATION_BINDING_LABEL}+Alt"));
+
+        HotkeyBindings { dictation, command }
+    }
+
+    pub fn set_dictation_hotkey(&self, shortcut: &str) -> Result<HotkeyBindings, String> {
+        let normalized = normalize_dictation_hotkey_label(shortcut)?;
+
+        if let Ok(mut snapshot) = self.inner.lock() {
+            snapshot.dictation_binding_label = normalized.clone();
         }
+
+        Ok(HotkeyBindings {
+            command: command_binding_label(&normalized)?,
+            dictation: normalized,
+        })
+    }
+
+    pub fn dictation_hotkey(&self) -> String {
+        self.inner
+            .lock()
+            .ok()
+            .map(|snapshot| snapshot.dictation_binding_label.clone())
+            .unwrap_or_else(|| DEFAULT_DICTATION_BINDING_LABEL.to_string())
     }
 
     fn mark_monitor_started(&self) -> bool {
@@ -84,10 +164,19 @@ enum ActiveMode {
     Command,
 }
 
-pub fn start_hotkey_monitor<R: Runtime + 'static>(
-    app: &AppHandle<R>,
-    store: &SessionStore,
-) {
+pub fn normalize_dictation_hotkey_label(shortcut: &str) -> Result<String, String> {
+    let hotkey = parse_hotkey(shortcut, false)?;
+    validate_dictation_hotkey(&hotkey)?;
+    Ok(hotkey.label())
+}
+
+pub fn command_binding_label(dictation: &str) -> Result<String, String> {
+    let hotkey = parse_hotkey(dictation, false)?;
+    validate_dictation_hotkey(&hotkey)?;
+    Ok(hotkey.command_variant().label())
+}
+
+pub fn start_hotkey_monitor<R: Runtime + 'static>(app: &AppHandle<R>, store: &SessionStore) {
     if !store.mark_monitor_started() {
         return;
     }
@@ -112,7 +201,8 @@ fn monitor_loop<R: Runtime>(app: AppHandle<R>) {
     let mut current_mode = ActiveMode::Idle;
 
     loop {
-        let desired_mode = detect_mode();
+        let session = app.state::<SessionStore>();
+        let desired_mode = detect_mode(&session.dictation_hotkey());
         if desired_mode != current_mode {
             transition_mode(&app, current_mode, desired_mode);
             current_mode = desired_mode;
@@ -122,24 +212,86 @@ fn monitor_loop<R: Runtime>(app: AppHandle<R>) {
 }
 
 #[cfg(windows)]
-fn detect_mode() -> ActiveMode {
-    let ctrl_down = is_key_down(VK_CONTROL.0 as i32);
-    let win_down = is_key_down(VK_LWIN.0 as i32) || is_key_down(VK_RWIN.0 as i32);
-    let alt_down = is_key_down(VK_MENU.0 as i32);
+fn detect_mode(dictation: &str) -> ActiveMode {
+    let dictation_hotkey = match parse_hotkey(dictation, false) {
+        Ok(hotkey) => hotkey,
+        Err(_) => return ActiveMode::Idle,
+    };
+    let command_hotkey = dictation_hotkey.command_variant();
 
-    if ctrl_down && win_down && alt_down {
+    if command_hotkey.is_down() {
         ActiveMode::Command
-    } else if ctrl_down && win_down {
+    } else if dictation_hotkey.is_down() {
         ActiveMode::Dictation
     } else {
         ActiveMode::Idle
     }
 }
 
+fn parse_hotkey(shortcut: &str, allow_alt: bool) -> Result<ModifierHotkey, String> {
+    let mut hotkey = ModifierHotkey {
+        ctrl: false,
+        shift: false,
+        win: false,
+        alt: false,
+    };
+
+    for token in shortcut
+        .split('+')
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+    {
+        match token.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => hotkey.ctrl = true,
+            "shift" => hotkey.shift = true,
+            "win" | "windows" | "meta" | "super" => hotkey.win = true,
+            "alt" if allow_alt => hotkey.alt = true,
+            "alt" => return Err("Alt is reserved for command mode.".to_string()),
+            _ => {
+                return Err(
+                    "Use only Ctrl, Shift, and Windows for the dictation shortcut.".to_string(),
+                )
+            }
+        }
+    }
+
+    Ok(hotkey)
+}
+
+fn validate_dictation_hotkey(hotkey: &ModifierHotkey) -> Result<(), String> {
+    let count = usize::from(hotkey.ctrl) + usize::from(hotkey.shift) + usize::from(hotkey.win);
+
+    if count < 2 {
+        return Err("Choose at least two modifier keys.".to_string());
+    }
+
+    Ok(())
+}
+
 #[cfg(windows)]
 fn is_key_down(vk: i32) -> bool {
     let state = unsafe { GetAsyncKeyState(vk) };
     (state as u16 & 0x8000) != 0
+}
+
+#[cfg(windows)]
+fn is_ctrl_down() -> bool {
+    is_key_down(VK_CONTROL.0 as i32)
+}
+
+#[cfg(windows)]
+fn is_shift_down() -> bool {
+    is_key_down(VK_SHIFT.0 as i32)
+}
+
+#[cfg(windows)]
+fn is_win_down() -> bool {
+    is_key_down(VK_LWIN.0 as i32) || is_key_down(VK_RWIN.0 as i32)
+}
+
+#[cfg(windows)]
+fn is_alt_down() -> bool {
+    is_key_down(VK_MENU.0 as i32)
 }
 
 #[cfg(windows)]
@@ -159,6 +311,7 @@ fn transition_mode<R: Runtime>(app: &AppHandle<R>, from: ActiveMode, to: ActiveM
 
 #[cfg(windows)]
 fn emit_dictation_start<R: Runtime>(app: &AppHandle<R>) {
+    let bindings = app.state::<SessionStore>().hotkey_bindings();
     let payload = match platform::get_focused_field() {
         Ok(field) => {
             let session = app.state::<SessionStore>();
@@ -166,7 +319,7 @@ fn emit_dictation_start<R: Runtime>(app: &AppHandle<R>) {
             HotkeySessionEvent {
                 mode: "dictation".to_string(),
                 phase: "start".to_string(),
-                shortcut: DICTATION_BINDING_LABEL.to_string(),
+                shortcut: bindings.dictation,
                 field: Some(field),
                 error: None,
             }
@@ -174,7 +327,7 @@ fn emit_dictation_start<R: Runtime>(app: &AppHandle<R>) {
         Err(err) => HotkeySessionEvent {
             mode: "dictation".to_string(),
             phase: "start".to_string(),
-            shortcut: DICTATION_BINDING_LABEL.to_string(),
+            shortcut: bindings.dictation,
             field: None,
             error: Some(format!("{}: {}", err.code, err.message)),
         },
@@ -185,12 +338,13 @@ fn emit_dictation_start<R: Runtime>(app: &AppHandle<R>) {
 
 #[cfg(windows)]
 fn emit_dictation_stop<R: Runtime>(app: &AppHandle<R>) {
+    let shortcut = app.state::<SessionStore>().hotkey_bindings().dictation;
     let _ = app.emit(
         HOTKEY_EVENT,
         HotkeySessionEvent {
             mode: "dictation".to_string(),
             phase: "stop".to_string(),
-            shortcut: DICTATION_BINDING_LABEL.to_string(),
+            shortcut,
             field: None,
             error: None,
         },
@@ -199,12 +353,13 @@ fn emit_dictation_stop<R: Runtime>(app: &AppHandle<R>) {
 
 #[cfg(windows)]
 fn emit_command_start<R: Runtime>(app: &AppHandle<R>) {
+    let shortcut = app.state::<SessionStore>().hotkey_bindings().command;
     let _ = app.emit(
         HOTKEY_EVENT,
         HotkeySessionEvent {
             mode: "command".to_string(),
             phase: "start".to_string(),
-            shortcut: COMMAND_BINDING_LABEL.to_string(),
+            shortcut,
             field: None,
             error: None,
         },
@@ -213,14 +368,48 @@ fn emit_command_start<R: Runtime>(app: &AppHandle<R>) {
 
 #[cfg(windows)]
 fn emit_command_stop<R: Runtime>(app: &AppHandle<R>) {
+    let shortcut = app.state::<SessionStore>().hotkey_bindings().command;
     let _ = app.emit(
         HOTKEY_EVENT,
         HotkeySessionEvent {
             mode: "command".to_string(),
             phase: "stop".to_string(),
-            shortcut: COMMAND_BINDING_LABEL.to_string(),
+            shortcut,
             field: None,
             error: None,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_modifier_only_dictation_hotkeys() {
+        assert_eq!(
+            normalize_dictation_hotkey_label(" win + ctrl ").unwrap(),
+            "Ctrl+Win"
+        );
+        assert_eq!(
+            normalize_dictation_hotkey_label("shift+ctrl").unwrap(),
+            "Ctrl+Shift"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_dictation_hotkeys() {
+        assert!(normalize_dictation_hotkey_label("Ctrl").is_err());
+        assert!(normalize_dictation_hotkey_label("Ctrl+Alt").is_err());
+        assert!(normalize_dictation_hotkey_label("Ctrl+A").is_err());
+    }
+
+    #[test]
+    fn derives_command_binding_from_dictation_binding() {
+        assert_eq!(command_binding_label("Ctrl+Win").unwrap(), "Ctrl+Win+Alt");
+        assert_eq!(
+            command_binding_label("Ctrl+Shift").unwrap(),
+            "Ctrl+Shift+Alt"
+        );
+    }
 }
