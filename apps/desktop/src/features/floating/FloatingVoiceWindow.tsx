@@ -56,10 +56,10 @@ export function FloatingVoiceWindow() {
   };
 
   return (
-    <main className="h-full w-full bg-transparent p-[2px]">
+    <main className="h-full w-full bg-transparent p-1.5">
       <section
         className={cn(
-          "flex h-full w-full items-center gap-1 overflow-hidden rounded-full border border-white/10 bg-black/70 p-[2px] text-white shadow-[0_4px_12px_rgba(0,0,0,0.24)] backdrop-blur-xl",
+          "flex h-full w-full items-center gap-1 overflow-hidden rounded-full border border-white/15 bg-neutral-950/92 px-[3px] py-[2px] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
           state === "recording" && "border-emerald-400/45",
           isBusy && "border-sky-400/35",
           state === "inserted" && "border-emerald-400/35",
@@ -70,7 +70,7 @@ export function FloatingVoiceWindow() {
         <button
           type="button"
           className={cn(
-            "flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white transition-colors hover:bg-white/14 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/55 focus-visible:ring-offset-0",
+            "flex size-5 shrink-0 items-center justify-center rounded-full border border-white/14 bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition-colors hover:bg-white/18 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/55 focus-visible:ring-offset-0",
             state === "recording" && "bg-emerald-400/20 text-emerald-100",
             isBusy && "bg-sky-400/20 text-sky-100",
             state === "inserted" && "bg-emerald-400/18 text-emerald-100",

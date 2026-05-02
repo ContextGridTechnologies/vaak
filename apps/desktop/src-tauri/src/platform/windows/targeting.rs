@@ -154,9 +154,7 @@ impl LogPayload {
             has_keyboard_focus: candidate.has_keyboard_focus,
             is_keyboard_focusable: candidate.is_keyboard_focusable,
             is_read_only: candidate.is_read_only,
-            chosen_strategy: candidate
-                .selected_strategy_method()
-                .map(ToOwned::to_owned),
+            chosen_strategy: candidate.selected_strategy_method().map(ToOwned::to_owned),
             reason,
             error_code: error.map(|value| value.code.clone()),
             error_message: error.map(|value| value.message.clone()),
@@ -171,7 +169,8 @@ impl LogPayload {
         captured: &FocusCandidateDiagnostics,
         current: &FocusCandidateDiagnostics,
     ) -> Self {
-        let mut payload = Self::candidate_event("insert_target_changed", operation_id, current, None);
+        let mut payload =
+            Self::candidate_event("insert_target_changed", operation_id, current, None);
         payload.captured_stable_id = Some(captured_stable_id.to_string());
         payload.reason = Some(format!(
             "captured target {} no longer matches focused target {}",
@@ -233,7 +232,8 @@ pub(super) fn evaluate_candidates(
     if let Some(index) = best_index {
         for (current_index, candidate) in evaluated.iter_mut().enumerate() {
             if current_index != index && candidate.reject_reason.is_none() {
-                candidate.reject_reason = Some("lower priority than selected candidate".to_string());
+                candidate.reject_reason =
+                    Some("lower priority than selected candidate".to_string());
             }
         }
     }
@@ -294,16 +294,19 @@ fn has_writable_value_pattern(candidate: &FocusCandidateDiagnostics) -> bool {
 }
 
 fn has_editor_framework_hint(candidate: &FocusCandidateDiagnostics) -> bool {
-    has_any_hint(candidate, &[
-        "chrome",
-        "electron",
-        "chromium",
-        "renderwidget",
-        "scintilla",
-        "monaco",
-        "textarea",
-        "richedit",
-    ])
+    has_any_hint(
+        candidate,
+        &[
+            "chrome",
+            "electron",
+            "chromium",
+            "renderwidget",
+            "scintilla",
+            "monaco",
+            "textarea",
+            "richedit",
+        ],
+    )
 }
 
 fn has_terminal_hint(candidate: &FocusCandidateDiagnostics) -> bool {

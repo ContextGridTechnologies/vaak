@@ -9,9 +9,9 @@ use windows::Win32::UI::Accessibility::{
     IUIAutomationTextPattern, IUIAutomationTextPattern2, IUIAutomationTreeWalker,
     IUIAutomationValuePattern, UIA_ButtonControlTypeId, UIA_ComboBoxControlTypeId,
     UIA_CustomControlTypeId, UIA_DocumentControlTypeId, UIA_EditControlTypeId,
-    UIA_ListControlTypeId, UIA_ListItemControlTypeId, UIA_PaneControlTypeId,
-    UIA_TextControlTypeId, UIA_TextEditPatternId, UIA_TextPattern2Id, UIA_TextPatternId,
-    UIA_TreeItemControlTypeId, UIA_ValuePatternId,
+    UIA_ListControlTypeId, UIA_ListItemControlTypeId, UIA_PaneControlTypeId, UIA_TextControlTypeId,
+    UIA_TextEditPatternId, UIA_TextPattern2Id, UIA_TextPatternId, UIA_TreeItemControlTypeId,
+    UIA_ValuePatternId,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetWindowTextLengthW, GetWindowTextW, GA_ROOTOWNER,

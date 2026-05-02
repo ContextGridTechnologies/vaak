@@ -11,6 +11,7 @@ use std::ptr::copy_nonoverlapping;
 use std::{thread, time::Duration};
 use windows::core::BSTR;
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
+use windows::Win32::System::Com::IDataObject;
 use windows::Win32::System::DataExchange::{
     CloseClipboard, CountClipboardFormats, EmptyClipboard, GetClipboardData,
     IsClipboardFormatAvailable, OpenClipboard, SetClipboardData,
@@ -19,7 +20,6 @@ use windows::Win32::System::Memory::{
     GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
 };
 use windows::Win32::System::Ole::{OleGetClipboard, OleSetClipboard};
-use windows::Win32::System::Com::IDataObject;
 use windows::Win32::UI::Accessibility::IUIAutomationElement;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
@@ -450,9 +450,7 @@ impl ClipboardSnapshot {
         match self {
             Self::Empty => ClipboardRestoreAction::Clear,
             Self::Text(_) => ClipboardRestoreAction::RestoreText,
-            Self::NonText | Self::OleDataObject(_) => {
-                ClipboardRestoreAction::RestoreOleDataObject
-            }
+            Self::NonText | Self::OleDataObject(_) => ClipboardRestoreAction::RestoreOleDataObject,
         }
     }
 }

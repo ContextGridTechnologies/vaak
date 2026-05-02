@@ -9,8 +9,8 @@ use crate::providers::{
 };
 use crate::session::{HotkeyBindings, SessionStore};
 use crate::storage::{
-    AppShellPreferences, DictationRecordDraftV1, DictationRecordV1,
-    LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection, OnboardingState,
+    AppShellPreferences, DictationRecordDraftV1, DictationRecordV1, LocalDictationRecordStore,
+    LocalSettingsStore, MicrophoneSelection, OnboardingState,
 };
 use crate::windowing;
 use tauri::{AppHandle, Emitter, Manager, State};

@@ -84,7 +84,10 @@ fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             file_name: Some("backend".to_string()),
         }))
         .level(log::LevelFilter::Info)
-        .level_for("appsdesktop_lib::platform::windows", log::LevelFilter::Trace);
+        .level_for(
+            "appsdesktop_lib::platform::windows",
+            log::LevelFilter::Trace,
+        );
 
     #[cfg(debug_assertions)]
     {

@@ -10,8 +10,8 @@ use crate::platform::windows::uia::{
     is_keyboard_focusable, is_read_only, window_title_from_handle,
 };
 use std::collections::HashSet;
-use windows::Win32::UI::Accessibility::IUIAutomationElement;
 use windows::Win32::UI::Accessibility::IUIAutomation;
+use windows::Win32::UI::Accessibility::IUIAutomationElement;
 
 #[cfg(test)]
 use crate::platform::windows::targeting::{
@@ -87,7 +87,12 @@ pub(super) fn resolve_focused_target(
 
     let mut seen = HashSet::new();
     let mut candidates = Vec::new();
-    push_candidate(&mut candidates, &mut seen, focused.clone(), "focused_element");
+    push_candidate(
+        &mut candidates,
+        &mut seen,
+        focused.clone(),
+        "focused_element",
+    );
 
     let raw_walker = unsafe { automation.RawViewWalker() }
         .map_err(|err| PlatformError::new("windows_error", format!("RawViewWalker: {err}")))?;
@@ -102,12 +107,19 @@ pub(super) fn resolve_focused_target(
         push_candidate(&mut candidates, &mut seen, ancestor, "control_ancestor");
     }
 
-    let initial_elements: Vec<IUIAutomationElement> =
-        candidates.iter().map(|candidate| candidate.element.clone()).collect();
+    let initial_elements: Vec<IUIAutomationElement> = candidates
+        .iter()
+        .map(|candidate| candidate.element.clone())
+        .collect();
     for element in initial_elements {
         if let Some((owner, is_active)) = active_caret_owner(&element) {
             if is_active {
-                push_candidate(&mut candidates, &mut seen, owner, "text_pattern2_caret_owner");
+                push_candidate(
+                    &mut candidates,
+                    &mut seen,
+                    owner,
+                    "text_pattern2_caret_owner",
+                );
             }
         }
     }
@@ -232,7 +244,8 @@ fn push_candidate(
         });
     } else if source == "text_pattern2_caret_owner" {
         for candidate in candidates.iter_mut() {
-            if descriptor_key(&candidate.diagnostics.snapshot) == descriptor_key(&diagnostics.snapshot)
+            if descriptor_key(&candidate.diagnostics.snapshot)
+                == descriptor_key(&diagnostics.snapshot)
             {
                 candidate.diagnostics.has_active_caret = true;
                 candidate.diagnostics.source = source.to_string();
@@ -285,19 +298,18 @@ fn enrich_snapshot_identity(
         return false;
     }
 
-    let fallback_title = ancestors
-        .iter()
-        .find_map(|ancestor| (!ancestor.window_title.is_empty()).then(|| ancestor.window_title.clone()));
-    let fallback_class_name = ancestors
-        .iter()
-        .find_map(|ancestor| (!ancestor.class_name.is_empty()).then(|| ancestor.class_name.clone()));
-    let fallback_handle = ancestors
-        .iter()
-        .find_map(|ancestor| (ancestor.native_window_handle != 0).then_some(ancestor.native_window_handle));
+    let fallback_title = ancestors.iter().find_map(|ancestor| {
+        (!ancestor.window_title.is_empty()).then(|| ancestor.window_title.clone())
+    });
+    let fallback_class_name = ancestors.iter().find_map(|ancestor| {
+        (!ancestor.class_name.is_empty()).then(|| ancestor.class_name.clone())
+    });
+    let fallback_handle = ancestors.iter().find_map(|ancestor| {
+        (ancestor.native_window_handle != 0).then_some(ancestor.native_window_handle)
+    });
 
-    let used_fallback = fallback_title.is_some()
-        || fallback_class_name.is_some()
-        || fallback_handle.is_some();
+    let used_fallback =
+        fallback_title.is_some() || fallback_class_name.is_some() || fallback_handle.is_some();
     if !used_fallback {
         return false;
     }
@@ -387,8 +399,7 @@ mod tests {
             .with_class_name("TermControl")
             .with_control_name("PowerShell")];
 
-        let selected =
-            select_best_candidate(candidates).expect("terminal leaf should be selected");
+        let selected = select_best_candidate(candidates).expect("terminal leaf should be selected");
 
         assert_eq!(selected.snapshot.stable_id, "termcontrol-leaf");
         assert_eq!(
@@ -456,12 +467,8 @@ mod tests {
             .with_selected_strategy(InsertionStrategy::ClipboardPaste)
             .with_accept_reason("active caret owner via text pattern");
 
-        let payload = LogPayload::candidate_event(
-            "focus_target_selected",
-            "focus-42",
-            &candidate,
-            None,
-        );
+        let payload =
+            LogPayload::candidate_event("focus_target_selected", "focus-42", &candidate, None);
         let json = serde_json::to_value(payload).expect("payload should serialize");
 
         assert_eq!(json["event"], "focus_target_selected");

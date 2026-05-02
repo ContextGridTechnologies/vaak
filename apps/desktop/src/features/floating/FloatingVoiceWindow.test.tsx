@@ -81,6 +81,29 @@ describe("FloatingVoiceWindow", () => {
     expect(startManualDictation).toHaveBeenCalledTimes(1);
   });
 
+  it("uses a stronger capsule shell so the control stays legible on dark backgrounds", async () => {
+    render(<FloatingVoiceWindow />);
+
+    const button = await screen.findByRole("button", {
+      name: "Start recording",
+    });
+    const main = button.closest("main");
+    const capsule = button.closest("section");
+
+    expect(main).toHaveClass("p-1.5");
+    expect(capsule).toHaveClass(
+      "border-white/15",
+      "bg-neutral-950/92",
+      "shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
+    );
+    expect(capsule).not.toHaveClass("backdrop-blur-xl");
+    expect(button).toHaveClass(
+      "border-white/14",
+      "bg-white/14",
+      "shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]",
+    );
+  });
+
   it("shows an animated wave and stops recording when pressed again", async () => {
     const user = userEvent.setup();
     const stopManualRecording = vi.fn();

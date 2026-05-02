@@ -55,7 +55,9 @@ pub fn insert_text_for_captured_target(
     _text: &str,
     _captured: &FocusedFieldInfo,
 ) -> Result<TextInsertResult, PlatformError> {
-    Err(PlatformError::unsupported("insert_text_for_captured_target"))
+    Err(PlatformError::unsupported(
+        "insert_text_for_captured_target",
+    ))
 }
 
 #[cfg(windows)]
