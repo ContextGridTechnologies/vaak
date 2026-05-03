@@ -23,19 +23,23 @@ describe("ProviderSelector", () => {
     const assemblyAi = screen.getByRole("button", { name: "AssemblyAI" });
     const azureOpenAi = screen.getByRole("button", { name: "Azure OpenAI" });
     const elevenLabs = screen.getByRole("button", { name: "ElevenLabs" });
+    const smallest = screen.getByRole("button", { name: "Smallest AI" });
 
     expect(openAi).toHaveAttribute("aria-pressed", "false");
     expect(assemblyAi).toHaveAttribute("aria-pressed", "false");
     expect(azureOpenAi).toHaveAttribute("aria-pressed", "true");
     expect(elevenLabs).toHaveAttribute("aria-pressed", "false");
+    expect(smallest).toHaveAttribute("aria-pressed", "false");
     expect(openAi).toHaveClass("min-h-9", "px-3", "py-2");
     expect(assemblyAi).toHaveClass("min-h-9", "px-3", "py-2");
     expect(azureOpenAi).toHaveClass("min-h-9", "px-3", "py-2");
     expect(elevenLabs).toHaveClass("min-h-9", "px-3", "py-2");
+    expect(smallest).toHaveClass("min-h-9", "px-3", "py-2");
     expect(openAi.querySelector("svg")).not.toBeInTheDocument();
     expect(assemblyAi.querySelector("svg")).not.toBeInTheDocument();
     expect(azureOpenAi.querySelector("svg")).not.toBeInTheDocument();
     expect(elevenLabs.querySelector("svg")).not.toBeInTheDocument();
+    expect(smallest.querySelector("svg")).not.toBeInTheDocument();
 
     await userEvent.click(openAi);
 

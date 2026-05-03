@@ -22,6 +22,12 @@ describe("provider Tauri API", () => {
     expect(providerId).toBe("assemblyai");
   });
 
+  it("supports Smallest AI in typed speech provider flows", () => {
+    const providerId: SpeechProviderId = "smallest";
+
+    expect(providerId).toBe("smallest");
+  });
+
   it("maps provider setup to the atomic backend command", async () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("save_speech_provider_setup", {

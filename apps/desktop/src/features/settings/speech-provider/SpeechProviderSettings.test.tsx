@@ -61,6 +61,14 @@ describe("SpeechProviderSettings", () => {
         });
       }
 
+      if (providerId === "smallest") {
+        return Promise.resolve({
+          providerId: "smallest",
+          configured: false,
+          configComplete: true,
+        });
+      }
+
       return Promise.resolve(openAiNeedsKeyStatus());
     });
     providerApi.getProviderConfig.mockResolvedValue(null);
@@ -94,6 +102,9 @@ describe("SpeechProviderSettings", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "ElevenLabs" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Smallest AI" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Settings" }),
@@ -287,5 +298,41 @@ describe("SpeechProviderSettings", () => {
     expect(
       await screen.findByText("Provider test passed."),
     ).toBeInTheDocument();
+  });
+
+  it("saves Smallest AI with Pulse and scopes provider test errors to that panel", async () => {
+    const user = userEvent.setup();
+    providerApi.saveSpeechProviderSetup.mockResolvedValue({
+      providerId: "smallest",
+      configured: true,
+      configComplete: true,
+    });
+    providerApi.testSpeechProvider.mockRejectedValue(
+      new Error("Smallest AI returned 401: invalid key"),
+    );
+
+    renderApp(<SpeechProviderSettings variant="settings" />);
+
+    await user.click(await screen.findByRole("button", { name: "Smallest AI" }));
+    expect(screen.getByRole("heading", { name: "Smallest AI" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Smallest AI API key"), "sm-test");
+    await user.click(screen.getByRole("button", { name: "Save and use Smallest AI" }));
+
+    await waitFor(() => {
+      expect(providerApi.saveSpeechProviderSetup).toHaveBeenCalledWith({
+        providerId: "smallest",
+        apiKey: "sm-test",
+        config: { model: "pulse" },
+        activate: true,
+      });
+    });
+
+    await user.click(screen.getByRole("button", { name: "Test provider" }));
+
+    expect(
+      await screen.findByText("Smallest AI returned 401: invalid key"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("OpenAI returned 401: invalid key")).not.toBeInTheDocument();
   });
 });

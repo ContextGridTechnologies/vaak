@@ -9,7 +9,8 @@ export type ProviderCatalogItem = {
     | "assemblyai"
     | "deepgram"
     | "groq"
-    | "elevenlabs";
+    | "elevenlabs"
+    | "smallest";
   name: string;
   description: string;
   categories: ProviderCategory[];
@@ -45,6 +46,15 @@ export const providerCatalog: ProviderCatalogItem[] = [
     credentialLabel: "AssemblyAI API key",
     setupStatus: "not-configured",
     modelHint: "Pre-recorded transcription models",
+  },
+  {
+    id: "smallest",
+    name: "Smallest AI",
+    description: "Use Smallest AI Pulse pre-recorded transcription with your own API key.",
+    categories: ["speech-to-text"],
+    credentialLabel: "Smallest AI API key",
+    setupStatus: "not-configured",
+    modelHint: "Pulse",
   },
   {
     id: "deepgram",

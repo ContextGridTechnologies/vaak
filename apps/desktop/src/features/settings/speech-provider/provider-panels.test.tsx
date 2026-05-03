@@ -7,6 +7,7 @@ import { AssemblyAiProviderPanel } from "./AssemblyAiProviderPanel";
 import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
+import { SmallestProviderPanel } from "./SmallestProviderPanel";
 import { SAVED_KEY_PLACEHOLDER } from "./types";
 
 describe("speech provider panels", () => {
@@ -112,5 +113,31 @@ describe("speech provider panels", () => {
 
     expect(input).toHaveAttribute("placeholder", SAVED_KEY_PLACEHOLDER);
     expect(input).toHaveValue("");
+  });
+
+  it("shows a saved Smallest AI key as a non-copyable star placeholder", () => {
+    renderApp(
+      <SmallestProviderPanel
+        apiKey=""
+        isLoading={false}
+        isSaving={false}
+        isTesting={false}
+        testResult={undefined}
+        status={{
+          providerId: "smallest",
+          configured: true,
+          configComplete: true,
+        }}
+        onApiKeyChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onTest={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByLabelText("Smallest AI API key");
+
+    expect(input).toHaveAttribute("placeholder", SAVED_KEY_PLACEHOLDER);
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
   });
 });

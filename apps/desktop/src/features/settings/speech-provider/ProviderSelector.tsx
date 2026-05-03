@@ -50,6 +50,7 @@ function isSpeechProvider(
     provider.id === "openai" ||
     provider.id === "azure-openai" ||
     provider.id === "assemblyai" ||
-    provider.id === "elevenlabs"
+    provider.id === "elevenlabs" ||
+    provider.id === "smallest"
   );
 }

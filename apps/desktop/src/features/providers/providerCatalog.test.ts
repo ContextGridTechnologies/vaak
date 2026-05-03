@@ -15,6 +15,7 @@ describe("providerCatalog", () => {
         "deepgram",
         "groq",
         "elevenlabs",
+        "smallest",
       ]),
     );
 

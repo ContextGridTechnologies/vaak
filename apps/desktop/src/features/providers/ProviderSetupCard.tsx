@@ -152,6 +152,8 @@ function getProviderIcon(providerId: ProviderCatalogItem["id"]) {
       return ZapIcon;
     case "elevenlabs":
       return AudioLinesIcon;
+    case "smallest":
+      return AudioLinesIcon;
   }
 }
 

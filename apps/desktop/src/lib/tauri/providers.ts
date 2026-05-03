@@ -24,7 +24,8 @@ export type SpeechProviderId =
   | "openai"
   | "azure-openai"
   | "assemblyai"
-  | "elevenlabs";
+  | "elevenlabs"
+  | "smallest";
 
 export const SPEECH_PROVIDER_CHANGED_EVENT =
   "vaak://speech-provider-changed";

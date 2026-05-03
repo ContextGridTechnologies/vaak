@@ -11,6 +11,7 @@ mod elevenlabs;
 mod gemini;
 mod openai;
 mod prompts;
+mod smallest;
 
 #[async_trait]
 pub trait SpeechProvider {
@@ -67,6 +68,11 @@ pub async fn transcribe(
                 .transcribe(api_key, input)
                 .await
         }
+        smallest::PROVIDER_ID => {
+            smallest::SmallestSpeechProvider::default()
+                .transcribe(api_key, input)
+                .await
+        }
         gemini::PROVIDER_ID => Err(ProviderFailure::UnsupportedProvider.into()),
         _ => Err(ProviderFailure::UnsupportedProvider.into()),
     }
@@ -78,7 +84,8 @@ pub fn validate_provider_id(provider_id: &str) -> Result<(), ProviderError> {
         | azure::PROVIDER_ID
         | assemblyai::PROVIDER_ID
         | gemini::PROVIDER_ID
-        | elevenlabs::PROVIDER_ID => Ok(()),
+        | elevenlabs::PROVIDER_ID
+        | smallest::PROVIDER_ID => Ok(()),
         _ => Err(ProviderFailure::UnsupportedProvider.into()),
     }
 }
@@ -108,6 +115,10 @@ fn is_config_complete(
         return Ok(true);
     }
 
+    if provider_id == smallest::PROVIDER_ID {
+        return Ok(true);
+    }
+
     Ok(false)
 }
 
@@ -124,7 +135,8 @@ fn resolve_transcription_input(
 
     let supports_saved_model = provider_id == openai::PROVIDER_ID
         || provider_id == assemblyai::PROVIDER_ID
-        || provider_id == elevenlabs::PROVIDER_ID;
+        || provider_id == elevenlabs::PROVIDER_ID
+        || provider_id == smallest::PROVIDER_ID;
     if !has_explicit_model && supports_saved_model {
         if let Some(model) = config
             .and_then(|provider_config| provider_config.model)
@@ -254,6 +266,42 @@ mod tests {
         let settings = LocalSettingsStore::new(&temp_config_dir("assemblyai"));
 
         assert!(is_config_complete("assemblyai", &settings).unwrap());
+    }
+
+    #[test]
+    fn smallest_is_a_supported_provider_id() {
+        assert!(validate_provider_id("smallest").is_ok());
+    }
+
+    #[test]
+    fn smallest_config_is_complete_without_local_provider_settings() {
+        let settings = LocalSettingsStore::new(&temp_config_dir("smallest"));
+
+        assert!(is_config_complete("smallest", &settings).unwrap());
+    }
+
+    #[test]
+    fn applies_saved_smallest_model_when_transcription_input_omits_one() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/webm".to_string(),
+            language: None,
+            prompt: None,
+            model: None,
+        };
+
+        let resolved = resolve_transcription_input(
+            "smallest",
+            input,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some("pulse".to_string()),
+            }),
+        );
+
+        assert_eq!(resolved.model.as_deref(), Some("pulse"));
     }
 
     #[test]

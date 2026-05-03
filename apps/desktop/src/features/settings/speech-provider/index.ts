@@ -2,6 +2,7 @@ export { AssemblyAiProviderPanel } from "./AssemblyAiProviderPanel";
 export { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 export { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 export { OpenAiProviderPanel } from "./OpenAiProviderPanel";
+export { SmallestProviderPanel } from "./SmallestProviderPanel";
 export { ProviderSelector } from "./ProviderSelector";
 export { SpeechProviderSettings } from "./SpeechProviderSettings";
 export {
@@ -15,6 +16,7 @@ export {
   DEFAULT_ASSEMBLYAI_MODEL,
   DEFAULT_ELEVENLABS_MODEL,
   DEFAULT_OPENAI_MODEL,
+  DEFAULT_SMALLEST_MODEL,
   ELEVENLABS_MODELS,
   OPENAI_MODELS,
   providerLabels,

@@ -84,6 +84,7 @@ const providerLabels: Partial<Record<SpeechProviderId, string>> = {
   "azure-openai": "Azure OpenAI",
   assemblyai: "AssemblyAI",
   elevenlabs: "ElevenLabs",
+  smallest: "Smallest AI",
 };
 
 const idleState: DictationLoopState = {

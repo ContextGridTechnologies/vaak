@@ -800,6 +800,7 @@ const providerDisplayName: Record<string, string> = {
   deepgram: "Deepgram",
   groq: "Groq",
   elevenlabs: "ElevenLabs",
+  smallest: "Smallest AI",
   azure_openai: "Azure OpenAI",
   "azure-openai": "Azure OpenAI",
 };

@@ -18,6 +18,7 @@ import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
 import { ProviderSelector } from "./ProviderSelector";
+import { SmallestProviderPanel } from "./SmallestProviderPanel";
 import { verifyOnboardingProviderTranscription } from "./onboardingProviderVerification";
 import {
   normalizeProviderError,
@@ -29,6 +30,7 @@ import {
   DEFAULT_ASSEMBLYAI_MODEL,
   DEFAULT_ELEVENLABS_MODEL,
   DEFAULT_OPENAI_MODEL,
+  DEFAULT_SMALLEST_MODEL,
   providerLabels,
   type ProviderErrors,
   type ProviderStatuses,
@@ -51,6 +53,7 @@ export function SpeechProviderSettings({
   const [azureApiKey, setAzureApiKey] = useState("");
   const [assemblyAiApiKey, setAssemblyAiApiKey] = useState("");
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
+  const [smallestApiKey, setSmallestApiKey] = useState("");
   const [openAiModel, setOpenAiModel] = useState<string>(DEFAULT_OPENAI_MODEL);
   const [assemblyAiModel, setAssemblyAiModel] = useState<string>(
     DEFAULT_ASSEMBLYAI_MODEL,
@@ -93,6 +96,7 @@ export function SpeechProviderSettings({
           azureStatus,
           assemblyAiStatus,
           elevenLabsStatus,
+          smallestStatus,
           openAiConfig,
           azureConfig,
           assemblyAiConfig,
@@ -104,6 +108,7 @@ export function SpeechProviderSettings({
             getProviderStatus("azure-openai"),
             getProviderStatus("assemblyai"),
             getProviderStatus("elevenlabs"),
+            getProviderStatus("smallest"),
             getProviderConfig("openai"),
             getProviderConfig("azure-openai"),
             getProviderConfig("assemblyai"),
@@ -116,6 +121,7 @@ export function SpeechProviderSettings({
             "azure-openai": azureStatus,
             assemblyai: assemblyAiStatus,
             elevenlabs: elevenLabsStatus,
+            smallest: smallestStatus,
           });
           setOpenAiModel(openAiConfig?.model ?? DEFAULT_OPENAI_MODEL);
           setAzureEndpoint(azureConfig?.endpoint ?? "");
@@ -217,6 +223,11 @@ export function SpeechProviderSettings({
   const handleElevenLabsModelChange = (value: string) => {
     clearOnboardingVerification("elevenlabs");
     setElevenLabsModel(value);
+  };
+
+  const handleSmallestApiKeyChange = (value: string) => {
+    clearOnboardingVerification("smallest");
+    setSmallestApiKey(value);
   };
 
   const verifySavedProvider = async (providerId: SpeechProviderId) => {
@@ -401,6 +412,43 @@ export function SpeechProviderSettings({
     }
   };
 
+  const saveSmallestKey = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    clearOnboardingVerification("smallest");
+    setProviderErrors((current) => ({ ...current, smallest: undefined }));
+    setProviderTestResults((current) => ({
+      ...current,
+      smallest: undefined,
+    }));
+    setSavingProviderId("smallest");
+
+    try {
+      const status = await saveSpeechProviderSetup({
+        providerId: "smallest",
+        apiKey: smallestApiKey,
+        config: {
+          model: DEFAULT_SMALLEST_MODEL,
+        },
+        activate: true,
+      });
+      setProviderStatuses((current) => ({ ...current, smallest: status }));
+      setSmallestApiKey("");
+      setSelectedProviderId("smallest");
+      if (isOnboarding) {
+        await verifySavedProvider("smallest");
+      } else {
+        toast.success("Smallest AI key saved");
+      }
+    } catch (err) {
+      setProviderErrors((current) => ({
+        ...current,
+        smallest: normalizeProviderError("smallest", err),
+      }));
+    } finally {
+      setSavingProviderId(null);
+    }
+  };
+
   const testSelectedProvider = async () => {
     const providerId = selectedProviderId;
     setProviderErrors((current) => ({ ...current, [providerId]: undefined }));
@@ -492,7 +540,7 @@ export function SpeechProviderSettings({
           onSubmit={saveAssemblyAiKey}
           onTest={testSelectedProvider}
         />
-      ) : (
+      ) : selectedProviderId === "elevenlabs" ? (
         <ElevenLabsProviderPanel
           apiKey={elevenLabsApiKey}
           error={providerErrors.elevenlabs}
@@ -506,6 +554,20 @@ export function SpeechProviderSettings({
           onApiKeyChange={handleElevenLabsApiKeyChange}
           onModelChange={handleElevenLabsModelChange}
           onSubmit={saveElevenLabsKey}
+          onTest={testSelectedProvider}
+        />
+      ) : (
+        <SmallestProviderPanel
+          apiKey={smallestApiKey}
+          error={providerErrors.smallest}
+          isLoading={isLoading}
+          isSaving={savingProviderId === "smallest"}
+          isTesting={testingProviderId === "smallest"}
+          showTestButton={!isOnboarding}
+          testResult={providerTestResults.smallest}
+          status={providerStatuses.smallest}
+          onApiKeyChange={handleSmallestApiKeyChange}
+          onSubmit={saveSmallestKey}
           onTest={testSelectedProvider}
         />
       )}
