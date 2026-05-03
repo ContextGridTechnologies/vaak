@@ -43,6 +43,27 @@ describe("SettingsPanel provider setup", () => {
     expect(
       await screen.findByRole("heading", { name: "Azure OpenAI" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Settings" }).closest('[data-slot="card"]'),
+    ).toBeNull();
+    expect(
+      screen.getByText("Providers, microphone, hotkey, and app preferences.").closest(
+        '[data-slot="card"]',
+      ),
+    ).toBeNull();
+    expect(screen.getByText("Speech provider").closest('[data-slot="card"]')).not.toBeNull();
+
+    expect(screen.getByTestId("settings-screen-shell")).toHaveClass(
+      "mx-auto",
+      "w-full",
+      "max-w-[52rem]",
+    );
+    expect(screen.getByTestId("settings-screen-shell").parentElement).toHaveClass(
+      "pt-[4.05rem]",
+      "sm:pt-[5.0625rem]",
+      "lg:pt-[6.075rem]",
+    );
 
     expect(screen.queryByRole("heading", { name: "OpenAI" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Endpoint")).toHaveValue(

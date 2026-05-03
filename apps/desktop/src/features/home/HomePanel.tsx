@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowRightIcon,
   CircleAlertIcon,
   CircleCheckBigIcon,
   CircleSlash2Icon,
   Clock3Icon,
+  CopyIcon,
   LoaderCircleIcon,
   type LucideIcon,
   MessageSquareTextIcon,
@@ -12,18 +12,13 @@ import {
   PlayIcon,
   SquareTerminalIcon,
   StickyNoteIcon,
-  TargetIcon,
 } from "lucide-react";
 
-import { AppScreen, StatusBadge } from "@/components/app";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/app";
+import { appScreenContentClassName } from "@/components/app/AppScreen";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Empty,
@@ -49,6 +44,7 @@ type HomeActivity = {
   recordId: string;
   appName: string;
   icon: LucideIcon;
+  iconMark: string | null;
   status: ActivityStatus;
   targetName: string;
   inputKindLabel: string;
@@ -62,7 +58,8 @@ type HomeActivity = {
 };
 
 const POLL_INTERVAL_MS = 3_000;
-const DEFAULT_LIMIT = 12;
+const INITIAL_VISIBLE_COUNT = 15;
+const VISIBLE_INCREMENT = 15;
 
 const statusMeta: Record<
   ActivityStatus,
@@ -95,6 +92,9 @@ const appIcon: Record<string, LucideIcon> = {
 
 export function HomePanel() {
   const [records, setRecords] = useState<DictationRecord[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasLoadedAllRecords, setHasLoadedAllRecords] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -105,16 +105,22 @@ export function HomePanel() {
 
     const loadRecords = async () => {
       try {
-        const recent = await getRecentDictationRecords(DEFAULT_LIMIT);
+        const recent = await getRecentDictationRecords(INITIAL_VISIBLE_COUNT, 0);
         if (disposed) {
           return;
         }
 
-        setRecords(recent);
+        setRecords((current) => mergeRecentRecords(current, recent));
+        setHasLoadedAllRecords((current) =>
+          current || recent.length < INITIAL_VISIBLE_COUNT,
+        );
+        setIsLoadingMore(false);
       } catch (error) {
         if (!disposed) {
           console.error("Failed to load dictation records", error);
           setRecords([]);
+          setHasLoadedAllRecords(true);
+          setIsLoadingMore(false);
         }
       }
     };
@@ -135,45 +141,101 @@ export function HomePanel() {
     [records],
   );
 
-  const recordCountLabel = useMemo(() => {
-    const count = activities.length;
-    return `Local history · ${count} recent record${count === 1 ? "" : "s"}`;
-  }, [activities.length]);
-
   const activityOverview = useMemo(
     () => buildActivityOverview(activities),
     [activities],
   );
+  const visibleActivities = activities;
+  const hasMoreActivities =
+    !hasLoadedAllRecords && activities.length >= INITIAL_VISIBLE_COUNT;
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (
+      !sentinel ||
+      !hasMoreActivities ||
+      isLoadingMore ||
+      typeof IntersectionObserver === "undefined"
+    ) {
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) {
+        return;
+      }
+
+      setIsLoadingMore(true);
+    }, {
+      root: null,
+      rootMargin: "0px 0px 160px 0px",
+      threshold: 0.1,
+    });
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMoreActivities, isLoadingMore]);
+
+  useEffect(() => {
+    if (!isLoadingMore) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadMoreRecords = async () => {
+      try {
+        const nextRecords = await getRecentDictationRecords(
+          VISIBLE_INCREMENT,
+          records.length,
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        setRecords((current) => [...current, ...nextRecords]);
+        setHasLoadedAllRecords(nextRecords.length < VISIBLE_INCREMENT);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load more dictation records", error);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingMore(false);
+        }
+      }
+    };
+
+    void loadMoreRecords();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoadingMore, records.length]);
 
   return (
-    <AppScreen
-      eyebrow="Voice"
-      title="Recent dictation activity"
-      description={recordCountLabel}
-      actions={
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled
-          title="Full-history navigation is not available yet."
+    <div className="min-h-full bg-background text-foreground">
+      <main
+        data-testid="app-screen-content"
+        className={cn(
+          appScreenContentClassName,
+          "max-w-[74rem] gap-5 pt-[4.05rem] sm:pt-[5.0625rem] lg:pt-[6.075rem]",
+        )}
+      >
+        <section
+          data-testid="voice-activity-shell"
+          className="mx-auto w-full max-w-[52rem]"
         >
-          View full history
-          <ArrowRightIcon data-icon="inline-end" />
-        </Button>
-      }
-      contentClassName="max-w-[74rem] gap-5"
-    >
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex flex-col gap-1">
               <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-                Activity feed
+                Voice Activity
               </h2>
-              <p className="text-sm text-muted-foreground">
-                Local-first capture history from your latest dictation sessions.
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               <StatusBadge
@@ -196,12 +258,19 @@ export function HomePanel() {
 
           {activities.length > 0 ? (
             <div className="flex flex-col gap-3">
-              {activities.map((activity) => (
+              {visibleActivities.map((activity) => (
                 <ActivityFeedItem
                   key={activity.recordId}
                   activity={activity}
                 />
               ))}
+              {hasMoreActivities ? (
+                <div
+                  ref={loadMoreRef}
+                  aria-hidden="true"
+                  className="h-4 w-full"
+                />
+              ) : null}
             </div>
           ) : (
             <Card className="border-border/70 bg-card shadow-sm">
@@ -221,50 +290,19 @@ export function HomePanel() {
           )}
 
           <div className="flex flex-col gap-1 px-1 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-            <span>Showing the latest {DEFAULT_LIMIT} captures on this device</span>
+            <span>
+              Showing {visibleActivities.length} of {activities.length} captures on this device
+            </span>
             <span>
               {activities[0]
                 ? `Latest ${formatRelativeTime(activities[0].capturedAt)}`
                 : "Waiting for the first capture"}
             </span>
           </div>
-        </div>
-
-        <Card
-          size="sm"
-          className="border-border/70 bg-gradient-to-br from-card via-card to-muted/45 shadow-sm"
-        >
-          <CardHeader className="border-b border-border/70">
-            <CardTitle>Activity overview</CardTitle>
-            <CardDescription>
-              Quick health signals for recent dictation across desktop
-              surfaces.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <OverviewMetric
-              icon={Clock3Icon}
-              label="Recent records"
-              value={String(activityOverview.totalRecords)}
-              description={`Polling local history every ${POLL_INTERVAL_MS / 1_000} seconds`}
-            />
-            <OverviewMetric
-              icon={CircleCheckBigIcon}
-              label="Successful inserts"
-              value={`${activityOverview.successRate}%`}
-              description={`${activityOverview.insertedCount} of ${activityOverview.totalRecords} recent records`}
-              tone="success"
-            />
-            <OverviewMetric
-              icon={TargetIcon}
-              label="Primary target"
-              value={activityOverview.primaryTarget}
-              description={activityOverview.primaryTargetDescription}
-            />
-          </CardContent>
-        </Card>
-      </section>
-    </AppScreen>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
 
@@ -275,12 +313,18 @@ type ActivityFeedItemProps = {
 function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
   const RowIcon = activity.icon;
   const ActivityStatusIcon = statusMeta[activity.status].icon;
+  const shouldShowTargetName =
+    activity.targetName.trim().toLocaleLowerCase() !==
+    activity.appName.trim().toLocaleLowerCase();
   const [originalAudioUrl, setOriginalAudioUrl] = useState<string | null>(null);
   const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(null);
   const [isOriginalAudioOpen, setIsOriginalAudioOpen] = useState(false);
   const [isProcessedAudioOpen, setIsProcessedAudioOpen] = useState(false);
-  const [loadingAudioKind, setLoadingAudioKind] = useState<"original" | "processed" | null>(null);
+  const [loadingAudioKind, setLoadingAudioKind] = useState<
+    "original" | "processed" | null
+  >(null);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
 
   useEffect(() => {
     return () => {
@@ -293,8 +337,23 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
     };
   }, [originalAudioUrl, processedAudioUrl]);
 
+  useEffect(() => {
+    if (copyState !== "copied") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCopyState("idle");
+    }, 1500);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [copyState]);
+
   const handlePlayAudio = async (kind: "original" | "processed") => {
-    const artifact = kind === "original" ? activity.audio : activity.processedAudio;
+    const artifact =
+      kind === "original" ? activity.audio : activity.processedAudio;
     const currentUrl = kind === "original" ? originalAudioUrl : processedAudioUrl;
     const setUrl = kind === "original" ? setOriginalAudioUrl : setProcessedAudioUrl;
 
@@ -340,32 +399,50 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
     }
   };
 
+  const handleCopyTranscript = async () => {
+    try {
+      await navigator.clipboard.writeText(activity.transcriptPreview);
+      setCopyState("copied");
+    } catch (error) {
+      console.error("Failed to copy transcript", error);
+      setCopyState("error");
+    }
+  };
+
   return (
     <article
       className={cn(
-        "flex flex-col gap-4 rounded-xl border border-border/70 bg-card px-4 py-4 shadow-sm transition-[border-color,box-shadow,transform] sm:px-5",
+        "flex flex-col gap-3 rounded-xl border border-border/70 bg-card px-4 py-3.5 shadow-sm transition-[border-color,box-shadow,transform] sm:px-5",
         activity.isLatest
           ? "border-border shadow-md"
           : "hover:border-border hover:shadow-md",
       )}
     >
       <div className="flex items-start gap-4">
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background text-muted-foreground shadow-xs">
-          <RowIcon className="size-5" />
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground shadow-xs">
+          {activity.iconMark ? (
+            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-foreground/75">
+              {activity.iconMark}
+            </span>
+          ) : (
+            <RowIcon className="size-4.5" />
+          )}
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
-              <div className="text-base font-semibold text-foreground">
+              <div className="text-[1.05rem] font-semibold leading-tight text-foreground">
                 {activity.appName}
               </div>
-              <div className="text-sm text-muted-foreground">
-                {activity.targetName}
-              </div>
+              {shouldShowTargetName ? (
+                <div className="mt-0.5 text-sm leading-5 text-muted-foreground">
+                  {activity.targetName}
+                </div>
+              ) : null}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <div className="flex flex-wrap items-center gap-2 text-sm lg:justify-end">
               <StatusBadge
                 tone={statusMeta[activity.status].tone}
                 className="normal-case tracking-normal"
@@ -373,82 +450,76 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
                 <ActivityStatusIcon data-icon="inline-start" />
                 {statusMeta[activity.status].label}
               </StatusBadge>
-              <Badge variant="outline" className="h-6 rounded-md px-2.5">
-                {activity.inputKindLabel}
-              </Badge>
-              <Badge variant="secondary" className="h-6 rounded-md px-2.5">
-                {activity.providerLabel}
-              </Badge>
               <span className="text-sm text-muted-foreground">
                 {formatRelativeTime(activity.capturedAt)}
               </span>
             </div>
           </div>
 
-          <div className="rounded-xl border border-border/70 bg-background/80 px-3.5 py-3 shadow-xs">
-            <p className="text-sm leading-6 text-foreground/92">
-              {activity.transcriptPreview}
-            </p>
-            {activity.processingSummary ? (
-              <div className="mt-2 text-xs text-muted-foreground">
-                {activity.processingSummary}
-              </div>
-            ) : null}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-start justify-between gap-3">
+              <p className="min-w-0 flex-1 text-sm leading-6 text-foreground/92">
+                {activity.transcriptPreview}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="shrink-0 rounded-md px-2"
+                onClick={() => {
+                  void handleCopyTranscript();
+                }}
+                aria-label={`Copy transcript for ${activity.appName}`}
+                title={copyState === "copied" ? "Copied" : "Copy transcript"}
+              >
+                <CopyIcon data-icon="inline-start" />
+                {copyState === "copied"
+                  ? "Copied"
+                  : copyState === "error"
+                    ? "Retry"
+                    : "Copy"}
+              </Button>
+            </div>
+            {/*
+              Timing metadata is intentionally hidden for now.
+              Keep the formatter and mapped value in place until we decide how
+              to surface processing diagnostics in the product later.
+            */}
           </div>
 
           {activity.audio || activity.processedAudio ? (
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {activity.audio ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
+            <div className="flex flex-col gap-2 border-t border-border/60 pt-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  {activity.audio ? renderAudioControl({
+                    appName: activity.appName,
+                    byteLength: activity.audio.byteLength,
+                    isLoading: loadingAudioKind === "original",
+                    isOpen: isOriginalAudioOpen,
+                    kind: "original",
+                    onClick: () => {
                       void handlePlayAudio("original");
-                    }}
-                    disabled={loadingAudioKind !== null}
-                    aria-label={`Play original audio for ${activity.appName}`}
-                  >
-                    {loadingAudioKind === "original" ? (
-                      <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-                    ) : (
-                      <PlayIcon data-icon="inline-start" />
-                    )}
-                    {isOriginalAudioOpen ? "Hide original audio" : "Play original audio"}
-                  </Button>
-                ) : null}
-                {activity.processedAudio ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
+                    },
+                  }) : null}
+                  {activity.processedAudio ? renderAudioControl({
+                    appName: activity.appName,
+                    byteLength: activity.processedAudio.byteLength,
+                    isLoading: loadingAudioKind === "processed",
+                    isOpen: isProcessedAudioOpen,
+                    kind: "processed",
+                    onClick: () => {
                       void handlePlayAudio("processed");
-                    }}
-                    disabled={loadingAudioKind !== null}
-                    aria-label={`Play processed audio for ${activity.appName}`}
-                  >
-                    {loadingAudioKind === "processed" ? (
-                      <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-                    ) : (
-                      <PlayIcon data-icon="inline-start" />
-                    )}
-                    {isProcessedAudioOpen
-                      ? "Hide processed audio"
-                      : "Play processed audio"}
-                  </Button>
-                ) : null}
-                {activity.audio ? (
-                  <span className="text-xs text-muted-foreground">
-                    Original {Math.max(1, Math.round(activity.audio.byteLength / 1024))} KB
-                  </span>
-                ) : null}
-                {activity.processedAudio ? (
-                  <span className="text-xs text-muted-foreground">
-                    Processed {Math.max(1, Math.round(activity.processedAudio.byteLength / 1024))} KB
-                  </span>
-                ) : null}
+                    },
+                  }) : null}
+                </div>
+                {/*
+                  Input-kind metadata remains hidden for now.
+                  Keep the provider/model label visible and revisit the rest of
+                  the metadata layout later.
+                */}
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:justify-end">
+                  <span>{activity.providerLabel}</span>
+                </div>
               </div>
               {audioError ? (
                 <div className="text-xs text-destructive">{audioError}</div>
@@ -467,40 +538,44 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
   );
 }
 
-type OverviewMetricProps = {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  description: string;
-  tone?: "default" | "success";
-};
+function renderAudioControl({
+  appName,
+  byteLength,
+  isLoading,
+  isOpen,
+  kind,
+  onClick,
+}: {
+  appName: string;
+  byteLength: number;
+  isLoading: boolean;
+  isOpen: boolean;
+  kind: "original" | "processed";
+  onClick: () => void;
+}) {
+  const label = kind === "original" ? "Original" : "Processed";
 
-function OverviewMetric({
-  icon: Icon,
-  label,
-  value,
-  description,
-  tone = "default",
-}: OverviewMetricProps) {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-border/70 bg-background/80 p-3 shadow-xs">
-      <div
-        className={cn(
-          "flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/60 text-muted-foreground",
-          tone === "success" && "border-success/20 bg-success/10 text-success",
-        )}
+    <div className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-muted/15 px-2 py-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        className="h-7 rounded-md px-2.5"
+        onClick={onClick}
+        disabled={isLoading}
+        aria-label={`Play ${kind} audio for ${appName}`}
       >
-        <Icon className="size-4.5" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-          {label}
-        </div>
-        <div className="mt-1 text-lg font-semibold text-foreground">
-          {value}
-        </div>
-        <div className="mt-1 text-sm text-muted-foreground">{description}</div>
-      </div>
+        {isLoading ? (
+          <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
+        ) : (
+          <PlayIcon data-icon="inline-start" />
+        )}
+        {isOpen ? `Hide ${label}` : label}
+      </Button>
+      <span className="text-xs text-muted-foreground">
+        {Math.max(1, Math.round(byteLength / 1024))} KB
+      </span>
     </div>
   );
 }
@@ -515,24 +590,28 @@ function buildActivityOverview(activities: HomeActivity[]) {
   const failedCount = activities.filter(
     (activity) => activity.status === "failed",
   ).length;
-  const totalRecords = activities.length;
-  const successRate =
-    totalRecords > 0 ? Math.round((insertedCount / totalRecords) * 100) : 0;
-  const primaryTargetActivity = activities[0];
 
   return {
     insertedCount,
     skippedCount,
     failedCount,
-    totalRecords,
-    successRate,
-    primaryTarget: primaryTargetActivity
-      ? primaryTargetActivity.appName
-      : "Waiting for first capture",
-    primaryTargetDescription: primaryTargetActivity
-      ? `${primaryTargetActivity.targetName} · ${primaryTargetActivity.inputKindLabel}`
-      : "No capture target detected yet",
   };
+}
+
+function mergeRecentRecords(
+  currentRecords: DictationRecord[],
+  latestRecords: DictationRecord[],
+) {
+  if (currentRecords.length === 0) {
+    return latestRecords;
+  }
+
+  const seenRecordIds = new Set(latestRecords.map((record) => record.recordId));
+  const olderRecords = currentRecords.filter(
+    (record) => !seenRecordIds.has(record.recordId),
+  );
+
+  return [...latestRecords, ...olderRecords];
 }
 
 function mapRecordToActivity(
@@ -545,6 +624,7 @@ function mapRecordToActivity(
     recordId: record.recordId,
     appName,
     icon: appIcon[deriveIconKey(appName)] ?? appIcon.default,
+    iconMark: deriveIconMark(record, appName),
     status: record.insertion.status,
     targetName: sanitizeTargetControlName({
       controlName: record.target.controlName,
@@ -567,16 +647,35 @@ function mapRecordToActivity(
 
 function deriveAppName(record: DictationRecord) {
   const title = record.target.windowTitle.trim();
-  if (title.includes("Discord")) {
+  const lowerTitle = title.toLowerCase();
+  const controlName = record.target.controlName.trim();
+  const lowerControlName = controlName.toLowerCase();
+
+  if (lowerTitle.includes("discord")) {
     return "Discord";
   }
-  if (title.includes("Visual Studio Code") || title.includes("VS Code")) {
+  if (
+    lowerTitle.includes("visual studio code") ||
+    lowerTitle.includes("vs code")
+  ) {
     return "Visual Studio Code";
   }
-  if (title.includes("Notepad")) {
+  if (lowerTitle.includes("notepad")) {
     return "Notepad";
   }
-  if (title.includes("Terminal") || title.includes("PowerShell")) {
+  if (
+    lowerTitle.includes("terminal") ||
+    lowerTitle.includes("powershell") ||
+    lowerControlName.includes("powershell")
+  ) {
+    return lowerControlName.includes("powershell")
+      ? "PowerShell"
+      : "Windows Terminal";
+  }
+  if (
+    record.target.inputKind === "terminal" &&
+    lowerControlName.includes("command")
+  ) {
     return "Windows Terminal";
   }
   return title || capitalize(record.platform);
@@ -590,7 +689,24 @@ function deriveIconKey(appName: string) {
   return "default";
 }
 
+function deriveIconMark(record: DictationRecord, appName: string) {
+  const title = record.target.windowTitle.toLowerCase();
+  const target = record.target.controlName.toLowerCase();
+
+  if (title.includes("powershell") || target.includes("powershell")) {
+    return "PS";
+  }
+  if (appName === "Windows Terminal") {
+    return ">_";
+  }
+  if (appName === "Visual Studio Code") {
+    return "VS";
+  }
+  return null;
+}
+
 function formatInputKind(inputKind: string) {
+  // Reserved for future activity metadata/product decisions.
   switch (inputKind) {
     case "text":
       return "Text input";
@@ -606,6 +722,7 @@ function formatInputKind(inputKind: string) {
 }
 
 function formatProviderLabel(record: DictationRecord) {
+  // Reserved for future activity metadata/product decisions.
   if (!record.provider) {
     return "Provider unknown";
   }
@@ -621,6 +738,7 @@ function formatProviderLabel(record: DictationRecord) {
 }
 
 function formatProcessingSummary(record: DictationRecord) {
+  // Reserved for future diagnostics/product decisions around timing visibility.
   const processingMs = record.recording?.postProcessingMs;
   const startupMs = record.recording?.startupMs;
   const analysisMs = record.recording?.analysisMs;

@@ -83,8 +83,9 @@ export async function saveDictationRecord(
 
 export async function getRecentDictationRecords(
   limit = 12,
+  offset = 0,
 ): Promise<DictationRecord[]> {
-  return invokeTauri("get_recent_dictation_records", { limit });
+  return invokeTauri("get_recent_dictation_records", { limit, offset });
 }
 
 export async function persistDictationAudio(input: {

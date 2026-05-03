@@ -25,8 +25,34 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 describe("HomePanel", () => {
+  let intersectionObserverCallback:
+    | ((entries: Array<{ isIntersecting: boolean }>) => void)
+    | null;
+  let observeSpy: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    intersectionObserverCallback = null;
+    observeSpy = vi.fn();
+    class MockIntersectionObserver {
+      observe = observeSpy;
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+      root = null;
+      rootMargin = "";
+      thresholds: number[] = [];
+
+      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
+        intersectionObserverCallback = callback;
+      }
+
+      takeRecords() {
+        return [];
+      }
+    }
+
+    globalThis.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
     isTauriRuntime.mockReturnValue(true);
     loadSavedDictationAudio.mockResolvedValue({
       audioBytes: new Uint8Array([1, 2, 3]),
@@ -105,24 +131,25 @@ describe("HomePanel", () => {
     renderApp(<HomePanel />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText("Local history · 1 recent record"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Voice Activity")).toBeInTheDocument();
     });
 
-    expect(getRecentDictationRecords).toHaveBeenCalledWith(12);
-    expect(screen.getByText("Activity overview")).toBeInTheDocument();
-    expect(screen.getByText("Recent records")).toBeInTheDocument();
-    expect(screen.getByText("Successful inserts")).toBeInTheDocument();
-    expect(screen.getByText("Primary target")).toBeInTheDocument();
+    expect(getRecentDictationRecords).toHaveBeenCalledWith(15, 0);
+    expect(screen.queryByText("Activity overview")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recent records")).not.toBeInTheDocument();
+    expect(screen.queryByText("Successful inserts")).not.toBeInTheDocument();
+    expect(screen.queryByText("Primary target")).not.toBeInTheDocument();
+    expect(screen.queryByText("Voice")).not.toBeInTheDocument();
+    expect(screen.queryByText("Activity feed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recent dictation activity")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "View full history" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "View full history" }),
+    ).not.toBeInTheDocument();
     expect(screen.getAllByText("Discord").length).toBeGreaterThan(0);
     expect(screen.getByText("Message Box")).toBeInTheDocument();
     expect(
-      screen.getByText("Post 940 ms · STT 910 ms · Analyze 18 ms · Insert 12 ms · Startup 42 ms"),
-    ).toBeInTheDocument();
+      screen.queryByText("Post 940 ms · STT 910 ms · Analyze 18 ms · Insert 12 ms · Startup 42 ms"),
+    ).not.toBeInTheDocument();
     expect(screen.getAllByText("Inserted").length).toBeGreaterThan(0);
     expect(
       screen.getByRole("button", { name: "Play original audio for Discord" }),
@@ -130,6 +157,8 @@ describe("HomePanel", () => {
     expect(
       screen.getByRole("button", { name: "Play processed audio for Discord" }),
     ).toBeInTheDocument();
+    expect(screen.queryByText("Text input")).not.toBeInTheDocument();
+    expect(screen.getByText("OpenAI · gpt-4o-mini-transcribe")).toBeInTheDocument();
     expect(screen.queryByText("Capture record")).not.toBeInTheDocument();
     expect(screen.queryByText("Versioned record")).not.toBeInTheDocument();
   });
@@ -140,9 +169,7 @@ describe("HomePanel", () => {
     renderApp(<HomePanel />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText("Local history · 0 recent records"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Voice Activity")).toBeInTheDocument();
     });
 
     expect(
@@ -153,6 +180,18 @@ describe("HomePanel", () => {
         "Start dictation once and Vaak will keep a local-first trail of recent insertions, skips, and failures.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("centers the voice activity column with deliberate top spacing", async () => {
+    getRecentDictationRecords.mockResolvedValue([]);
+
+    renderApp(<HomePanel />);
+
+    const content = await screen.findByTestId("app-screen-content");
+    const shell = await screen.findByTestId("voice-activity-shell");
+
+    expect(content).toHaveClass("pt-[4.05rem]", "sm:pt-[5.0625rem]", "lg:pt-[6.075rem]");
+    expect(shell).toHaveClass("mx-auto", "w-full", "max-w-[52rem]");
   });
 
   it("replaces editor accessibility placeholder text with a clean target label", async () => {
@@ -221,4 +260,208 @@ describe("HomePanel", () => {
       screen.queryAllByText(/The editor is not accessible at this time/i),
     ).toHaveLength(0);
   });
+
+  it("labels terminal activity from the target when the window title is custom", async () => {
+    getRecentDictationRecords.mockResolvedValue([
+      {
+        schemaVersion: 1,
+        recordId: "f1d1d160-2cc1-4ef3-a076-3f75efdb3f2d",
+        userId: "b4c8d2f0-2a71-4c8a-9bde-3f1a7e9b8c6d",
+        installationId: "c2e9af6b-8d31-4e33-9d24-0f6e7c3b6a11",
+        deviceId: "d1f6b2e9-3c47-4a1f-a2d1-9a3c6f7b8e22",
+        sessionId: "e7d9a3c1-1f6b-4b2a-b8e9-6c3a5d7f9b44",
+        mode: "dictation",
+        trigger: "hotkey",
+        platform: "windows",
+        capturedAt: "2025-05-19T10:24:31Z",
+        startedAt: null,
+        endedAt: null,
+        target: {
+          stableId: "terminal:powershell:custom-title",
+          windowTitle: "vaak",
+          controlName: "PowerShell",
+          controlType: "Edit",
+          controlTypeId: 50004,
+          automationId: "terminal-input",
+          frameworkId: "Console",
+          className: "CASCADIA_HOSTING_WINDOW_CLASS",
+          nativeWindowHandle: 42,
+          inputKind: "terminal",
+          currentValue: null,
+        },
+        provider: {
+          providerId: "azure_openai",
+          modelId: "gpt-4o-transcribe",
+        },
+        transcript: {
+          rawText: "List the last 50 entries",
+          finalText: "List the last 50 entries",
+          characterCount: 24,
+        },
+        insertion: {
+          status: "inserted",
+          method: "send_input",
+          errorCode: null,
+          errorMessage: null,
+        },
+      },
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("PowerShell").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.queryByText(/^vaak$/i)).not.toBeInTheDocument();
+  });
+
+  it("does not repeat the same terminal label in both title and subtitle", async () => {
+    getRecentDictationRecords.mockResolvedValue([
+      {
+        schemaVersion: 1,
+        recordId: "f1d1d160-2cc1-4ef3-a076-3f75efdb3f2e",
+        userId: "b4c8d2f0-2a71-4c8a-9bde-3f1a7e9b8c6d",
+        installationId: "c2e9af6b-8d31-4e33-9d24-0f6e7c3b6a11",
+        deviceId: "d1f6b2e9-3c47-4a1f-a2d1-9a3c6f7b8e22",
+        sessionId: "e7d9a3c1-1f6b-4b2a-b8e9-6c3a5d7f9b44",
+        mode: "dictation",
+        trigger: "hotkey",
+        platform: "windows",
+        capturedAt: "2025-05-19T10:24:31Z",
+        startedAt: null,
+        endedAt: null,
+        target: {
+          stableId: "terminal:powershell:duplicate-label",
+          windowTitle: "vaak",
+          controlName: "PowerShell",
+          controlType: "Edit",
+          controlTypeId: 50004,
+          automationId: "terminal-input",
+          frameworkId: "Console",
+          className: "CASCADIA_HOSTING_WINDOW_CLASS",
+          nativeWindowHandle: 42,
+          inputKind: "terminal",
+          currentValue: null,
+        },
+        provider: {
+          providerId: "azure_openai",
+          modelId: "gpt-4o-transcribe",
+        },
+        transcript: {
+          rawText: "List the last 50 entries",
+          finalText: "List the last 50 entries",
+          characterCount: 24,
+        },
+        insertion: {
+          status: "inserted",
+          method: "send_input",
+          errorCode: null,
+          errorMessage: null,
+        },
+      },
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("PowerShell")).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText("PowerShell")).toHaveLength(1);
+  });
+
+  it("shows 15 items first, keeps full counts, and appends more rows on scroll", async () => {
+    getRecentDictationRecords
+      .mockResolvedValueOnce(
+        Array.from({ length: 15 }, (_, index) => makeRecord({
+          recordId: `feed-record-${index + 1}`,
+          capturedAt: `2025-05-19T10:${String(index).padStart(2, "0")}:31Z`,
+          finalText: `Transcript ${index + 1}`,
+        })),
+      )
+      .mockResolvedValueOnce(
+        Array.from({ length: 5 }, (_, index) => makeRecord({
+          recordId: `feed-record-${index + 16}`,
+          capturedAt: `2025-05-19T11:${String(index).padStart(2, "0")}:31Z`,
+          finalText: `Transcript ${index + 16}`,
+        })),
+      );
+
+    renderApp(<HomePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("15 inserted")).toBeInTheDocument();
+    });
+
+    expect(getRecentDictationRecords).toHaveBeenNthCalledWith(1, 15, 0);
+    expect(screen.getByText("Showing 15 of 15 captures on this device")).toBeInTheDocument();
+    expect(screen.getByText("Transcript 15")).toBeInTheDocument();
+    expect(screen.queryByText("Transcript 16")).not.toBeInTheDocument();
+    expect(observeSpy).toHaveBeenCalled();
+
+    intersectionObserverCallback?.([{ isIntersecting: true }]);
+
+    await waitFor(() => {
+      expect(getRecentDictationRecords).toHaveBeenNthCalledWith(2, 15, 15);
+      expect(screen.getByText("Transcript 16")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Transcript 20")).toBeInTheDocument();
+    expect(screen.getByText("Showing 20 of 20 captures on this device")).toBeInTheDocument();
+    expect(screen.getByText("20 inserted")).toBeInTheDocument();
+  });
 });
+
+function makeRecord({
+  recordId,
+  capturedAt,
+  finalText,
+}: {
+  recordId: string;
+  capturedAt: string;
+  finalText: string;
+}) {
+  return {
+    schemaVersion: 1,
+    recordId,
+    userId: "b4c8d2f0-2a71-4c8a-9bde-3f1a7e9b8c6d",
+    installationId: "c2e9af6b-8d31-4e33-9d24-0f6e7c3b6a11",
+    deviceId: "d1f6b2e9-3c47-4a1f-a2d1-9a3c6f7b8e22",
+    sessionId: "e7d9a3c1-1f6b-4b2a-b8e9-6c3a5d7f9b44",
+    mode: "dictation",
+    trigger: "hotkey",
+    platform: "windows",
+    capturedAt,
+    startedAt: null,
+    endedAt: null,
+    target: {
+      stableId: `powershell:${recordId}`,
+      windowTitle: "PowerShell",
+      controlName: "Terminal Input",
+      controlType: "Edit",
+      controlTypeId: 50004,
+      automationId: "terminal-input",
+      frameworkId: "Console",
+      className: "CASCADIA_HOSTING_WINDOW_CLASS",
+      nativeWindowHandle: 42,
+      inputKind: "terminal",
+      currentValue: null,
+    },
+    provider: {
+      providerId: "azure_openai",
+      modelId: "gpt-4o-transcribe",
+    },
+    transcript: {
+      rawText: finalText,
+      finalText,
+      characterCount: finalText.length,
+    },
+    insertion: {
+      status: "inserted",
+      method: "send_input",
+      errorCode: null,
+      errorMessage: null,
+    },
+  };
+}

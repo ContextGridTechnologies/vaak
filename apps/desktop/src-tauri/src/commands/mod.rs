@@ -83,9 +83,10 @@ pub fn save_dictation_record(
 #[tauri::command]
 pub fn get_recent_dictation_records(
     limit: Option<usize>,
+    offset: Option<usize>,
     records: State<'_, LocalDictationRecordStore>,
 ) -> Result<Vec<DictationRecordV1>, ProviderError> {
-    records.list_recent(limit.unwrap_or(12))
+    records.list_recent(limit.unwrap_or(12), offset.unwrap_or(0))
 }
 
 #[tauri::command]

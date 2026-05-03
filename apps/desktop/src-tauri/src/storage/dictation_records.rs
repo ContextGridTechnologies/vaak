@@ -189,12 +189,16 @@ impl LocalDictationRecordStore {
         Ok(record)
     }
 
-    pub fn list_recent(&self, limit: usize) -> Result<Vec<DictationRecordV1>, ProviderError> {
+    pub fn list_recent(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<DictationRecordV1>, ProviderError> {
         let _guard = self
             .lock
             .lock()
             .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
-        self.load_recent_records(limit)
+        self.load_recent_records(limit, offset)
     }
 
     pub fn persist_audio(
@@ -262,7 +266,11 @@ impl LocalDictationRecordStore {
         Ok(())
     }
 
-    fn load_recent_records(&self, limit: usize) -> Result<Vec<DictationRecordV1>, ProviderError> {
+    fn load_recent_records(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<DictationRecordV1>, ProviderError> {
         if limit == 0 || !self.records_path.exists() {
             return Ok(Vec::new());
         }
@@ -272,6 +280,7 @@ impl LocalDictationRecordStore {
         raw.lines()
             .rev()
             .filter(|line| !line.trim().is_empty())
+            .skip(offset)
             .take(limit)
             .map(|line| {
                 serde_json::from_str::<DictationRecordV1>(line)
@@ -744,7 +753,64 @@ mod tests {
                 .unwrap();
         }
 
-        let recent = store.list_recent(2).unwrap();
+        let recent = store.list_recent(2, 0).unwrap();
+
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].session_id, "session-2");
+        assert_eq!(recent[1].session_id, "session-1");
+    }
+
+    #[test]
+    fn loads_recent_records_with_offset() {
+        let dir = temp_config_dir("dictation-record-history-offset");
+        let settings = crate::storage::LocalSettingsStore::new(&dir);
+        let store = LocalDictationRecordStore::new(&dir);
+
+        for minute in 0..4 {
+            store
+                .save(
+                    &settings,
+                    DictationRecordDraftV1 {
+                        session_id: Some(format!("session-{minute}")),
+                        mode: "dictation".to_string(),
+                        trigger: "hotkey".to_string(),
+                        captured_at: format!("2026-05-02T08:3{minute}:00Z"),
+                        started_at: None,
+                        ended_at: None,
+                        recording: None,
+                        audio: None,
+                        processed_audio: None,
+                        target: DictationTargetSnapshot {
+                            stable_id: format!("target-{minute}"),
+                            window_title: "Discord".to_string(),
+                            control_name: "Message".to_string(),
+                            control_type: "Edit".to_string(),
+                            control_type_id: 50004,
+                            automation_id: "message-input".to_string(),
+                            framework_id: "Win32".to_string(),
+                            class_name: "Chrome_WidgetWin_1".to_string(),
+                            native_window_handle: 42,
+                            input_kind: "text".to_string(),
+                            current_value: None,
+                        },
+                        provider: None,
+                        transcript: DictationTranscript {
+                            raw_text: format!("raw-{minute}"),
+                            final_text: format!("final-{minute}"),
+                            character_count: 7,
+                        },
+                        insertion: DictationInsertionOutcome {
+                            status: "inserted".to_string(),
+                            method: Some("send_input".to_string()),
+                            error_code: None,
+                            error_message: None,
+                        },
+                    },
+                )
+                .unwrap();
+        }
+
+        let recent = store.list_recent(2, 1).unwrap();
 
         assert_eq!(recent.len(), 2);
         assert_eq!(recent[0].session_id, "session-2");
@@ -806,7 +872,7 @@ mod tests {
         )
         .unwrap();
 
-        let records = LocalDictationRecordStore::new(&dir).list_recent(1).unwrap();
+        let records = LocalDictationRecordStore::new(&dir).list_recent(1, 0).unwrap();
 
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].recording, None);

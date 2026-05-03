@@ -1,25 +1,16 @@
-import { HomeIcon, SettingsIcon, UserRoundIcon } from "lucide-react";
+import { MicVocalIcon, SettingsIcon } from "lucide-react";
 
 type AppSectionConfig = {
-  value: "home" | "settings" | "account";
+  value: "home" | "settings";
   label: string;
-  icon: typeof HomeIcon;
-  disabled?: boolean;
-  badge?: string;
+  icon: typeof MicVocalIcon;
 };
 
 export const primarySections: readonly AppSectionConfig[] = [
   {
     value: "home",
-    label: "Home",
-    icon: HomeIcon,
-  },
-  {
-    value: "account",
-    label: "Account",
-    icon: UserRoundIcon,
-    disabled: true,
-    badge: "Coming soon",
+    label: "Voice",
+    icon: MicVocalIcon,
   },
 ] as const;
 

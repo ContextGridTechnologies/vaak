@@ -315,12 +315,12 @@ mod tests {
         assert!(resolved
             .prompt
             .as_deref()
-            .is_some_and(|value| value.contains("Do not invent bullet points")));
+            .is_some_and(|value| value.contains("Prefer bullet points when the speaker seems to be expressing multiple distinct points")));
     }
 
     #[test]
     fn default_prompt_allows_lists_when_dictated() {
-        assert!(prompts::default_transcription_prompt().contains("preserve that structure"));
+        assert!(prompts::default_transcription_prompt().contains("Use numbered lists for ordered steps when sequence is clearly implied"));
     }
 
     #[test]

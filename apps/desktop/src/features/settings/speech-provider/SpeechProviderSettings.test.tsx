@@ -180,6 +180,9 @@ describe("SpeechProviderSettings", () => {
     renderApp(<SpeechProviderSettings variant="settings" />);
 
     await screen.findByRole("heading", { name: "OpenAI" });
+    expect(
+      screen.getByText("Providers, microphone, hotkey, and app preferences."),
+    ).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent(
       "GPT-4o Transcribe",
     );

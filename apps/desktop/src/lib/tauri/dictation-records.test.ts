@@ -72,8 +72,11 @@ describe("dictation record Tauri API", () => {
       },
     ]);
 
-    await expect(getRecentDictationRecords(12)).resolves.toHaveLength(1);
-    expectTauriCommand(tauri, "get_recent_dictation_records", { limit: 12 });
+    await expect(getRecentDictationRecords(12, 24)).resolves.toHaveLength(1);
+    expectTauriCommand(tauri, "get_recent_dictation_records", {
+      limit: 12,
+      offset: 24,
+    });
   });
 
   it("saves dictation records through the backend history command", async () => {

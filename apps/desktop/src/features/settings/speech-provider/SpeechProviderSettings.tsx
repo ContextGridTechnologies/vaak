@@ -1,7 +1,8 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { SectionPanel, StatusBadge } from "@/components/app";
+import { StatusBadge } from "@/components/app";
+import { Card, CardContent } from "@/components/ui/card";
 import { normalizeError } from "@/lib/errors";
 import {
   getProviderConfig,
@@ -520,16 +521,31 @@ export function SpeechProviderSettings({
   }
 
   return (
-    <SectionPanel
-      title="Settings"
-      description="Microphone, hotkey, provider, and app preferences."
-      actions={
-        <StatusBadge tone={providerStatusTone(selectedStatus)}>
-          {providerStatusLabel(selectedStatus)}
-        </StatusBadge>
-      }
-    >
-      {providerSetup}
-    </SectionPanel>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+            Settings
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Providers, microphone, hotkey, and app preferences.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <StatusBadge
+            tone={providerStatusTone(selectedStatus)}
+            className="normal-case tracking-normal"
+          >
+            {providerStatusLabel(selectedStatus)}
+          </StatusBadge>
+        </div>
+      </div>
+
+      <Card size="sm" className="rounded-lg shadow-none">
+        <CardContent className="flex flex-col gap-2.5">
+          {providerSetup}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
