@@ -232,7 +232,7 @@ export function HomePanel() {
 
         <Card
           size="sm"
-          className="border-border/70 bg-gradient-to-br from-card via-card to-primary/5 shadow-sm"
+          className="border-border/70 bg-gradient-to-br from-card via-card to-muted/45 shadow-sm"
         >
           <CardHeader className="border-b border-border/70">
             <CardTitle>Activity overview</CardTitle>
@@ -327,7 +327,7 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
     <article
       className={cn(
         "flex flex-col gap-4 px-4 py-4 transition-colors sm:px-5",
-        activity.isLatest ? "bg-primary/5" : "hover:bg-muted/35",
+        activity.isLatest ? "bg-muted/45" : "hover:bg-muted/35",
       )}
     >
       <div className="flex items-start gap-4">

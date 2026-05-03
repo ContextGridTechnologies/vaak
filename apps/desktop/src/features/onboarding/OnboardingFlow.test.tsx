@@ -112,17 +112,13 @@ describe("OnboardingGate", () => {
     expect(screen.getByText("No account required")).toBeInTheDocument();
     expect(screen.getByText("Bring your own provider key")).toBeInTheDocument();
     expect(screen.getByText("Settings stay on this device")).toBeInTheDocument();
-    expect(screen.getByText("Sign in for sync")).toBeInTheDocument();
-    expect(
-      screen.getByText("Sync dictionary, snippets, and preferences later."),
-    ).toBeInTheDocument();
     expect(screen.getByText("Managed Vaak")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Use Vaak without provider setup when managed plans are available.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Coming soon")).toHaveLength(4);
+    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
     expect(screen.queryByText("Coming later")).not.toBeInTheDocument();
     expect(screen.queryByText("Available now")).not.toBeInTheDocument();
     expect(screen.queryByText("Optional account path")).not.toBeInTheDocument();

@@ -1,12 +1,11 @@
 import {
   CloudCogIcon,
-  CloudSyncIcon,
   LaptopMinimalCheckIcon,
   type LucideIcon,
 } from "lucide-react";
 
 export type OnboardingModeCardConfig = {
-  id: "local" | "sync" | "managed";
+  id: "local" | "managed";
   icon: LucideIcon;
   title: string;
   badge?: string;
@@ -29,15 +28,6 @@ export const onboardingModeCards: OnboardingModeCardConfig[] = [
     ],
     actionLabel: "Continue locally",
     selected: true,
-  },
-  {
-    id: "sync",
-    icon: CloudSyncIcon,
-    title: "Sign in for sync",
-    badge: "Coming soon",
-    description: "Sync dictionary, snippets, and preferences later.",
-    actionLabel: "Coming soon",
-    future: true,
   },
   {
     id: "managed",

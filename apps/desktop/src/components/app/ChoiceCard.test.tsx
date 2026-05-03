@@ -128,9 +128,9 @@ describe("ChoiceCard", () => {
     renderApp(
       <ChoiceCard
         icon={Mic2Icon}
-        title="Sign in for sync"
+        title="Managed Vaak"
         badge="Coming soon"
-        description="Sync dictionary, snippets, and preferences later."
+        description="Use Vaak without provider setup when managed plans are available."
         actionLabel="Coming soon"
         future
         disabled
@@ -138,7 +138,9 @@ describe("ChoiceCard", () => {
     );
 
     expect(
-      screen.getByText("Sync dictionary, snippets, and preferences later."),
+      screen.getByText(
+        "Use Vaak without provider setup when managed plans are available.",
+      ),
     ).toHaveClass("col-span-2");
     expect(
       screen

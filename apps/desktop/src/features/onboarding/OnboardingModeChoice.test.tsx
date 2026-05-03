@@ -23,6 +23,21 @@ describe("OnboardingModeChoice", () => {
     );
   });
 
+  it("centers the two mode cards in a constrained two-column grid", () => {
+    const { container } = renderApp(
+      <OnboardingModeChoice
+        error={null}
+        savingMode={null}
+        onSelectMode={() => undefined}
+      />,
+    );
+
+    const grid = container.querySelector("section");
+
+    expect(grid).toHaveClass("mx-auto", "w-full", "max-w-[56rem]", "md:grid-cols-2");
+    expect(grid).not.toHaveClass("md:grid-cols-3");
+  });
+
   it("renders the shared onboarding progress header for step one", () => {
     renderApp(
       <OnboardingModeChoice
