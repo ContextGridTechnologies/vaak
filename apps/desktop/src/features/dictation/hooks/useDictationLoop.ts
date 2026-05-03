@@ -53,6 +53,7 @@ type CaptureAnalysis = {
     averageDbfs: number;
     peakDbfs: number;
   };
+  processedAudio: Blob | null;
   transcriptionSegments: Blob[];
 };
 
@@ -201,6 +202,7 @@ export function useDictationLoop(
 
       const captureAnalysis = session.captureAnalysis ?? null;
       const transcriptionSegments = resolveTranscriptionSegments(
+        providerId,
         captureAnalysis,
         audioBlob,
       );
@@ -208,6 +210,7 @@ export function useDictationLoop(
         const message = captureMessage(captureAnalysis.reason);
         await persistDraft({
           audioBlob,
+          processedAudioBlob: captureAnalysis?.processedAudio ?? null,
           provider: {
             modelId: null,
             providerId,
@@ -279,6 +282,7 @@ export function useDictationLoop(
       } catch (err) {
         await persistDraft({
           audioBlob,
+          processedAudioBlob: captureAnalysis?.processedAudio ?? null,
           provider: {
             modelId: null,
             providerId,
@@ -326,6 +330,7 @@ export function useDictationLoop(
       if (!text.trim()) {
         await persistDraft({
           audioBlob,
+          processedAudioBlob: captureAnalysis?.processedAudio ?? null,
           provider: transcriptionContext ?? {
             modelId: null,
             providerId,
@@ -375,6 +380,7 @@ export function useDictationLoop(
         insertionMs = elapsedMs(insertionStartedAt);
         await persistDraft({
           audioBlob,
+          processedAudioBlob: captureAnalysis?.processedAudio ?? null,
           provider: transcriptionContext ?? {
             modelId: null,
             providerId,
@@ -413,6 +419,7 @@ export function useDictationLoop(
         const message = `Insertion failed: ${normalizeError(err)}`;
         await persistDraft({
           audioBlob,
+          processedAudioBlob: captureAnalysis?.processedAudio ?? null,
           provider: transcriptionContext ?? {
             modelId: null,
             providerId,
@@ -519,11 +526,22 @@ export function useDictationLoop(
 }
 
 function resolveTranscriptionSegments(
+  providerId: SpeechProviderId,
   captureAnalysis: CaptureAnalysis | null,
   audioBlob: Blob,
 ): Blob[] {
+  if (shouldPreferRawAudio(providerId, captureAnalysis)) {
+    return [audioBlob];
+  }
   const segments = captureAnalysis?.transcriptionSegments ?? [];
   return segments.length > 0 ? segments : [audioBlob];
+}
+
+function shouldPreferRawAudio(
+  providerId: SpeechProviderId,
+  captureAnalysis: CaptureAnalysis | null,
+) {
+  return providerId === "assemblyai" && captureAnalysis !== null;
 }
 
 function captureMessage(reason: CaptureReason): string {
@@ -542,6 +560,7 @@ function captureMessage(reason: CaptureReason): string {
 
 async function persistDraft(input: {
   audioBlob: Blob | null;
+  processedAudioBlob?: Blob | null;
   provider: DictationRecordDraft["provider"];
   recording?: DictationRecordDraft["recording"];
   session: DictationLoopSession;
@@ -554,6 +573,7 @@ async function persistDraft(input: {
 
   try {
     let audio: DictationRecordDraft["audio"] = null;
+    let processedAudio: DictationRecordDraft["processedAudio"] = null;
     if (input.audioBlob) {
       try {
         audio = await persistDictationAudio({
@@ -565,6 +585,19 @@ async function persistDraft(input: {
         });
       } catch (err) {
         console.error("Failed to persist dictation audio", err);
+      }
+    }
+    if (input.processedAudioBlob) {
+      try {
+        processedAudio = await persistDictationAudio({
+          audioBlob: input.processedAudioBlob,
+          capturedAt:
+            input.session.recordingStartedAt ??
+            input.session.recordingEndedAt ??
+            new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error("Failed to persist processed dictation audio", err);
       }
     }
 
@@ -579,6 +612,7 @@ async function persistDraft(input: {
       endedAt: input.session.recordingEndedAt,
       recording: input.recording ?? input.session.recordingMetrics,
       audio,
+      processedAudio,
       target: targetSnapshotFromFocusedField(
         input.session.focusedField,
         classifyInputKind(input.session.focusedField),

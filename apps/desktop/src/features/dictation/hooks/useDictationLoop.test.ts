@@ -80,6 +80,7 @@ function analyzedSession(
         averageDbfs: -20,
         peakDbfs: -8,
       },
+      processedAudio: new Blob(["processed"], { type: "audio/wav" }),
       transcriptionSegments: [recordingBlob()],
     },
     ...overrides,
@@ -253,6 +254,7 @@ describe("useDictationLoop", () => {
               averageDbfs: -38,
               peakDbfs: -27,
             },
+            processedAudio: null,
             transcriptionSegments: [],
           },
         }),
@@ -311,6 +313,7 @@ describe("useDictationLoop", () => {
               averageDbfs: -19,
               peakDbfs: -7,
             },
+            processedAudio: new Blob(["processed"], { type: "audio/wav" }),
             transcriptionSegments: [firstSegment, secondSegment],
           },
         }),
@@ -334,6 +337,43 @@ describe("useDictationLoop", () => {
     });
   });
 
+  it("uses the raw recording for AssemblyAI even when processed audio is available", async () => {
+    const audioBlob = recordingBlob();
+    const processedSegment = new Blob(["processed"], { type: "audio/wav" });
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+
+    renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 900,
+              leadingTrimMs: 120,
+              trailingTrimMs: 180,
+              longestPauseMs: 0,
+              estimatedSnrDb: 16,
+              averageDbfs: -20,
+              peakDbfs: -8,
+            },
+            processedAudio: new Blob(["processed-full"], { type: "audio/wav" }),
+            transcriptionSegments: [processedSegment],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(transcribeRecording).toHaveBeenCalledWith({
+        providerId: "assemblyai",
+        audioBlob,
+        language: "en",
+      });
+    });
+  });
+
   it("continues saving the dictation record when audio persistence fails", async () => {
     const audioBlob = recordingBlob();
     persistDictationAudio.mockRejectedValue(new Error("disk unavailable"));
@@ -348,6 +388,62 @@ describe("useDictationLoop", () => {
             characterCount: 5,
             finalText: "hello",
             rawText: "hello",
+          },
+        }),
+      );
+    });
+  });
+
+  it("persists both original and processed audio when capture analysis provides a processed blob", async () => {
+    const audioBlob = recordingBlob();
+    const processedAudioBlob = new Blob(["processed"], { type: "audio/wav" });
+    persistDictationAudio
+      .mockResolvedValueOnce({
+        relativePath: "recordings/2026/05/02/raw.webm",
+        mimeType: "audio/webm",
+        byteLength: 3,
+      })
+      .mockResolvedValueOnce({
+        relativePath: "recordings/2026/05/02/processed.wav",
+        mimeType: "audio/wav",
+        byteLength: 9,
+      });
+
+    renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 900,
+              leadingTrimMs: 120,
+              trailingTrimMs: 180,
+              longestPauseMs: 0,
+              estimatedSnrDb: 16,
+              averageDbfs: -20,
+              peakDbfs: -8,
+            },
+            processedAudio: processedAudioBlob,
+            transcriptionSegments: [recordingBlob()],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(saveDictationRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audio: {
+            relativePath: "recordings/2026/05/02/raw.webm",
+            mimeType: "audio/webm",
+            byteLength: 3,
+          },
+          processedAudio: {
+            relativePath: "recordings/2026/05/02/processed.wav",
+            mimeType: "audio/wav",
+            byteLength: 9,
           },
         }),
       );

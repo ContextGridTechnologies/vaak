@@ -58,6 +58,7 @@ export type DictationRecordDraft = {
   endedAt: string | null;
   recording?: DictationRecordingDiagnostics | null;
   audio?: DictationAudioArtifact | null;
+  processedAudio?: DictationAudioArtifact | null;
   target: DictationTargetSnapshot;
   provider: DictationProviderContext | null;
   transcript: DictationTranscript;

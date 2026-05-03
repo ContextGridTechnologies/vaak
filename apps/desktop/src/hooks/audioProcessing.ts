@@ -20,6 +20,7 @@ export type CaptureAnalysis = {
   disposition: CaptureDisposition;
   reason: CaptureReason;
   metrics: CaptureMetrics;
+  processedAudio: Blob | null;
   transcriptionSegments: Blob[];
 };
 
@@ -72,9 +73,9 @@ export function analyzeAudioCapture(
     1,
     Math.round(thresholds.calibrationMs / thresholds.frameMs),
   );
-  const speechEndFrames = Math.max(
+  const segmentationFrames = Math.max(
     1,
-    Math.round(thresholds.speechEndSilenceMs / thresholds.frameMs),
+    Math.round(thresholds.segmentationSilenceMs / thresholds.frameMs),
   );
   const frames = buildFrames(samples, frameSize);
 
@@ -107,7 +108,7 @@ export function analyzeAudioCapture(
       continue;
     }
 
-    if (frame.index - lastVoicedFrameIndex > speechEndFrames) {
+    if (frame.index - lastVoicedFrameIndex > segmentationFrames) {
       segmentWindows.push({
         startFrame: currentStart,
         endFrame: lastVoicedFrameIndex,
@@ -171,7 +172,7 @@ export function analyzeAudioCapture(
 
   const prefixPaddingFrames = Math.round(thresholds.prefixPaddingMs / thresholds.frameMs);
   const suffixPaddingFrames = Math.round(thresholds.suffixPaddingMs / thresholds.frameMs);
-  const transcriptionSegments = segmentWindows
+  const segmentSamples = segmentWindows
     .map((window) => {
       const startFrame = Math.max(0, window.startFrame - prefixPaddingFrames);
       const endFrame = Math.min(frames.length - 1, window.endFrame + suffixPaddingFrames);
@@ -179,8 +180,14 @@ export function analyzeAudioCapture(
       const endSample = Math.min(samples.length, (endFrame + 1) * frameSize);
       return samples.slice(startSample, endSample);
     })
-    .filter((segmentSamples) => segmentSamples.length > 0)
-    .map((segmentSamples) => createWavBlob(segmentSamples, sampleRate));
+    .filter((segmentSample) => segmentSample.length > 0);
+  const transcriptionSegments = segmentSamples.map((segmentSample) =>
+    createWavBlob(segmentSample, sampleRate),
+  );
+  const processedAudio =
+    segmentSamples.length > 0
+      ? createWavBlob(joinSegmentSamples(segmentSamples, sampleRate), sampleRate)
+      : null;
 
   const firstVoicedSample = voicedFrames[0].index * frameSize;
   const lastVoicedFrame = voicedFrames[voicedFrames.length - 1];
@@ -201,6 +208,7 @@ export function analyzeAudioCapture(
       averageDbfs: roundMetric(averageDbfs),
       peakDbfs: roundMetric(peakDbfs),
     },
+    processedAudio,
     transcriptionSegments,
   };
 }
@@ -304,8 +312,34 @@ function unclearAnalysis(
       averageDbfs: metrics.averageDbfs ?? -100,
       peakDbfs: metrics.peakDbfs ?? -100,
     },
+    processedAudio: null,
     transcriptionSegments: [],
   };
+}
+
+function joinSegmentSamples(segments: Float32Array[], sampleRate: number) {
+  if (segments.length === 1) {
+    return segments[0];
+  }
+
+  const separatorSamples = Math.max(1, Math.round(sampleRate * 0.12));
+  const totalLength =
+    segments.reduce((sum, segment) => sum + segment.length, 0) +
+    separatorSamples * (segments.length - 1);
+  const combined = new Float32Array(totalLength);
+  let offset = 0;
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    combined.set(segment, offset);
+    offset += segment.length;
+
+    if (index < segments.length - 1) {
+      offset += separatorSamples;
+    }
+  }
+
+  return combined;
 }
 
 function dbfsFromAmplitude(value: number) {

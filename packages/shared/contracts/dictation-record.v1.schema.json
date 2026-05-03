@@ -109,6 +109,25 @@
         }
       }
     },
+    "processedAudio": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["relativePath", "mimeType", "byteLength"],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mimeType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "target": {
       "type": "object",
       "additionalProperties": false,

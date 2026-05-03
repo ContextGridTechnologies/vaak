@@ -37,6 +37,8 @@ pub struct DictationRecordV1 {
     pub recording: Option<DictationRecordingDiagnostics>,
     #[serde(default)]
     pub audio: Option<DictationAudioArtifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processed_audio: Option<DictationAudioArtifact>,
     pub target: DictationTargetSnapshot,
     pub provider: Option<DictationProviderContext>,
     pub transcript: DictationTranscript,
@@ -56,6 +58,8 @@ pub struct DictationRecordDraftV1 {
     pub recording: Option<DictationRecordingDiagnostics>,
     #[serde(default)]
     pub audio: Option<DictationAudioArtifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processed_audio: Option<DictationAudioArtifact>,
     pub target: DictationTargetSnapshot,
     pub provider: Option<DictationProviderContext>,
     pub transcript: DictationTranscript,
@@ -174,6 +178,7 @@ impl LocalDictationRecordStore {
             ended_at: draft.ended_at,
             recording: draft.recording,
             audio: draft.audio,
+            processed_audio: draft.processed_audio,
             target: draft.target,
             provider: draft.provider,
             transcript: draft.transcript,
@@ -470,6 +475,7 @@ mod tests {
                 mime_type: "audio/webm".to_string(),
                 byte_length: 2048,
             }),
+            processed_audio: None,
             target: DictationTargetSnapshot {
                 stable_id: "window:42/control:message-input".to_string(),
                 window_title: "Discord".to_string(),
@@ -640,6 +646,7 @@ mod tests {
                 mime_type: "audio/webm".to_string(),
                 byte_length: 2048,
             }),
+            processed_audio: None,
             target: DictationTargetSnapshot {
                 stable_id: "window:42/control:message-input".to_string(),
                 window_title: "Discord".to_string(),
@@ -706,6 +713,7 @@ mod tests {
                         ended_at: None,
                         recording: None,
                         audio: None,
+                        processed_audio: None,
                         target: DictationTargetSnapshot {
                             stable_id: format!("target-{minute}"),
                             window_title: "Discord".to_string(),

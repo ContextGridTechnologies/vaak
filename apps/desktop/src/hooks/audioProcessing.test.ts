@@ -51,6 +51,22 @@ describe("analyzeAudioCapture", () => {
     expect(analysis.transcriptionSegments).toHaveLength(2);
   });
 
+  it("keeps pauses shorter than the segmentation threshold in a single segment", () => {
+    const samples = createSamples([
+      silenceMs(100),
+      toneMs(700, 0.3),
+      silenceMs(600),
+      toneMs(650, 0.26),
+      silenceMs(150),
+    ]);
+
+    const analysis = analyzeAudioCapture(samples, sampleRate);
+
+    expect(analysis.disposition).toBe("ready");
+    expect(analysis.transcriptionSegments).toHaveLength(1);
+    expect(analysis.processedAudio).toBeInstanceOf(Blob);
+  });
+
   it("rejects low-volume speech as unclear", () => {
     const samples = createSamples([
       silenceMs(250),

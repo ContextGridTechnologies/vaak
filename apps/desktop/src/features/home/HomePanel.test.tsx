@@ -66,6 +66,11 @@ describe("HomePanel", () => {
           mimeType: "audio/webm",
           byteLength: 2048,
         },
+        processedAudio: {
+          relativePath: "recordings/2025/05/19/discord-1-processed.wav",
+          mimeType: "audio/wav",
+          byteLength: 1536,
+        },
         target: {
           stableId: "discord:messagebox:chat-input",
           windowTitle: "#product-launch - Discord",
@@ -116,11 +121,14 @@ describe("HomePanel", () => {
     expect(screen.getAllByText("Discord").length).toBeGreaterThan(0);
     expect(screen.getByText("Message Box")).toBeInTheDocument();
     expect(
-      screen.getByText("Processing 940 ms · STT 910 ms · Insert 12 ms"),
+      screen.getByText("Post 940 ms · STT 910 ms · Analyze 18 ms · Insert 12 ms · Startup 42 ms"),
     ).toBeInTheDocument();
     expect(screen.getAllByText("Inserted").length).toBeGreaterThan(0);
     expect(
-      screen.getByRole("button", { name: "Play audio for Discord" }),
+      screen.getByRole("button", { name: "Play original audio for Discord" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Play processed audio for Discord" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Capture record")).not.toBeInTheDocument();
     expect(screen.queryByText("Versioned record")).not.toBeInTheDocument();
