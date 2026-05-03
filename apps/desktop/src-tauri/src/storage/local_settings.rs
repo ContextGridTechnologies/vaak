@@ -6,12 +6,14 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use super::dictation_records::LocalIdentity;
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::ProviderConfig;
 use crate::session::{
     command_binding_label, normalize_dictation_hotkey_label, HotkeyBindings,
     DEFAULT_DICTATION_BINDING_LABEL,
 };
+use uuid::Uuid;
 
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const SETTINGS_VERSION: u32 = 1;
@@ -40,6 +42,8 @@ struct LocalSettings {
     onboarding: OnboardingState,
     #[serde(default)]
     app_shell: AppShellPreferences,
+    #[serde(default)]
+    identity: Option<LocalIdentity>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -57,10 +61,34 @@ pub struct OnboardingState {
     pub selected_mode: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppShellPreferences {
     pub sidebar_collapsed: bool,
+    #[serde(default = "default_voice_capsule_placement_option")]
+    pub voice_capsule_placement: Option<VoiceCapsulePlacement>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceCapsulePlacement {
+    #[serde(default)]
+    pub anchor: VoiceCapsuleAnchor,
+    #[serde(default)]
+    pub offset_x: Option<f64>,
+    #[serde(default)]
+    pub offset_y: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VoiceCapsuleAnchor {
+    #[default]
+    BottomCenter,
+    BottomLeft,
+    BottomRight,
+    CenterLeft,
+    CenterRight,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -85,6 +113,25 @@ impl Default for OnboardingState {
     }
 }
 
+impl Default for AppShellPreferences {
+    fn default() -> Self {
+        Self {
+            sidebar_collapsed: false,
+            voice_capsule_placement: default_voice_capsule_placement_option(),
+        }
+    }
+}
+
+impl Default for VoiceCapsulePlacement {
+    fn default() -> Self {
+        Self {
+            anchor: VoiceCapsuleAnchor::BottomCenter,
+            offset_x: None,
+            offset_y: None,
+        }
+    }
+}
+
 impl Default for LocalSettings {
     fn default() -> Self {
         Self {
@@ -95,6 +142,7 @@ impl Default for LocalSettings {
             hotkeys: HotkeySettings::default(),
             onboarding: OnboardingState::default(),
             app_shell: AppShellPreferences::default(),
+            identity: None,
         }
     }
 }
@@ -206,7 +254,9 @@ impl LocalSettingsStore {
 
     pub fn app_shell_preferences(&self) -> Result<AppShellPreferences, ProviderError> {
         let _guard = self.lock()?;
-        Ok(self.load_unlocked()?.app_shell)
+        Ok(normalize_app_shell_preferences(
+            self.load_unlocked()?.app_shell,
+        ))
     }
 
     pub fn save_app_shell_preferences(
@@ -215,7 +265,7 @@ impl LocalSettingsStore {
     ) -> Result<AppShellPreferences, ProviderError> {
         let _guard = self.lock()?;
         let mut settings = self.load_unlocked()?;
-        settings.app_shell = preferences;
+        settings.app_shell = normalize_app_shell_preferences(preferences);
         self.save_unlocked(&settings)?;
         Ok(settings.app_shell)
     }
@@ -253,6 +303,21 @@ impl LocalSettingsStore {
         settings.microphone_selection = selection;
         self.save_unlocked(&settings)?;
         Ok(settings.microphone_selection)
+    }
+
+    pub fn local_identity(&self) -> Result<LocalIdentity, ProviderError> {
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        if ensure_local_identity(&mut settings) {
+            self.save_unlocked(&settings)?;
+        }
+
+        settings.identity.ok_or_else(|| {
+            ProviderFailure::SettingsStore(
+                "missing local identity after initialization".to_string(),
+            )
+            .into()
+        })
     }
 
     pub fn save_onboarding_mode(&self, mode: &str) -> Result<OnboardingState, ProviderError> {
@@ -343,6 +408,10 @@ fn default_dictation_hotkey() -> String {
     DEFAULT_DICTATION_BINDING_LABEL.to_string()
 }
 
+fn default_voice_capsule_placement_option() -> Option<VoiceCapsulePlacement> {
+    Some(VoiceCapsulePlacement::default())
+}
+
 fn normalize_onboarding_step(step: &str) -> Option<&'static str> {
     match step.trim() {
         "modeChoice" => Some("modeChoice"),
@@ -358,6 +427,27 @@ fn build_hotkey_bindings(dictation: &str) -> Result<HotkeyBindings, ProviderErro
         command: command_binding_label(dictation).map_err(ProviderFailure::InvalidRequest)?,
         dictation: dictation.to_string(),
     })
+}
+
+fn normalize_app_shell_preferences(mut preferences: AppShellPreferences) -> AppShellPreferences {
+    if preferences.voice_capsule_placement.is_none() {
+        preferences.voice_capsule_placement = default_voice_capsule_placement_option();
+    }
+
+    preferences
+}
+
+fn ensure_local_identity(settings: &mut LocalSettings) -> bool {
+    if settings.identity.is_some() {
+        return false;
+    }
+
+    settings.identity = Some(LocalIdentity {
+        user_id: Uuid::new_v4().to_string(),
+        installation_id: Uuid::new_v4().to_string(),
+        device_id: Uuid::new_v4().to_string(),
+    });
+    true
 }
 
 fn validate_microphone_selection(selection: &MicrophoneSelection) -> Result<(), ProviderError> {
@@ -377,6 +467,7 @@ mod tests {
     use crate::providers::ProviderConfig;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use uuid::Uuid;
 
     fn temp_config_dir(name: &str) -> std::path::PathBuf {
         let suffix = SystemTime::now()
@@ -411,6 +502,7 @@ mod tests {
             endpoint: Some("https://example.openai.azure.com".to_string()),
             deployment_id: Some("whisper".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
+            model: None,
         };
 
         store.save_selected_speech_provider("azure-openai").unwrap();
@@ -445,6 +537,7 @@ mod tests {
             endpoint: Some("https://legacy.openai.azure.com".to_string()),
             deployment_id: Some("legacy-deployment".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
+            model: None,
         };
 
         let migrated = store
@@ -470,6 +563,7 @@ mod tests {
             endpoint: Some("https://local.openai.azure.com".to_string()),
             deployment_id: Some("local-deployment".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
+            model: None,
         };
 
         store
@@ -633,6 +727,59 @@ mod tests {
     }
 
     #[test]
+    fn generates_and_persists_local_identity() {
+        let dir = temp_config_dir("local-identity");
+        let store = LocalSettingsStore::new(&dir);
+
+        let identity = store.local_identity().unwrap();
+
+        assert!(Uuid::parse_str(&identity.user_id).is_ok());
+        assert!(Uuid::parse_str(&identity.installation_id).is_ok());
+        assert!(Uuid::parse_str(&identity.device_id).is_ok());
+
+        let reloaded = LocalSettingsStore::new(&dir).local_identity().unwrap();
+        assert_eq!(reloaded, identity);
+
+        let json = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(json.contains("\"identity\""));
+        assert!(json.contains(&identity.user_id));
+        assert!(json.contains(&identity.installation_id));
+    }
+
+    #[test]
+    fn backfills_identity_into_existing_settings_files() {
+        let dir = temp_config_dir("identity-migration");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("settings.json"),
+            r#"{
+  "version": 1,
+  "selectedSpeechProvider": "openai",
+  "providerConfigs": {},
+  "hotkeys": {
+    "dictation": "Ctrl+Win"
+  },
+  "onboarding": {
+    "completed": false,
+    "currentStep": "modeChoice",
+    "selectedMode": null
+  }
+}"#,
+        )
+        .unwrap();
+
+        let identity = LocalSettingsStore::new(&dir).local_identity().unwrap();
+
+        assert!(Uuid::parse_str(&identity.user_id).is_ok());
+        assert!(Uuid::parse_str(&identity.installation_id).is_ok());
+        assert!(Uuid::parse_str(&identity.device_id).is_ok());
+
+        let json = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(json.contains("\"identity\""));
+        assert!(json.contains("\"dictation\": \"Ctrl+Win\""));
+    }
+
+    #[test]
     fn microphone_selection_defaults_to_system() {
         let dir = temp_config_dir("microphone-default");
         let store = LocalSettingsStore::new(&dir);
@@ -648,7 +795,13 @@ mod tests {
         let dir = temp_config_dir("app-shell-defaults");
         let store = LocalSettingsStore::new(&dir);
 
-        assert!(!store.app_shell_preferences().unwrap().sidebar_collapsed);
+        let preferences = store.app_shell_preferences().unwrap();
+
+        assert!(!preferences.sidebar_collapsed);
+        assert_eq!(
+            preferences.voice_capsule_placement,
+            Some(VoiceCapsulePlacement::default())
+        );
     }
 
     #[test]
@@ -659,20 +812,46 @@ mod tests {
         let saved = store
             .save_app_shell_preferences(AppShellPreferences {
                 sidebar_collapsed: true,
+                voice_capsule_placement: Some(VoiceCapsulePlacement {
+                    anchor: VoiceCapsuleAnchor::BottomRight,
+                    offset_x: Some(32.0),
+                    offset_y: Some(20.0),
+                }),
             })
             .unwrap();
 
         assert!(saved.sidebar_collapsed);
+        assert_eq!(
+            saved.voice_capsule_placement,
+            Some(VoiceCapsulePlacement {
+                anchor: VoiceCapsuleAnchor::BottomRight,
+                offset_x: Some(32.0),
+                offset_y: Some(20.0),
+            })
+        );
         assert!(
             LocalSettingsStore::new(&dir)
                 .app_shell_preferences()
                 .unwrap()
                 .sidebar_collapsed
         );
+        assert_eq!(
+            LocalSettingsStore::new(&dir)
+                .app_shell_preferences()
+                .unwrap()
+                .voice_capsule_placement,
+            Some(VoiceCapsulePlacement {
+                anchor: VoiceCapsuleAnchor::BottomRight,
+                offset_x: Some(32.0),
+                offset_y: Some(20.0),
+            })
+        );
 
         let json = fs::read_to_string(dir.join("settings.json")).unwrap();
         assert!(json.contains("\"appShell\""));
         assert!(json.contains("\"sidebarCollapsed\": true"));
+        assert!(json.contains("\"voiceCapsulePlacement\""));
+        assert!(json.contains("\"bottomRight\""));
     }
 
     #[test]

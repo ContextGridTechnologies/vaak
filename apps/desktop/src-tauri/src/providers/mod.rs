@@ -37,4 +37,5 @@ pub struct ProviderConfig {
     pub endpoint: Option<String>,
     pub deployment_id: Option<String>,
     pub api_version: Option<String>,
+    pub model: Option<String>,
 }

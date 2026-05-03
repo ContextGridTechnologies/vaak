@@ -7,11 +7,17 @@ const {
   getSelectedSpeechProvider,
   insertIntoActiveTarget,
   listenToTauriEvent,
+  persistDictationAudio,
+  saveDictationRecord,
+  targetSnapshotFromFocusedField,
   transcribeRecording,
 } = vi.hoisted(() => ({
   getSelectedSpeechProvider: vi.fn(),
   insertIntoActiveTarget: vi.fn(),
   listenToTauriEvent: vi.fn(),
+  persistDictationAudio: vi.fn(),
+  saveDictationRecord: vi.fn(),
+  targetSnapshotFromFocusedField: vi.fn(),
   transcribeRecording: vi.fn(),
 }));
 
@@ -20,18 +26,65 @@ vi.mock("@/lib/tauri", () => ({
   getSelectedSpeechProvider,
   insertIntoActiveTarget,
   listenToTauriEvent,
+  persistDictationAudio,
+  saveDictationRecord,
+  targetSnapshotFromFocusedField,
   transcribeRecording,
 }));
 
 function session(overrides: Partial<DictationLoopSession> = {}) {
   return {
+    dictationTrigger: "hotkey",
     completedMode: "dictation",
     audioBlob: null,
+    focusedField: {
+      automationId: "message-input",
+      className: "Chrome_WidgetWin_1",
+      controlName: "Message",
+      controlType: "Edit",
+      controlTypeId: 50004,
+      currentValue: "",
+      frameworkId: "Win32",
+      nativeWindowHandle: 42,
+      stableId: "window:42/control:message-input",
+      windowTitle: "Discord",
+    },
     focusedFieldError: null,
     isRecording: false,
+    recordingMetrics: {
+      reusedWarmStream: true,
+      startupMs: 24,
+      streamAcquisitionMs: 0,
+    },
+    recordingEndedAt: "2026-05-02T08:30:04.000Z",
+    recordingStartedAt: "2026-05-02T08:30:01.000Z",
     recorderError: null,
     ...overrides,
   } satisfies DictationLoopSession;
+}
+
+function analyzedSession(
+  overrides: Partial<DictationLoopSession> & Record<string, unknown> = {},
+) {
+  return {
+    ...session(overrides),
+    captureAnalysis: {
+      disposition: "ready",
+      reason: null,
+      metrics: {
+        voicedMs: 900,
+        leadingTrimMs: 120,
+        trailingTrimMs: 180,
+        longestPauseMs: 0,
+        estimatedSnrDb: 16,
+        averageDbfs: -20,
+        peakDbfs: -8,
+      },
+      processedAudio: new Blob(["processed"], { type: "audio/wav" }),
+      transcriptionSegments: [recordingBlob()],
+    },
+    ...overrides,
+  } as DictationLoopSession;
 }
 
 function recordingBlob() {
@@ -47,6 +100,25 @@ describe("useDictationLoop", () => {
       method: "send_input",
     });
     listenToTauriEvent.mockResolvedValue(() => {});
+    persistDictationAudio.mockResolvedValue({
+      relativePath: "recordings/2026/05/02/recording.webm",
+      mimeType: "audio/webm",
+      byteLength: 3,
+    });
+    saveDictationRecord.mockResolvedValue(undefined);
+    targetSnapshotFromFocusedField.mockImplementation((field) => ({
+      stableId: field.stableId,
+      windowTitle: field.windowTitle,
+      controlName: field.controlName,
+      controlType: field.controlType,
+      controlTypeId: field.controlTypeId,
+      automationId: field.automationId,
+      frameworkId: field.frameworkId,
+      className: field.className,
+      nativeWindowHandle: field.nativeWindowHandle,
+      inputKind: "text",
+      currentValue: null,
+    }));
     transcribeRecording.mockResolvedValue({
       durationMs: 1200,
       model: "gpt-4o-mini-transcribe",
@@ -80,6 +152,7 @@ describe("useDictationLoop", () => {
     expect(transcribeRecording).toHaveBeenCalledWith({
       providerId: "openai",
       audioBlob,
+      language: "en",
     });
   });
 
@@ -122,9 +195,259 @@ describe("useDictationLoop", () => {
     await waitFor(() => {
       expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello");
     });
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trigger: "hotkey",
+        mode: "dictation",
+        provider: {
+          modelId: "gpt-4o-mini-transcribe",
+          providerId: "openai",
+        },
+        transcript: {
+          characterCount: 5,
+          finalText: "hello",
+          rawText: "hello",
+        },
+        recording: expect.objectContaining({
+          analysisMs: 0,
+          insertionMs: 0,
+          postProcessingMs: expect.any(Number),
+          reusedWarmStream: true,
+          startupMs: 24,
+          streamAcquisitionMs: 0,
+          transcriptionMs: expect.any(Number),
+        }),
+        audio: {
+          relativePath: "recordings/2026/05/02/recording.webm",
+          mimeType: "audio/webm",
+          byteLength: 3,
+        },
+        insertion: {
+          errorCode: null,
+          errorMessage: null,
+          method: "send_input",
+          status: "inserted",
+        },
+      }),
+    );
 
     expect(result.current.state).toBe("inserted");
     expect(result.current.transcript).toBe("hello");
+  });
+
+  it("skips provider transcription when local capture analysis marks speech as unclear", async () => {
+    const audioBlob = recordingBlob();
+
+    const { result } = renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "unclear",
+            reason: "low_volume",
+            metrics: {
+              voicedMs: 220,
+              leadingTrimMs: 0,
+              trailingTrimMs: 0,
+              longestPauseMs: 0,
+              estimatedSnrDb: 4,
+              averageDbfs: -38,
+              peakDbfs: -27,
+            },
+            processedAudio: null,
+            transcriptionSegments: [],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(result.current.error?.kind).toBe("capture");
+    });
+
+    expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(result.current.message).toBe(
+      "Speech unclear. Try again closer to the mic.",
+    );
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transcript: {
+          characterCount: 0,
+          finalText: "",
+          rawText: "",
+        },
+        insertion: {
+          errorCode: "speech_unclear",
+          errorMessage: "Speech unclear. Try again closer to the mic.",
+          method: null,
+          status: "skipped",
+        },
+      }),
+    );
+  });
+
+  it("transcribes capture-analysis segments in order and joins them once", async () => {
+    const audioBlob = recordingBlob();
+    const firstSegment = new Blob(["first"], { type: "audio/wav" });
+    const secondSegment = new Blob(["second"], { type: "audio/wav" });
+    transcribeRecording.mockImplementation(async ({ audioBlob: nextBlob }) => ({
+      durationMs: nextBlob === firstSegment ? 600 : 500,
+      model: "gpt-4o-mini-transcribe",
+      providerId: "openai",
+      text: nextBlob === firstSegment ? "hello" : "world",
+    }));
+
+    renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 1800,
+              leadingTrimMs: 110,
+              trailingTrimMs: 150,
+              longestPauseMs: 940,
+              estimatedSnrDb: 18,
+              averageDbfs: -19,
+              peakDbfs: -7,
+            },
+            processedAudio: new Blob(["processed"], { type: "audio/wav" }),
+            transcriptionSegments: [firstSegment, secondSegment],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello world");
+    });
+
+    expect(transcribeRecording).toHaveBeenCalledTimes(2);
+    expect(transcribeRecording).toHaveBeenNthCalledWith(1, {
+      providerId: "openai",
+      audioBlob: firstSegment,
+      language: "en",
+    });
+    expect(transcribeRecording).toHaveBeenNthCalledWith(2, {
+      providerId: "openai",
+      audioBlob: secondSegment,
+      language: "en",
+    });
+  });
+
+  it("uses the raw recording for AssemblyAI even when processed audio is available", async () => {
+    const audioBlob = recordingBlob();
+    const processedSegment = new Blob(["processed"], { type: "audio/wav" });
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+
+    renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 900,
+              leadingTrimMs: 120,
+              trailingTrimMs: 180,
+              longestPauseMs: 0,
+              estimatedSnrDb: 16,
+              averageDbfs: -20,
+              peakDbfs: -8,
+            },
+            processedAudio: new Blob(["processed-full"], { type: "audio/wav" }),
+            transcriptionSegments: [processedSegment],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(transcribeRecording).toHaveBeenCalledWith({
+        providerId: "assemblyai",
+        audioBlob,
+        language: "en",
+      });
+    });
+  });
+
+  it("continues saving the dictation record when audio persistence fails", async () => {
+    const audioBlob = recordingBlob();
+    persistDictationAudio.mockRejectedValue(new Error("disk unavailable"));
+
+    renderHook(() => useDictationLoop(session({ audioBlob })));
+
+    await waitFor(() => {
+      expect(saveDictationRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audio: null,
+          transcript: {
+            characterCount: 5,
+            finalText: "hello",
+            rawText: "hello",
+          },
+        }),
+      );
+    });
+  });
+
+  it("persists both original and processed audio when capture analysis provides a processed blob", async () => {
+    const audioBlob = recordingBlob();
+    const processedAudioBlob = new Blob(["processed"], { type: "audio/wav" });
+    persistDictationAudio
+      .mockResolvedValueOnce({
+        relativePath: "recordings/2026/05/02/raw.webm",
+        mimeType: "audio/webm",
+        byteLength: 3,
+      })
+      .mockResolvedValueOnce({
+        relativePath: "recordings/2026/05/02/processed.wav",
+        mimeType: "audio/wav",
+        byteLength: 9,
+      });
+
+    renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 900,
+              leadingTrimMs: 120,
+              trailingTrimMs: 180,
+              longestPauseMs: 0,
+              estimatedSnrDb: 16,
+              averageDbfs: -20,
+              peakDbfs: -8,
+            },
+            processedAudio: processedAudioBlob,
+            transcriptionSegments: [recordingBlob()],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(saveDictationRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audio: {
+            relativePath: "recordings/2026/05/02/raw.webm",
+            mimeType: "audio/webm",
+            byteLength: 3,
+          },
+          processedAudio: {
+            relativePath: "recordings/2026/05/02/processed.wav",
+            mimeType: "audio/wav",
+            byteLength: 9,
+          },
+        }),
+      );
+    });
   });
 
   it("skips insertion for empty transcripts", async () => {

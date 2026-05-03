@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vaak.dev/schemas/local-identity.v1.schema.json",
+  "title": "LocalIdentityV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId", "installationId", "deviceId"],
+  "properties": {
+    "userId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "installationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deviceId": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}

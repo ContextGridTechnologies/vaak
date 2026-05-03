@@ -9,9 +9,12 @@ use crate::providers::{
 };
 use crate::session::{HotkeyBindings, SessionStore};
 use crate::storage::{
-    AppShellPreferences, LocalSettingsStore, MicrophoneSelection, OnboardingState,
+    AppShellPreferences, DictationAudioArtifact, DictationRecordDraftV1, DictationRecordV1,
+    ExportedDictationAudio, LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection,
+    OnboardingState, SavedDictationAudio, VoiceCapsulePlacement,
 };
-use tauri::{AppHandle, Emitter, State};
+use crate::windowing;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const SPEECH_PROVIDER_CHANGED_EVENT: &str = "vaak://speech-provider-changed";
 
@@ -66,6 +69,54 @@ pub fn save_dictation_hotkey(
         .set_dictation_hotkey(&bindings.dictation)
         .map_err(ProviderFailure::InvalidRequest)?;
     Ok(bindings)
+}
+
+#[tauri::command]
+pub fn save_dictation_record(
+    draft: DictationRecordDraftV1,
+    settings: State<'_, LocalSettingsStore>,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<DictationRecordV1, ProviderError> {
+    records.save(&settings, draft)
+}
+
+#[tauri::command]
+pub fn get_recent_dictation_records(
+    limit: Option<usize>,
+    offset: Option<usize>,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<Vec<DictationRecordV1>, ProviderError> {
+    records.list_recent(limit.unwrap_or(12), offset.unwrap_or(0))
+}
+
+#[tauri::command]
+pub fn persist_dictation_audio(
+    audio_bytes: Vec<u8>,
+    mime_type: String,
+    captured_at: String,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<DictationAudioArtifact, ProviderError> {
+    records.persist_audio(audio_bytes, mime_type, &captured_at)
+}
+
+#[tauri::command]
+pub fn load_saved_dictation_audio(
+    relative_path: String,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<SavedDictationAudio, ProviderError> {
+    records.load_audio(&relative_path)
+}
+
+#[tauri::command]
+pub fn export_saved_dictation_audio(
+    relative_path: String,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<ExportedDictationAudio, ProviderError> {
+    let download_dir = dirs::download_dir().ok_or_else(|| {
+        ProviderFailure::SettingsStore("downloads directory is not available".to_string())
+    })?;
+
+    records.export_audio_to_dir(&relative_path, download_dir)
 }
 
 #[tauri::command]
@@ -211,6 +262,34 @@ pub fn save_app_shell_preferences(
 }
 
 #[tauri::command]
+pub fn get_voice_capsule_placement(
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<VoiceCapsulePlacement, ProviderError> {
+    Ok(settings
+        .app_shell_preferences()?
+        .voice_capsule_placement
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn save_voice_capsule_placement(
+    app: AppHandle,
+    settings: State<'_, LocalSettingsStore>,
+    placement: VoiceCapsulePlacement,
+) -> Result<VoiceCapsulePlacement, ProviderError> {
+    let mut preferences = settings.app_shell_preferences()?;
+    preferences.voice_capsule_placement = Some(placement.clone());
+    settings.save_app_shell_preferences(preferences)?;
+
+    if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
+        windowing::apply_voice_capsule_placement(&voice_capsule, Some(&placement))
+            .map_err(ProviderFailure::SettingsStore)?;
+    }
+
+    Ok(placement)
+}
+
+#[tauri::command]
 pub fn get_microphone_selection(
     settings: State<'_, LocalSettingsStore>,
 ) -> Result<MicrophoneSelection, ProviderError> {
@@ -243,9 +322,20 @@ pub fn save_onboarding_step(
 
 #[tauri::command]
 pub fn complete_onboarding(
+    app: AppHandle,
     settings: State<'_, LocalSettingsStore>,
 ) -> Result<OnboardingState, ProviderError> {
-    settings.complete_onboarding()
+    let saved_state = settings.complete_onboarding()?;
+    if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
+        let preferences = settings.app_shell_preferences()?;
+        windowing::prepare_voice_capsule_window(
+            &voice_capsule,
+            preferences.voice_capsule_placement.as_ref(),
+        )
+        .map_err(ProviderFailure::SettingsStore)?;
+        windowing::show_voice_capsule_window(&voice_capsule).map_err(ProviderFailure::SettingsStore)?;
+    }
+    Ok(saved_state)
 }
 
 #[tauri::command]

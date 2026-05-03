@@ -39,6 +39,7 @@ vi.mock("@/lib/tauri", () => ({
 
 const startRecording = vi.fn();
 const stopRecording = vi.fn();
+const prepareRecording = vi.fn();
 
 const field = {
   automationId: "message-input",
@@ -84,13 +85,17 @@ describe("useDictationSession", () => {
     vi.mocked(useAudioRecorder).mockReturnValue({
       activeMicrophone: null,
       audioBlob: null,
+      audioLevel: 0,
       audioUrl: null,
+      captureAnalysis: null,
       elapsedMs: 0,
       error: null,
+      prepare: prepareRecording,
       reset: vi.fn(),
       start: startRecording,
       status: "idle",
       stop: stopRecording,
+      startupMetrics: null,
     });
     vi.mocked(useMicrophoneSelection).mockReturnValue({
       activeMicrophone: null,
@@ -119,6 +124,7 @@ describe("useDictationSession", () => {
     listenToTauriEvent.mockResolvedValue(() => {});
     startRecording.mockReset();
     stopRecording.mockReset();
+    prepareRecording.mockReset();
   });
 
   it("blocks recording when the selected manual microphone is unavailable", async () => {
@@ -153,6 +159,14 @@ describe("useDictationSession", () => {
     expect(result.current.activeMode).toBe("dictation");
   });
 
+  it("warms the recorder stream in the background when microphone permission is already granted", async () => {
+    useAvailableMicrophone();
+
+    renderHook(() => useDictationSession());
+
+    await vi.waitFor(() => expect(prepareRecording).toHaveBeenCalledTimes(1));
+  });
+
   it("starts recording with the captured target from a dictation hotkey start", async () => {
     setWindowsPlatform();
     useAvailableMicrophone();
@@ -168,6 +182,10 @@ describe("useDictationSession", () => {
     const { result } = renderHook(() => useDictationSession());
 
     await vi.waitFor(() => expect(listenToTauriEvent).toHaveBeenCalled());
+    expect(listenToTauriEvent).toHaveBeenCalledWith(
+      "vaak://session-hotkey",
+      expect.any(Function),
+    );
     await act(async () => {
       await handler?.({
         payload: {

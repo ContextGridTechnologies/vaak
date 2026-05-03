@@ -15,15 +15,35 @@ pub fn run() {
         .plugin(build_log_plugin())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
-                windowing::prepare_voice_capsule_window(&voice_capsule)?;
-            }
             let settings_store =
                 storage::LocalSettingsStore::from_app(app.handle()).map_err(|err| err.message)?;
+            let onboarding_completed = settings_store
+                .onboarding_state()
+                .map_err(|err| err.message.clone())?
+                .completed;
+            let app_shell_preferences = settings_store
+                .app_shell_preferences()
+                .map_err(|err| err.message.clone())?;
+            if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
+                windowing::prepare_voice_capsule_window(
+                    &voice_capsule,
+                    app_shell_preferences.voice_capsule_placement.as_ref(),
+                )?;
+                if onboarding_completed {
+                    windowing::show_voice_capsule_window(&voice_capsule)?;
+                }
+            }
+            settings_store
+                .local_identity()
+                .map_err(|err| err.message.clone())?;
+            let records_store = storage::LocalDictationRecordStore::new(
+                app.path().app_config_dir().map_err(|err| err.to_string())?,
+            );
             let bindings = settings_store
                 .hotkey_bindings()
                 .map_err(|err| err.message.clone())?;
             app.manage(settings_store);
+            app.manage(records_store);
             let session = app.state::<session::SessionStore>();
             session
                 .set_dictation_hotkey(&bindings.dictation)
@@ -39,6 +59,11 @@ pub fn run() {
             commands::insert_into_active_target,
             commands::get_hotkey_bindings,
             commands::save_dictation_hotkey,
+            commands::save_dictation_record,
+            commands::get_recent_dictation_records,
+            commands::persist_dictation_audio,
+            commands::load_saved_dictation_audio,
+            commands::export_saved_dictation_audio,
             commands::save_provider_key,
             commands::save_provider_config,
             commands::save_speech_provider_setup,
@@ -50,6 +75,8 @@ pub fn run() {
             commands::get_onboarding_state,
             commands::get_app_shell_preferences,
             commands::save_app_shell_preferences,
+            commands::get_voice_capsule_placement,
+            commands::save_voice_capsule_placement,
             commands::get_microphone_selection,
             commands::save_microphone_selection,
             commands::save_onboarding_mode,
@@ -68,7 +95,10 @@ fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             file_name: Some("backend".to_string()),
         }))
         .level(log::LevelFilter::Info)
-        .level_for("appsdesktop_lib::platform::windows", log::LevelFilter::Trace);
+        .level_for(
+            "appsdesktop_lib::platform::windows",
+            log::LevelFilter::Trace,
+        );
 
     #[cfg(debug_assertions)]
     {

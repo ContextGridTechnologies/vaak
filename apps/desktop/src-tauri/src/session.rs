@@ -11,7 +11,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 
-const HOTKEY_EVENT: &str = "bluevoice://session-hotkey";
+const HOTKEY_EVENT: &str = "vaak://session-hotkey";
 pub const DEFAULT_DICTATION_BINDING_LABEL: &str = "Ctrl+Win";
 
 #[derive(Clone, Debug)]

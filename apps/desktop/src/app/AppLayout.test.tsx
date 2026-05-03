@@ -41,23 +41,23 @@ describe("AppLayout", () => {
       </AppLayout>,
     );
 
-    expect(screen.getByRole("button", { name: "Home" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Voice" })).toHaveAttribute(
       "data-active",
       "true",
     );
+    expect(screen.getByRole("button", { name: "Voice" })).toHaveClass(
+      "cursor-pointer",
+    );
     expect(
-      within(screen.getByTestId("app-sidebar-primary")).queryByRole("button", {
-        name: "Settings",
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(screen.getByTestId("app-sidebar-utility")).getByRole("button", {
+      within(screen.getByTestId("app-sidebar-primary")).getByRole("button", {
         name: "Settings",
       }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Account Coming soon" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveClass(
+      "cursor-pointer",
+    );
+    expect(screen.queryByTestId("app-sidebar-utility")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Account/i })).not.toBeInTheDocument();
     expect(screen.getByText("Home content")).toBeInTheDocument();
   });
 
@@ -73,9 +73,35 @@ describe("AppLayout", () => {
       "data-collapsible",
       "icon",
     );
-    expect(
-      within(screen.getByTestId("app-sidebar")).queryByText("Vaak"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("app-shell")).toHaveStyle({
+      "--sidebar-width": "11.75rem",
+    });
+    expect(within(screen.getByTestId("app-sidebar")).getByText("Vaak")).toBeInTheDocument();
+    expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("app-sidebar-utility")).not.toBeInTheDocument();
+    expect(screen.queryByText("User")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Voice" })).toHaveClass("h-9");
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveClass("h-9");
+    expect(screen.getByTestId("app-sidebar-dock-toggle")).toHaveClass(
+      "right-0",
+      "translate-x-1/2",
+      "size-7",
+      "bottom-3",
+    );
+  });
+
+  it("uses an independent main scroll region so the sidebar stays static", () => {
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+      </AppLayout>,
+    );
+
+    expect(screen.getByTestId("app-shell")).toHaveClass("overflow-hidden");
+    expect(screen.getByTestId("app-content-scroll-region")).toHaveClass(
+      "min-h-0",
+      "overflow-y-auto",
+    );
   });
 
   it("persists sidebar collapse state through the app shell preferences", async () => {
@@ -93,7 +119,7 @@ describe("AppLayout", () => {
       </AppLayout>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
+    fireEvent.click(screen.getByTestId("app-sidebar-dock-toggle"));
 
     expect(screen.getByTestId("app-sidebar")).toHaveAttribute(
       "data-state",
@@ -125,5 +151,33 @@ describe("AppLayout", () => {
         "collapsed",
       ),
     );
+  });
+
+  it("collapses the sidebar automatically on narrow viewports", async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 480,
+    });
+
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+      </AppLayout>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("app-sidebar")).toHaveAttribute(
+        "data-state",
+        "collapsed",
+      ),
+    );
+
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: originalWidth,
+    });
   });
 });

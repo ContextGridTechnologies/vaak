@@ -1,35 +1,121 @@
+use crate::storage::{VoiceCapsuleAnchor, VoiceCapsulePlacement};
 use tauri::window::Color;
-use tauri::{LogicalSize, Size, WebviewWindow};
+use tauri::{LogicalPosition, LogicalSize, Size, WebviewWindow};
 
-const VOICE_CAPSULE_WIDTH: f64 = 48.0;
-const VOICE_CAPSULE_HEIGHT: f64 = 28.0;
-const VOICE_CAPSULE_CORNER_RADIUS: i32 = 28;
+const VOICE_CAPSULE_WIDTH: f64 = 56.0;
+const VOICE_CAPSULE_HEIGHT: f64 = 36.0;
+const DEFAULT_EDGE_OFFSET: f64 = 24.0;
 
 pub trait VoiceCapsuleWindow {
     fn set_shadow(&self, shadow: bool) -> Result<(), String>;
     fn set_background_color(&self, color: Color) -> Result<(), String>;
     fn set_logical_size(&self, width: f64, height: f64) -> Result<(), String>;
-    fn apply_capsule_shape(&self, width: i32, height: i32, radius: i32) -> Result<(), String>;
-    fn scale_factor(&self) -> Result<f64, String>;
+    fn current_monitor_work_area(&self) -> Result<Option<MonitorWorkArea>, String>;
+    fn set_logical_position(&self, x: f64, y: f64) -> Result<(), String>;
     fn show(&self) -> Result<(), String>;
 }
 
-pub fn prepare_voice_capsule_window(window: &impl VoiceCapsuleWindow) -> Result<(), String> {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MonitorWorkArea {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+pub fn prepare_voice_capsule_window(
+    window: &impl VoiceCapsuleWindow,
+    placement: Option<&VoiceCapsulePlacement>,
+) -> Result<(), String> {
     window.set_shadow(false)?;
     window.set_background_color(Color(0, 0, 0, 0))?;
     window.set_logical_size(0.0, 0.0)?;
     window.set_logical_size(VOICE_CAPSULE_WIDTH, VOICE_CAPSULE_HEIGHT)?;
-    let scale_factor = window.scale_factor()?;
-    let physical_width = scaled_dimension(VOICE_CAPSULE_WIDTH, scale_factor);
-    let physical_height = scaled_dimension(VOICE_CAPSULE_HEIGHT, scale_factor);
-    let physical_radius = scaled_dimension(f64::from(VOICE_CAPSULE_CORNER_RADIUS), scale_factor);
-    window.apply_capsule_shape(physical_width, physical_height, physical_radius)?;
-    window.show()?;
+    apply_voice_capsule_placement(window, placement)?;
     Ok(())
 }
 
-fn scaled_dimension(value: f64, scale_factor: f64) -> i32 {
-    (value * scale_factor).round() as i32
+pub fn apply_voice_capsule_placement(
+    window: &impl VoiceCapsuleWindow,
+    placement: Option<&VoiceCapsulePlacement>,
+) -> Result<(), String> {
+    let work_area = match window.current_monitor_work_area()? {
+        Some(work_area) => work_area,
+        None => return Ok(()),
+    };
+    let position = resolve_voice_capsule_position(
+        work_area,
+        placement.unwrap_or(&VoiceCapsulePlacement::default()),
+    );
+    window.set_logical_position(position.x, position.y)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CapsulePosition {
+    pub x: f64,
+    pub y: f64,
+}
+
+pub fn resolve_voice_capsule_position(
+    work_area: MonitorWorkArea,
+    placement: &VoiceCapsulePlacement,
+) -> CapsulePosition {
+    let offset_x = placement
+        .offset_x
+        .unwrap_or_else(|| default_offset_x(placement.anchor));
+    let offset_y = placement
+        .offset_y
+        .unwrap_or_else(|| default_offset_y(placement.anchor));
+    let centered_x = work_area.x + (work_area.width - VOICE_CAPSULE_WIDTH) / 2.0;
+    let centered_y = work_area.y + (work_area.height - VOICE_CAPSULE_HEIGHT) / 2.0;
+    let right_x = work_area.x + work_area.width - VOICE_CAPSULE_WIDTH - offset_x;
+    let bottom_y = work_area.y + work_area.height - VOICE_CAPSULE_HEIGHT - offset_y;
+
+    match placement.anchor {
+        VoiceCapsuleAnchor::BottomCenter => CapsulePosition {
+            x: centered_x + offset_x,
+            y: bottom_y,
+        },
+        VoiceCapsuleAnchor::BottomLeft => CapsulePosition {
+            x: work_area.x + offset_x,
+            y: bottom_y,
+        },
+        VoiceCapsuleAnchor::BottomRight => CapsulePosition {
+            x: right_x,
+            y: bottom_y,
+        },
+        VoiceCapsuleAnchor::CenterLeft => CapsulePosition {
+            x: work_area.x + offset_x,
+            y: centered_y + offset_y,
+        },
+        VoiceCapsuleAnchor::CenterRight => CapsulePosition {
+            x: right_x,
+            y: centered_y + offset_y,
+        },
+    }
+}
+
+pub fn show_voice_capsule_window(window: &impl VoiceCapsuleWindow) -> Result<(), String> {
+    window.show()
+}
+
+fn default_offset_x(anchor: VoiceCapsuleAnchor) -> f64 {
+    match anchor {
+        VoiceCapsuleAnchor::BottomCenter => 0.0,
+        VoiceCapsuleAnchor::BottomLeft
+        | VoiceCapsuleAnchor::BottomRight
+        | VoiceCapsuleAnchor::CenterLeft
+        | VoiceCapsuleAnchor::CenterRight => DEFAULT_EDGE_OFFSET,
+    }
+}
+
+fn default_offset_y(anchor: VoiceCapsuleAnchor) -> f64 {
+    match anchor {
+        VoiceCapsuleAnchor::CenterLeft | VoiceCapsuleAnchor::CenterRight => 0.0,
+        VoiceCapsuleAnchor::BottomCenter
+        | VoiceCapsuleAnchor::BottomLeft
+        | VoiceCapsuleAnchor::BottomRight => DEFAULT_EDGE_OFFSET,
+    }
 }
 
 impl<R: tauri::Runtime> VoiceCapsuleWindow for WebviewWindow<R> {
@@ -46,40 +132,23 @@ impl<R: tauri::Runtime> VoiceCapsuleWindow for WebviewWindow<R> {
             .map_err(|err| err.to_string())
     }
 
-    fn apply_capsule_shape(&self, width: i32, height: i32, radius: i32) -> Result<(), String> {
-        #[cfg(windows)]
-        {
-            use std::ptr::null_mut;
-            use windows_sys::Win32::Graphics::Gdi::{
-                CreateRoundRectRgn, DeleteObject, SetWindowRgn,
-            };
+    fn current_monitor_work_area(&self) -> Result<Option<MonitorWorkArea>, String> {
+        let monitor = self.current_monitor().map_err(|err| err.to_string())?;
+        Ok(monitor.map(|monitor| {
+            let scale_factor = monitor.scale_factor();
+            let work_area = monitor.work_area();
 
-            let hwnd = self.hwnd().map_err(|err| err.to_string())?.0 as *mut std::ffi::c_void;
-            let region = unsafe { CreateRoundRectRgn(0, 0, width, height, radius, radius) };
-
-            if region == null_mut() {
-                return Err("failed to create voice capsule region".to_string());
+            MonitorWorkArea {
+                x: f64::from(work_area.position.x) / scale_factor,
+                y: f64::from(work_area.position.y) / scale_factor,
+                width: f64::from(work_area.size.width) / scale_factor,
+                height: f64::from(work_area.size.height) / scale_factor,
             }
-
-            let applied = unsafe { SetWindowRgn(hwnd, region, 1) };
-            if applied == 0 {
-                unsafe {
-                    let _ = DeleteObject(region as _);
-                }
-                return Err("failed to apply voice capsule region".to_string());
-            }
-        }
-
-        #[cfg(not(windows))]
-        {
-            let _ = (width, height, radius);
-        }
-
-        Ok(())
+        }))
     }
 
-    fn scale_factor(&self) -> Result<f64, String> {
-        WebviewWindow::scale_factor(self).map_err(|err| err.to_string())
+    fn set_logical_position(&self, x: f64, y: f64) -> Result<(), String> {
+        WebviewWindow::set_position(self, LogicalPosition::new(x, y)).map_err(|err| err.to_string())
     }
 
     fn show(&self) -> Result<(), String> {
@@ -97,14 +166,27 @@ mod tests {
         SetShadow(bool),
         SetBackgroundColor(Color),
         SetLogicalSize(f64, f64),
-        ApplyCapsuleShape(i32, i32, i32),
+        SetLogicalPosition(f64, f64),
         Show,
     }
 
-    #[derive(Default)]
     struct FakeVoiceCapsuleWindow {
         operations: RefCell<Vec<Operation>>,
-        scale_factor: f64,
+        work_area: Option<MonitorWorkArea>,
+    }
+
+    impl Default for FakeVoiceCapsuleWindow {
+        fn default() -> Self {
+            Self {
+                operations: RefCell::new(Vec::new()),
+                work_area: Some(MonitorWorkArea {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1440.0,
+                    height: 860.0,
+                }),
+            }
+        }
     }
 
     impl VoiceCapsuleWindow for FakeVoiceCapsuleWindow {
@@ -129,19 +211,15 @@ mod tests {
             Ok(())
         }
 
-        fn apply_capsule_shape(&self, width: i32, height: i32, radius: i32) -> Result<(), String> {
-            self.operations
-                .borrow_mut()
-                .push(Operation::ApplyCapsuleShape(width, height, radius));
-            Ok(())
+        fn current_monitor_work_area(&self) -> Result<Option<MonitorWorkArea>, String> {
+            Ok(self.work_area)
         }
 
-        fn scale_factor(&self) -> Result<f64, String> {
-            Ok(if self.scale_factor == 0.0 {
-                1.0
-            } else {
-                self.scale_factor
-            })
+        fn set_logical_position(&self, x: f64, y: f64) -> Result<(), String> {
+            self.operations
+                .borrow_mut()
+                .push(Operation::SetLogicalPosition(x, y));
+            Ok(())
         }
 
         fn show(&self) -> Result<(), String> {
@@ -151,10 +229,10 @@ mod tests {
     }
 
     #[test]
-    fn primes_voice_capsule_with_transparent_resize_sequence() {
+    fn primes_voice_capsule_with_transparent_resize_sequence_without_showing_it() {
         let window = FakeVoiceCapsuleWindow::default();
 
-        prepare_voice_capsule_window(&window).unwrap();
+        prepare_voice_capsule_window(&window, None).unwrap();
 
         assert_eq!(
             *window.operations.borrow(),
@@ -163,28 +241,58 @@ mod tests {
                 Operation::SetBackgroundColor(Color(0, 0, 0, 0)),
                 Operation::SetLogicalSize(0.0, 0.0),
                 Operation::SetLogicalSize(VOICE_CAPSULE_WIDTH, VOICE_CAPSULE_HEIGHT),
-                Operation::ApplyCapsuleShape(
-                    scaled_dimension(VOICE_CAPSULE_WIDTH, 1.0),
-                    scaled_dimension(VOICE_CAPSULE_HEIGHT, 1.0),
-                    VOICE_CAPSULE_CORNER_RADIUS,
-                ),
-                Operation::Show,
+                Operation::SetLogicalPosition(692.0, 800.0),
             ]
         );
     }
 
     #[test]
-    fn uses_physical_pixels_for_voice_capsule_region() {
+    fn keeps_the_capsule_as_a_plain_transparent_window_without_native_region_clipping() {
         let window = FakeVoiceCapsuleWindow {
             operations: RefCell::new(Vec::new()),
-            scale_factor: 1.5,
+            work_area: Some(MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 860.0,
+            }),
         };
 
-        prepare_voice_capsule_window(&window).unwrap();
+        prepare_voice_capsule_window(&window, None).unwrap();
 
-        assert!(window
-            .operations
-            .borrow()
-            .contains(&Operation::ApplyCapsuleShape(72, 42, 42)));
+        assert_eq!(
+            *window.operations.borrow(),
+            vec![
+                Operation::SetShadow(false),
+                Operation::SetBackgroundColor(Color(0, 0, 0, 0)),
+                Operation::SetLogicalSize(0.0, 0.0),
+                Operation::SetLogicalSize(VOICE_CAPSULE_WIDTH, VOICE_CAPSULE_HEIGHT),
+                Operation::SetLogicalPosition(692.0, 800.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolves_bottom_center_position_from_the_monitor_work_area() {
+        let position = resolve_voice_capsule_position(
+            MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 860.0,
+            },
+            &VoiceCapsulePlacement::default(),
+        );
+
+        assert_eq!(position, CapsulePosition { x: 692.0, y: 800.0 });
+    }
+
+    #[test]
+    fn shows_voice_capsule_only_when_explicitly_requested() {
+        let window = FakeVoiceCapsuleWindow::default();
+
+        show_voice_capsule_window(&window).unwrap();
+
+        assert_eq!(*window.operations.borrow(), vec![Operation::Show]);
     }
 }

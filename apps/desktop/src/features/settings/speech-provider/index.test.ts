@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AssemblyAiProviderPanel,
   AzureOpenAiProviderPanel,
+  ElevenLabsProviderPanel,
   OpenAiProviderPanel,
   ProviderSelector,
   SpeechProviderSettings,
@@ -13,5 +15,7 @@ describe("speech provider settings module", () => {
     expect(ProviderSelector).toEqual(expect.any(Function));
     expect(OpenAiProviderPanel).toEqual(expect.any(Function));
     expect(AzureOpenAiProviderPanel).toEqual(expect.any(Function));
+    expect(AssemblyAiProviderPanel).toEqual(expect.any(Function));
+    expect(ElevenLabsProviderPanel).toEqual(expect.any(Function));
   });
 });

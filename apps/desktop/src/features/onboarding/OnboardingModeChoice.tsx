@@ -31,7 +31,7 @@ export function OnboardingModeChoice({
       }
       footerHint="You can change this later in Settings."
     >
-        <section className="grid gap-3 md:grid-cols-3">
+        <section className="mx-auto grid w-full max-w-[42rem] gap-6 md:grid-cols-2">
           {onboardingModeCards.map((mode) => (
             <ChoiceCard
               key={mode.id}

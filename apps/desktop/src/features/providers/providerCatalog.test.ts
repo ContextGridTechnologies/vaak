@@ -8,7 +8,15 @@ describe("providerCatalog", () => {
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(
-      expect.arrayContaining(["openai", "azure-openai", "deepgram", "groq"]),
+      expect.arrayContaining([
+        "openai",
+        "azure-openai",
+        "assemblyai",
+        "deepgram",
+        "groq",
+        "elevenlabs",
+        "smallest",
+      ]),
     );
 
     for (const provider of providerCatalog) {

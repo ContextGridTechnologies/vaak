@@ -9,10 +9,17 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { ProviderStatus } from "@/lib/tauri";
 
 import { providerStatusLabel, providerStatusTone } from "./status";
-import { SAVED_KEY_PLACEHOLDER } from "./types";
+import { OPENAI_MODELS, SAVED_KEY_PLACEHOLDER } from "./types";
 
 type OpenAiProviderPanelProps = {
   apiKey: string;
@@ -20,10 +27,12 @@ type OpenAiProviderPanelProps = {
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
+  model: string;
   showTestButton?: boolean;
   testResult?: string;
   status?: ProviderStatus;
   onApiKeyChange: (value: string) => void;
+  onModelChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onTest: () => void;
 };
@@ -34,13 +43,21 @@ export function OpenAiProviderPanel({
   isLoading,
   isSaving,
   isTesting,
+  model,
   showTestButton = true,
   testResult,
   status,
   onApiKeyChange,
+  onModelChange,
   onSubmit,
   onTest,
 }: OpenAiProviderPanelProps) {
+  const disabled =
+    isLoading ||
+    isSaving ||
+    isTesting ||
+    (apiKey.trim().length === 0 && !status?.configured);
+
   return (
     <form onSubmit={onSubmit}>
       <FieldGroup className="rounded-lg border border-primary/30 bg-card/70 p-5 shadow-sm">
@@ -55,6 +72,24 @@ export function OpenAiProviderPanel({
             {providerStatusLabel(status)}
           </StatusBadge>
         </div>
+
+        <Field
+          className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-center"
+        >
+          <FieldLabel htmlFor="openai-model">Model</FieldLabel>
+          <Select value={model} onValueChange={onModelChange} disabled={isLoading || isSaving}>
+            <SelectTrigger id="openai-model" aria-label="Model" className="w-full">
+              <SelectValue placeholder="Select model" />
+            </SelectTrigger>
+            <SelectContent>
+              {OPENAI_MODELS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
 
         <Field
           data-invalid={Boolean(error)}
@@ -86,12 +121,7 @@ export function OpenAiProviderPanel({
           <Button
             type="submit"
             className="w-fit"
-            disabled={
-              isLoading ||
-              isSaving ||
-              isTesting ||
-              apiKey.trim().length === 0
-            }
+            disabled={disabled}
           >
             {isSaving ? "Saving..." : "Save and use OpenAI"}
           </Button>

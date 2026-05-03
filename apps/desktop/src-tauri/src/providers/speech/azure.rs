@@ -116,7 +116,14 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
             .into());
         }
 
-        let payload = response.json::<AzureTranscriptionResponse>().await?;
+        let body = response.text().await?;
+        log::info!(
+            "[vaak][provider][azure-openai] transcription_response deployment_id={} body={}",
+            self.deployment_id,
+            body
+        );
+
+        let payload = parse_transcription_response(&body)?;
         if payload.text.trim().is_empty() {
             return Err(ProviderFailure::InvalidResponse.into());
         }
@@ -128,6 +135,15 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
             duration_ms: None,
         })
     }
+}
+
+fn parse_transcription_response(body: &str) -> Result<AzureTranscriptionResponse, ProviderError> {
+    serde_json::from_str::<AzureTranscriptionResponse>(body).map_err(|err| {
+        ProviderFailure::Request(format!(
+            "failed to parse Azure OpenAI transcription response: {err}; body: {body}"
+        ))
+        .into()
+    })
 }
 
 fn required_field(value: Option<String>, label: &str) -> Result<String, ProviderError> {
@@ -159,6 +175,7 @@ mod tests {
             endpoint: Some("https://example.openai.azure.com/".to_string()),
             deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
+            model: None,
         })
         .expect("valid config");
 
@@ -175,6 +192,7 @@ mod tests {
                 endpoint: Some("https://example.openai.azure.com".to_string()),
                 deployment_id: None,
                 api_version: None,
+                model: None,
             }
         ));
     }
@@ -182,5 +200,17 @@ mod tests {
     #[test]
     fn selects_flac_extension_from_mime_type() {
         assert_eq!(file_name_for_mime("audio/flac"), "recording.flac");
+    }
+
+    #[test]
+    fn parses_complete_transcription_response_text() {
+        let payload = r#"{"text":"When we play an audio, there is a three dots on which we can download the audio, but I'm not able to download it. Can you please help me download?","duration":8.3}"#;
+
+        let parsed = parse_transcription_response(payload).expect("valid response");
+
+        assert_eq!(
+            parsed.text,
+            "When we play an audio, there is a three dots on which we can download the audio, but I'm not able to download it. Can you please help me download?"
+        );
     }
 }

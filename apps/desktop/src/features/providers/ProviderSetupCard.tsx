@@ -144,10 +144,16 @@ function getProviderIcon(providerId: ProviderCatalogItem["id"]) {
       return BotIcon;
     case "azure-openai":
       return CloudCogIcon;
+    case "assemblyai":
+      return AudioLinesIcon;
     case "deepgram":
       return AudioLinesIcon;
     case "groq":
       return ZapIcon;
+    case "elevenlabs":
+      return AudioLinesIcon;
+    case "smallest":
+      return AudioLinesIcon;
   }
 }
 

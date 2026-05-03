@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
 import {
   AlertCircleIcon,
   CheckIcon,
@@ -9,11 +9,40 @@ import {
 
 import { useDictationLoop } from "@/features/dictation/hooks/useDictationLoop";
 import { useDictationSession } from "@/features/dictation/hooks/useDictationSession";
+import {
+  isTauriRuntime,
+  saveVoiceCapsulePlacement,
+} from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import {
+  createSnapPlacementFromPosition,
+  resolvePlacementPosition,
+} from "./placement";
+import {
+  getFloatingMonitorWorkArea,
+  getFloatingWindowStartState,
+  moveFloatingWindow,
+} from "./window-controller";
+
+const VOICE_CAPSULE_WIDTH = 56;
+const VOICE_CAPSULE_HEIGHT = 36;
+const DRAG_THRESHOLD = 6;
+
+type DragState = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startWindowX: number;
+  startWindowY: number;
+  hasDragged: boolean;
+  positionReady: Promise<void>;
+};
 
 export function FloatingVoiceWindow() {
   const session = useDictationSession();
   const dictation = useDictationLoop(session);
+  const dragStateRef = useRef<DragState | null>(null);
+  const suppressClickRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.dataset.window = "voice-capsule";
@@ -29,6 +58,7 @@ export function FloatingVoiceWindow() {
 
   const state = dictation.state;
   const message = dictation.message;
+  const audioLevel = session.audioLevel ?? 0;
   const isRecording = state === "recording";
   const isBusy = state === "transcribing" || state === "inserting";
   const Icon =
@@ -43,6 +73,11 @@ export function FloatingVoiceWindow() {
             : MicIcon;
 
   const handleToggleRecording = () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+
     if (isBusy) {
       return;
     }
@@ -55,22 +90,123 @@ export function FloatingVoiceWindow() {
     void session.startManualDictation();
   };
 
+  const handlePointerDown = async (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || !isTauriRuntime()) {
+      return;
+    }
+
+    const target = event.currentTarget;
+
+    target.setPointerCapture(event.pointerId);
+
+    const dragState: DragState = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startWindowX: 0,
+      startWindowY: 0,
+      hasDragged: false,
+      positionReady: Promise.resolve(),
+    };
+
+    dragState.positionReady = (async () => {
+      const position = await getFloatingWindowStartState();
+
+      dragState.startWindowX = position.x;
+      dragState.startWindowY = position.y;
+    })();
+
+    dragStateRef.current = dragState;
+  };
+
+  const handlePointerMove = async (event: ReactPointerEvent<HTMLElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - dragState.startClientX;
+    const deltaY = event.clientY - dragState.startClientY;
+
+    if (!dragState.hasDragged && Math.hypot(deltaX, deltaY) < DRAG_THRESHOLD) {
+      return;
+    }
+
+    dragState.hasDragged = true;
+    suppressClickRef.current = true;
+    await dragState.positionReady;
+    await moveFloatingWindow({
+      x: dragState.startWindowX + deltaX,
+      y: dragState.startWindowY + deltaY,
+    });
+  };
+
+  const handlePointerUp = async (event: ReactPointerEvent<HTMLElement>) => {
+    const dragState = dragStateRef.current;
+    dragStateRef.current = null;
+
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.currentTarget.releasePointerCapture(event.pointerId);
+
+    if (!dragState.hasDragged) {
+      return;
+    }
+
+    await dragState.positionReady;
+
+    const deltaX = event.clientX - dragState.startClientX;
+    const deltaY = event.clientY - dragState.startClientY;
+    const workArea = await getFloatingMonitorWorkArea();
+
+    if (!workArea) {
+      return;
+    }
+    const currentPosition = {
+      x: dragState.startWindowX + deltaX,
+      y: dragState.startWindowY + deltaY,
+    };
+    const placement = createSnapPlacementFromPosition({
+      currentPosition,
+      windowSize: {
+        width: VOICE_CAPSULE_WIDTH,
+        height: VOICE_CAPSULE_HEIGHT,
+      },
+      workArea,
+    });
+    const snappedPosition = resolvePlacementPosition({
+      placement,
+      windowSize: {
+        width: VOICE_CAPSULE_WIDTH,
+        height: VOICE_CAPSULE_HEIGHT,
+      },
+      workArea,
+    });
+    await moveFloatingWindow(snappedPosition);
+    await saveVoiceCapsulePlacement(placement);
+  };
+
   return (
-    <main className="h-full w-full bg-transparent p-[2px]">
+    <main className="h-full w-full bg-transparent p-1.5">
       <section
         className={cn(
-          "flex h-full w-full items-center gap-1 overflow-hidden rounded-full border border-white/10 bg-black/70 p-[2px] text-white shadow-[0_4px_12px_rgba(0,0,0,0.24)] backdrop-blur-xl",
+          "flex h-full w-full items-center gap-1 overflow-hidden rounded-full border border-white/15 bg-neutral-950/92 px-[3px] py-[2px] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
           state === "recording" && "border-emerald-400/45",
           isBusy && "border-sky-400/35",
           state === "inserted" && "border-emerald-400/35",
           state === "error" && "border-rose-500/45",
         )}
         data-tauri-drag-region
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
       >
         <button
           type="button"
           className={cn(
-            "flex size-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white transition-colors hover:bg-white/14 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/55 focus-visible:ring-offset-0",
+            "flex size-5 shrink-0 items-center justify-center rounded-full border border-white/14 bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition-colors hover:bg-white/18 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/55 focus-visible:ring-offset-0",
             state === "recording" && "bg-emerald-400/20 text-emerald-100",
             isBusy && "bg-sky-400/20 text-sky-100",
             state === "inserted" && "bg-emerald-400/18 text-emerald-100",
@@ -102,9 +238,18 @@ export function FloatingVoiceWindow() {
               className="voice-wave-active flex items-end gap-0.5"
               aria-label="Recording wave"
             >
-              <span className="voice-wave-bar h-1.5" />
-              <span className="voice-wave-bar h-2.5" />
-              <span className="voice-wave-bar h-2" />
+              <span
+                className="voice-wave-bar"
+                style={meterStyle(audioLevel, 0.72)}
+              />
+              <span
+                className="voice-wave-bar"
+                style={meterStyle(audioLevel, 1)}
+              />
+              <span
+                className="voice-wave-bar"
+                style={meterStyle(audioLevel, 0.84)}
+              />
             </div>
           ) : isBusy ? (
             <div
@@ -132,4 +277,11 @@ export function FloatingVoiceWindow() {
       </section>
     </main>
   );
+}
+
+function meterStyle(audioLevel: number, multiplier: number) {
+  const height = 6 + Math.round(audioLevel * multiplier * 12);
+  return {
+    height: `${height}px`,
+  };
 }

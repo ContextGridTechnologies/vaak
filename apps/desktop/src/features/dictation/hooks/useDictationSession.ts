@@ -14,6 +14,7 @@ import {
 } from "@/lib/tauri";
 
 type ActiveMode = "idle" | "dictation" | "command";
+type DictationTrigger = "hotkey" | "manual" | null;
 
 export function useDictationSession() {
   const tauriAvailable = isTauriRuntime();
@@ -44,6 +45,12 @@ export function useDictationSession() {
   });
   const [activeMode, setActiveMode] = useState<ActiveMode>("idle");
   const [completedMode, setCompletedMode] = useState<ActiveMode | null>(null);
+  const [dictationTrigger, setDictationTrigger] =
+    useState<DictationTrigger>(null);
+  const [recordingStartedAt, setRecordingStartedAt] = useState<string | null>(
+    null,
+  );
+  const [recordingEndedAt, setRecordingEndedAt] = useState<string | null>(null);
   const selectedDeviceId =
     selection.mode === "manual" ? selection.deviceId : "system";
   const lastDeviceIdRef = useRef<string>("system");
@@ -52,8 +59,12 @@ export function useDictationSession() {
     error,
     audioBlob,
     audioUrl,
+    audioLevel,
+    captureAnalysis,
     elapsedMs,
     activeMicrophone: recordingActiveMicrophone,
+    startupMetrics,
+    prepare,
     start,
     stop,
     reset,
@@ -86,9 +97,15 @@ export function useDictationSession() {
   }, []);
 
   const startWithFocusCapture = useCallback(
-    async (knownField?: FocusedFieldInfo | null) => {
+    async (
+      knownField?: FocusedFieldInfo | null,
+      trigger: Exclude<DictationTrigger, null> = "manual",
+    ) => {
       setFocusedFieldError(null);
       setCompletedMode(null);
+      setDictationTrigger(trigger);
+      setRecordingStartedAt(new Date().toISOString());
+      setRecordingEndedAt(null);
       if (isManualUnavailable) {
         setActiveMode("idle");
         setFocusedFieldError(
@@ -140,12 +157,13 @@ export function useDictationSession() {
 
   const startManualDictation = useCallback(async () => {
     setActiveMode("dictation");
-    await startWithFocusCapture();
+    await startWithFocusCapture(undefined, "manual");
   }, [startWithFocusCapture]);
 
   const stopManualRecording = useCallback(() => {
     setCompletedMode("dictation");
     setActiveMode("idle");
+    setRecordingEndedAt(new Date().toISOString());
     stop();
   }, [stop]);
 
@@ -182,6 +200,14 @@ export function useDictationSession() {
   }, [isWindows, tauriAvailable]);
 
   useEffect(() => {
+    if (!hasPermission || isManualUnavailable) {
+      return;
+    }
+
+    void prepare();
+  }, [hasPermission, isManualUnavailable, prepare]);
+
+  useEffect(() => {
     if (lastDeviceIdRef.current === selectedDeviceId) {
       return;
     }
@@ -210,7 +236,7 @@ export function useDictationSession() {
     let unlisten: (() => void) | undefined;
     const register = async () => {
       const detach = await listenToTauriEvent<SessionHotkeyEvent>(
-        "bluevoice://session-hotkey",
+        "vaak://session-hotkey",
         async (event) => {
           const payload = event.payload;
 
@@ -218,7 +244,7 @@ export function useDictationSession() {
             if (payload.phase === "start") {
               setActiveMode("dictation");
               if (payload.field) {
-                await startWithFocusCapture(payload.field);
+                await startWithFocusCapture(payload.field, "hotkey");
               } else {
                 setFocusedField(null);
                 setFocusedFieldError(
@@ -229,6 +255,7 @@ export function useDictationSession() {
             }
 
             if (payload.phase === "stop") {
+              setRecordingEndedAt(new Date().toISOString());
               stopHotkeyRecording("dictation");
               return;
             }
@@ -280,7 +307,9 @@ export function useDictationSession() {
   return {
     activeMode,
     audioBlob,
+    audioLevel,
     audioUrl,
+    captureAnalysis,
     completedMode,
     deviceError,
     deviceOptions,
@@ -293,7 +322,11 @@ export function useDictationSession() {
     isLoading,
     isRecording,
     isWindows,
+    dictationTrigger,
     recorderError: error,
+    recordingMetrics: startupMetrics,
+    recordingEndedAt,
+    recordingStartedAt,
     refresh,
     requestPermission: requestMicrophoneAccess,
     reset,

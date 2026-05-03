@@ -3,7 +3,14 @@ export type ProviderCategory = "speech-to-text" | "rewrite";
 export type ProviderSetupStatus = "not-configured" | "configured" | "coming-soon";
 
 export type ProviderCatalogItem = {
-  id: "openai" | "azure-openai" | "deepgram" | "groq";
+  id:
+    | "openai"
+    | "azure-openai"
+    | "assemblyai"
+    | "deepgram"
+    | "groq"
+    | "elevenlabs"
+    | "smallest";
   name: string;
   description: string;
   categories: ProviderCategory[];
@@ -32,6 +39,24 @@ export const providerCatalog: ProviderCatalogItem[] = [
     modelHint: "Azure OpenAI endpoint and transcription deployment",
   },
   {
+    id: "assemblyai",
+    name: "AssemblyAI",
+    description: "Use AssemblyAI batch speech-to-text with your own API key.",
+    categories: ["speech-to-text"],
+    credentialLabel: "AssemblyAI API key",
+    setupStatus: "not-configured",
+    modelHint: "Pre-recorded transcription models",
+  },
+  {
+    id: "smallest",
+    name: "Smallest AI",
+    description: "Use Smallest AI Pulse pre-recorded transcription with your own API key.",
+    categories: ["speech-to-text"],
+    credentialLabel: "Smallest AI API key",
+    setupStatus: "not-configured",
+    modelHint: "Pulse",
+  },
+  {
     id: "deepgram",
     name: "Deepgram",
     description: "Use Deepgram as a speech-focused transcription provider.",
@@ -46,7 +71,16 @@ export const providerCatalog: ProviderCatalogItem[] = [
     description: "Use Groq for fast transcription and compatible model paths.",
     categories: ["speech-to-text", "rewrite"],
     credentialLabel: "Groq API key",
-    setupStatus: "not-configured",
+    setupStatus: "coming-soon",
     modelHint: "Fast speech and rewrite provider paths",
+  },
+  {
+    id: "elevenlabs",
+    name: "ElevenLabs",
+    description: "Use ElevenLabs Scribe for speech-to-text with your own API key.",
+    categories: ["speech-to-text"],
+    credentialLabel: "ElevenLabs API key",
+    setupStatus: "coming-soon",
+    modelHint: "Scribe batch transcription",
   },
 ];

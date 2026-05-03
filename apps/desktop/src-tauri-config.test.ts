@@ -13,6 +13,7 @@ type TauriWindowConfig = {
 };
 
 type TauriConfig = {
+  identifier: string;
   productName: string;
   app: {
     windows: TauriWindowConfig[];
@@ -28,6 +29,7 @@ describe("Tauri window configuration", () => {
     const mainWindow = config.app.windows.find((window) => window.label === "main");
 
     expect(config.productName).toBe("Vaak");
+    expect(config.identifier).toBe("ai.vaak.app");
     expect(mainWindow).toMatchObject({
       title: "Vaak",
       width: 1120,
