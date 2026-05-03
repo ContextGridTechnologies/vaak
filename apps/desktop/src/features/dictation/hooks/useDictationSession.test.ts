@@ -86,6 +86,7 @@ describe("useDictationSession", () => {
       activeMicrophone: null,
       audioBlob: null,
       audioUrl: null,
+      captureAnalysis: null,
       elapsedMs: 0,
       error: null,
       prepare: prepareRecording,

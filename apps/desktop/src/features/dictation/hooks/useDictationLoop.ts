@@ -27,6 +27,7 @@ export type DictationLifecycleState =
 
 export type DictationLoopErrorKind =
   | "recording"
+  | "capture"
   | "focus"
   | "transcription"
   | "insertion";
@@ -37,9 +38,27 @@ export type DictationLoopError = {
 };
 
 type ActiveMode = "idle" | "dictation" | "command";
+type CaptureDisposition = "ready" | "unclear";
+type CaptureReason = "no_speech" | "too_short" | "low_volume" | "low_snr" | null;
+
+type CaptureAnalysis = {
+  disposition: CaptureDisposition;
+  reason: CaptureReason;
+  metrics: {
+    voicedMs: number;
+    leadingTrimMs: number;
+    trailingTrimMs: number;
+    longestPauseMs: number;
+    estimatedSnrDb: number;
+    averageDbfs: number;
+    peakDbfs: number;
+  };
+  transcriptionSegments: Blob[];
+};
 
 export type DictationLoopSession = {
   audioBlob: Blob | null;
+  captureAnalysis?: CaptureAnalysis | null;
   dictationTrigger: "hotkey" | "manual" | null;
   completedMode: ActiveMode | null;
   focusedField: FocusedFieldInfo | null;
@@ -168,6 +187,10 @@ export function useDictationLoop(
     const label = providerLabels[providerId] ?? providerId;
 
     const runLoop = async () => {
+      const processingStartedAt = now();
+      let transcriptionMs = 0;
+      let insertionMs = 0;
+
       setLoopState({
         error: null,
         insertResult: null,
@@ -176,15 +199,83 @@ export function useDictationLoop(
         transcript: null,
       });
 
-      let text: string;
-      let transcriptionResult: Awaited<ReturnType<typeof transcribeRecording>>;
-      try {
-        transcriptionResult = await transcribeRecording({
-          providerId,
+      const captureAnalysis = session.captureAnalysis ?? null;
+      const transcriptionSegments = resolveTranscriptionSegments(
+        captureAnalysis,
+        audioBlob,
+      );
+      if (captureAnalysis?.disposition === "unclear") {
+        const message = captureMessage(captureAnalysis.reason);
+        await persistDraft({
           audioBlob,
-          language: "en",
+          provider: {
+            modelId: null,
+            providerId,
+          },
+          recording: buildRecordingDiagnostics(
+            session.recordingMetrics,
+            {
+              postProcessingMs: elapsedMs(processingStartedAt),
+              transcriptionMs,
+              insertionMs,
+            },
+          ),
+          session,
+          transcript: {
+            characterCount: 0,
+            finalText: "",
+            rawText: "",
+          },
+          insertion: {
+            errorCode: "speech_unclear",
+            errorMessage: message,
+            method: null,
+            status: "skipped",
+          },
         });
-        text = transcriptionResult.text;
+        if (!cancelled) {
+          setLoopState({
+            error: {
+              kind: "capture",
+              message,
+            },
+            insertResult: null,
+            message,
+            state: "error",
+            transcript: null,
+          });
+        }
+        return;
+      }
+
+      let text: string;
+      let transcriptionContext:
+        | {
+            providerId: string;
+            modelId: string | null;
+          }
+        | undefined;
+      try {
+        const transcriptionStartedAt = now();
+        const transcriptionResults = await Promise.all(
+          transcriptionSegments.map((segmentBlob) =>
+            transcribeRecording({
+              providerId,
+              audioBlob: segmentBlob,
+              language: "en",
+            }),
+          ),
+        );
+        transcriptionMs = elapsedMs(transcriptionStartedAt);
+        const firstTranscriptionResult = transcriptionResults[0] ?? null;
+        transcriptionContext = {
+          providerId: firstTranscriptionResult?.providerId ?? providerId,
+          modelId: firstTranscriptionResult?.model ?? null,
+        };
+        text = transcriptionResults
+          .map((result) => result.text.trim())
+          .filter((value) => value.length > 0)
+          .join(" ");
       } catch (err) {
         await persistDraft({
           audioBlob,
@@ -192,6 +283,14 @@ export function useDictationLoop(
             modelId: null,
             providerId,
           },
+          recording: buildRecordingDiagnostics(
+            session.recordingMetrics,
+            {
+              postProcessingMs: elapsedMs(processingStartedAt),
+              transcriptionMs,
+              insertionMs,
+            },
+          ),
           session,
           transcript: {
             characterCount: 0,
@@ -227,10 +326,18 @@ export function useDictationLoop(
       if (!text.trim()) {
         await persistDraft({
           audioBlob,
-          provider: {
-            modelId: transcriptionResult.model,
-            providerId: transcriptionResult.providerId,
+          provider: transcriptionContext ?? {
+            modelId: null,
+            providerId,
           },
+          recording: buildRecordingDiagnostics(
+            session.recordingMetrics,
+            {
+              postProcessingMs: elapsedMs(processingStartedAt),
+              transcriptionMs,
+              insertionMs,
+            },
+          ),
           session,
           transcript: {
             characterCount: 0,
@@ -263,13 +370,23 @@ export function useDictationLoop(
       });
 
       try {
+        const insertionStartedAt = now();
         const insertResult = await insertIntoActiveTarget(text);
+        insertionMs = elapsedMs(insertionStartedAt);
         await persistDraft({
           audioBlob,
-          provider: {
-            modelId: transcriptionResult.model,
-            providerId: transcriptionResult.providerId,
+          provider: transcriptionContext ?? {
+            modelId: null,
+            providerId,
           },
+          recording: buildRecordingDiagnostics(
+            session.recordingMetrics,
+            {
+              postProcessingMs: elapsedMs(processingStartedAt),
+              transcriptionMs,
+              insertionMs,
+            },
+          ),
           session,
           transcript: {
             characterCount: text.length,
@@ -296,10 +413,18 @@ export function useDictationLoop(
         const message = `Insertion failed: ${normalizeError(err)}`;
         await persistDraft({
           audioBlob,
-          provider: {
-            modelId: transcriptionResult.model,
-            providerId: transcriptionResult.providerId,
+          provider: transcriptionContext ?? {
+            modelId: null,
+            providerId,
           },
+          recording: buildRecordingDiagnostics(
+            session.recordingMetrics,
+            {
+              postProcessingMs: elapsedMs(processingStartedAt),
+              transcriptionMs,
+              insertionMs,
+            },
+          ),
           session,
           transcript: {
             characterCount: text.length,
@@ -393,9 +518,32 @@ export function useDictationLoop(
   ]);
 }
 
+function resolveTranscriptionSegments(
+  captureAnalysis: CaptureAnalysis | null,
+  audioBlob: Blob,
+): Blob[] {
+  const segments = captureAnalysis?.transcriptionSegments ?? [];
+  return segments.length > 0 ? segments : [audioBlob];
+}
+
+function captureMessage(reason: CaptureReason): string {
+  switch (reason) {
+    case "no_speech":
+      return "No speech detected.";
+    case "too_short":
+      return "Speech too short. Try speaking a bit longer.";
+    case "low_snr":
+    case "low_volume":
+      return "Speech unclear. Try again closer to the mic.";
+    default:
+      return "Speech unclear. Try recording again.";
+  }
+}
+
 async function persistDraft(input: {
   audioBlob: Blob | null;
   provider: DictationRecordDraft["provider"];
+  recording?: DictationRecordDraft["recording"];
   session: DictationLoopSession;
   transcript: DictationRecordDraft["transcript"];
   insertion: DictationRecordDraft["insertion"];
@@ -429,7 +577,7 @@ async function persistDraft(input: {
         new Date().toISOString(),
       startedAt: input.session.recordingStartedAt,
       endedAt: input.session.recordingEndedAt,
-      recording: input.session.recordingMetrics,
+      recording: input.recording ?? input.session.recordingMetrics,
       audio,
       target: targetSnapshotFromFocusedField(
         input.session.focusedField,
@@ -477,4 +625,32 @@ function classifyInputKind(
   }
 
   return "unknown";
+}
+
+function buildRecordingDiagnostics(
+  base: DictationRecordingDiagnostics | null,
+  overrides: Partial<
+    Pick<
+      DictationRecordingDiagnostics,
+      "transcriptionMs" | "insertionMs" | "postProcessingMs"
+    >
+  >,
+): DictationRecordingDiagnostics | null {
+  if (!base) {
+    return null;
+  }
+
+  return {
+    ...base,
+    analysisMs: base.analysisMs ?? 0,
+    ...overrides,
+  };
+}
+
+function now() {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+function elapsedMs(startedAt: number) {
+  return Math.max(0, Math.round(now() - startedAt));
 }

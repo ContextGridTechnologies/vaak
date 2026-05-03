@@ -37,6 +37,10 @@ export type DictationRecordingDiagnostics = {
   startupMs: number;
   streamAcquisitionMs: number;
   reusedWarmStream: boolean;
+  analysisMs?: number;
+  transcriptionMs?: number;
+  insertionMs?: number;
+  postProcessingMs?: number;
 };
 
 export type DictationAudioArtifact = {

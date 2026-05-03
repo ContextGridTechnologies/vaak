@@ -60,6 +60,7 @@ type HomeActivity = {
   capturedAt: string;
   isLatest: boolean;
   audio: DictationRecord["audio"] | null | undefined;
+  processingSummary: string | null;
 };
 
 const POLL_INTERVAL_MS = 3_000;
@@ -369,6 +370,11 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
             <p className="text-sm leading-6 text-foreground/92">
               {activity.transcriptPreview}
             </p>
+            {activity.processingSummary ? (
+              <div className="mt-2 text-xs text-muted-foreground">
+                {activity.processingSummary}
+              </div>
+            ) : null}
           </div>
 
           {activity.audio ? (
@@ -500,6 +506,7 @@ function mapRecordToActivity(
     capturedAt: record.capturedAt,
     isLatest: index === 0,
     audio: record.audio,
+    processingSummary: formatProcessingSummary(record),
   };
 }
 
@@ -558,6 +565,26 @@ function formatProviderLabel(record: DictationRecord) {
   return `${label} · ${record.provider.modelId}`;
 }
 
+function formatProcessingSummary(record: DictationRecord) {
+  const processingMs = record.recording?.postProcessingMs;
+  const transcriptionMs = record.recording?.transcriptionMs;
+  const insertionMs = record.recording?.insertionMs;
+
+  const parts = [
+    typeof processingMs === "number"
+      ? `Processing ${formatDurationMs(processingMs)}`
+      : null,
+    typeof transcriptionMs === "number"
+      ? `STT ${formatDurationMs(transcriptionMs)}`
+      : null,
+    typeof insertionMs === "number"
+      ? `Insert ${formatDurationMs(insertionMs)}`
+      : null,
+  ].filter((value): value is string => value !== null);
+
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 const providerDisplayName: Record<string, string> = {
   openai: "OpenAI",
   assemblyai: "AssemblyAI",
@@ -595,4 +622,8 @@ function capitalize(value: string) {
     return value;
   }
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatDurationMs(value: number) {
+  return `${Math.max(0, Math.round(value))} ms`;
 }

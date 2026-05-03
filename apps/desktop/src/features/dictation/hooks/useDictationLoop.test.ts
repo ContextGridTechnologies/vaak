@@ -63,6 +63,29 @@ function session(overrides: Partial<DictationLoopSession> = {}) {
   } satisfies DictationLoopSession;
 }
 
+function analyzedSession(
+  overrides: Partial<DictationLoopSession> & Record<string, unknown> = {},
+) {
+  return {
+    ...session(overrides),
+    captureAnalysis: {
+      disposition: "ready",
+      reason: null,
+      metrics: {
+        voicedMs: 900,
+        leadingTrimMs: 120,
+        trailingTrimMs: 180,
+        longestPauseMs: 0,
+        estimatedSnrDb: 16,
+        averageDbfs: -20,
+        peakDbfs: -8,
+      },
+      transcriptionSegments: [recordingBlob()],
+    },
+    ...overrides,
+  } as DictationLoopSession;
+}
+
 function recordingBlob() {
   return new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
 }
@@ -185,9 +208,13 @@ describe("useDictationLoop", () => {
           rawText: "hello",
         },
         recording: {
+          analysisMs: 0,
+          insertionMs: 0,
+          postProcessingMs: 0,
           reusedWarmStream: true,
           startupMs: 24,
           streamAcquisitionMs: 0,
+          transcriptionMs: 0,
         },
         audio: {
           relativePath: "recordings/2026/05/02/recording.webm",
@@ -205,6 +232,106 @@ describe("useDictationLoop", () => {
 
     expect(result.current.state).toBe("inserted");
     expect(result.current.transcript).toBe("hello");
+  });
+
+  it("skips provider transcription when local capture analysis marks speech as unclear", async () => {
+    const audioBlob = recordingBlob();
+
+    const { result } = renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "unclear",
+            reason: "low_volume",
+            metrics: {
+              voicedMs: 220,
+              leadingTrimMs: 0,
+              trailingTrimMs: 0,
+              longestPauseMs: 0,
+              estimatedSnrDb: 4,
+              averageDbfs: -38,
+              peakDbfs: -27,
+            },
+            transcriptionSegments: [],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(result.current.error?.kind).toBe("capture");
+    });
+
+    expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(result.current.message).toBe(
+      "Speech unclear. Try again closer to the mic.",
+    );
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transcript: {
+          characterCount: 0,
+          finalText: "",
+          rawText: "",
+        },
+        insertion: {
+          errorCode: "speech_unclear",
+          errorMessage: "Speech unclear. Try again closer to the mic.",
+          method: null,
+          status: "skipped",
+        },
+      }),
+    );
+  });
+
+  it("transcribes capture-analysis segments in order and joins them once", async () => {
+    const audioBlob = recordingBlob();
+    const firstSegment = new Blob(["first"], { type: "audio/wav" });
+    const secondSegment = new Blob(["second"], { type: "audio/wav" });
+    transcribeRecording.mockImplementation(async ({ audioBlob: nextBlob }) => ({
+      durationMs: nextBlob === firstSegment ? 600 : 500,
+      model: "gpt-4o-mini-transcribe",
+      providerId: "openai",
+      text: nextBlob === firstSegment ? "hello" : "world",
+    }));
+
+    renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 1800,
+              leadingTrimMs: 110,
+              trailingTrimMs: 150,
+              longestPauseMs: 940,
+              estimatedSnrDb: 18,
+              averageDbfs: -19,
+              peakDbfs: -7,
+            },
+            transcriptionSegments: [firstSegment, secondSegment],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello world");
+    });
+
+    expect(transcribeRecording).toHaveBeenCalledTimes(2);
+    expect(transcribeRecording).toHaveBeenNthCalledWith(1, {
+      providerId: "openai",
+      audioBlob: firstSegment,
+      language: "en",
+    });
+    expect(transcribeRecording).toHaveBeenNthCalledWith(2, {
+      providerId: "openai",
+      audioBlob: secondSegment,
+      language: "en",
+    });
   });
 
   it("continues saving the dictation record when audio persistence fails", async () => {

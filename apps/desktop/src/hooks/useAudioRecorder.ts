@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  analyzeAudioCapture,
+  type CaptureAnalysis,
+} from "./audioProcessing";
+import {
   activeMicrophoneFromStream,
   microphoneConstraints,
   type ActiveMicrophone,
@@ -13,6 +17,7 @@ export type RecorderStartupMetrics = {
   startupMs: number;
   streamAcquisitionMs: number;
   reusedWarmStream: boolean;
+  analysisMs?: number;
 };
 
 type RecorderState = {
@@ -20,6 +25,7 @@ type RecorderState = {
   error: string | null;
   audioBlob: Blob | null;
   audioUrl: string | null;
+  captureAnalysis: CaptureAnalysis | null;
   elapsedMs: number;
   activeMicrophone: ActiveMicrophone | null;
   startupMetrics: RecorderStartupMetrics | null;
@@ -52,6 +58,7 @@ export function useAudioRecorder(
   const [error, setError] = useState<string | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [captureAnalysis, setCaptureAnalysis] = useState<CaptureAnalysis | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [activeMicrophone, setActiveMicrophone] =
     useState<ActiveMicrophone | null>(null);
@@ -59,6 +66,12 @@ export function useAudioRecorder(
     useState<RecorderStartupMetrics | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const analysisSetupPromiseRef = useRef<Promise<void> | null>(null);
+  const analysisSampleRateRef = useRef(16000);
+  const analysisSamplesRef = useRef<Float32Array[]>([]);
   const preparePromiseRef = useRef<Promise<MediaStream> | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number | null>(null);
@@ -92,9 +105,80 @@ export function useAudioRecorder(
     stream.getTracks().forEach((track) => track.stop());
   };
 
+  const teardownCaptureAnalysis = useCallback(() => {
+    audioWorkletNodeRef.current?.disconnect();
+    audioSourceRef.current?.disconnect();
+    audioWorkletNodeRef.current = null;
+    audioSourceRef.current = null;
+    analysisSamplesRef.current = [];
+    analysisSetupPromiseRef.current = null;
+    if (audioContextRef.current) {
+      void audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+  }, []);
+
+  const ensureCaptureAnalysis = useCallback(async (stream: MediaStream) => {
+    if (audioWorkletNodeRef.current) {
+      return;
+    }
+    if (analysisSetupPromiseRef.current) {
+      await analysisSetupPromiseRef.current;
+      return;
+    }
+    if (
+      typeof AudioContext === "undefined" ||
+      typeof AudioWorkletNode === "undefined"
+    ) {
+      return;
+    }
+
+    const setupPromise = (async () => {
+      const context = new AudioContext();
+      await context.audioWorklet.addModule(
+        new URL("./audioCaptureProcessor.js", import.meta.url),
+      );
+      const source = context.createMediaStreamSource(stream);
+      const node = new AudioWorkletNode(context, "vaak-capture-analysis", {
+        numberOfOutputs: 0,
+      });
+      node.port.onmessage = (event) => {
+        const payload = event.data as {
+          type?: string;
+          sampleRate?: number;
+          samples?: number[];
+        };
+        if (payload.type !== "samples" || !payload.samples) {
+          return;
+        }
+        if (typeof payload.sampleRate === "number" && payload.sampleRate > 0) {
+          analysisSampleRateRef.current = payload.sampleRate;
+        }
+        analysisSamplesRef.current.push(Float32Array.from(payload.samples));
+      };
+
+      source.connect(node);
+      if (context.state === "suspended") {
+        await context.resume();
+      }
+
+      audioContextRef.current = context;
+      audioSourceRef.current = source;
+      audioWorkletNodeRef.current = node;
+    })();
+
+    analysisSetupPromiseRef.current = setupPromise;
+    try {
+      await setupPromise;
+    } finally {
+      analysisSetupPromiseRef.current = null;
+    }
+  }, []);
+
   const ensureStream = useCallback(
     async ({ reportErrors }: { reportErrors: boolean }) => {
       if (streamRef.current) {
+        await ensureCaptureAnalysis(streamRef.current);
         return {
           stream: streamRef.current,
           acquisitionMs: 0,
@@ -105,6 +189,7 @@ export function useAudioRecorder(
       if (preparePromiseRef.current) {
         const startedAt = now();
         const stream = await preparePromiseRef.current;
+        await ensureCaptureAnalysis(stream);
         return {
           stream,
           acquisitionMs: now() - startedAt,
@@ -121,6 +206,7 @@ export function useAudioRecorder(
       try {
         const stream = await streamPromise;
         streamRef.current = stream;
+        await ensureCaptureAnalysis(stream);
         setActiveMicrophone(activeMicrophoneFromStream(stream));
         console.info("[vaak][recorder] stream_ready", {
           acquisitionMs: Math.round(now() - startedAt),
@@ -145,11 +231,14 @@ export function useAudioRecorder(
         preparePromiseRef.current = null;
       }
     },
-    [microphoneSelection],
+    [ensureCaptureAnalysis, microphoneSelection],
   );
 
   const prepare = useCallback(async () => {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    if (
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
       return;
     }
 
@@ -188,8 +277,10 @@ export function useAudioRecorder(
       recorderRef.current = recorder;
       setActiveMicrophone(activeMicrophoneFromStream(stream));
       chunksRef.current = [];
+      analysisSamplesRef.current = [];
       startTimeRef.current = Date.now();
       setElapsedMs(0);
+      setCaptureAnalysis(null);
       releaseAudioUrl(null);
 
       recorder.ondataavailable = (event) => {
@@ -204,6 +295,7 @@ export function useAudioRecorder(
         clearTimer();
         stopTracks(streamRef.current);
         streamRef.current = null;
+        teardownCaptureAnalysis();
         setActiveMicrophone(null);
       };
 
@@ -216,6 +308,22 @@ export function useAudioRecorder(
           type: recorder.mimeType || "audio/webm",
         });
         setAudioBlob(blob);
+        const recordedSamples = combineAnalysisSamples(analysisSamplesRef.current);
+        const analysisStartedAt = now();
+        const nextCaptureAnalysis =
+          recordedSamples.length > 0
+            ? analyzeAudioCapture(recordedSamples, analysisSampleRateRef.current)
+            : null;
+        const analysisMs = Math.max(0, Math.round(now() - analysisStartedAt));
+        setCaptureAnalysis(nextCaptureAnalysis);
+        setStartupMetrics((current) =>
+          current
+            ? {
+                ...current,
+                analysisMs,
+              }
+            : current,
+        );
         releaseAudioUrl(URL.createObjectURL(blob));
         setElapsedMs(durationMs);
         setStatus("stopped");
@@ -243,7 +351,7 @@ export function useAudioRecorder(
       setError(err instanceof Error ? err.message : "Microphone access failed.");
       setActiveMicrophone(null);
     }
-  }, [ensureStream, releaseAudioUrl]);
+  }, [ensureStream, releaseAudioUrl, teardownCaptureAnalysis]);
 
   const stop = useCallback(() => {
     const recorder = recorderRef.current;
@@ -257,6 +365,7 @@ export function useAudioRecorder(
     clearTimer();
     setAudioBlob(null);
     releaseAudioUrl(null);
+    setCaptureAnalysis(null);
     setElapsedMs(0);
     setStatus("idle");
     setError(null);
@@ -264,16 +373,18 @@ export function useAudioRecorder(
     setStartupMetrics(null);
     stopTracks(streamRef.current);
     streamRef.current = null;
+    teardownCaptureAnalysis();
     preparePromiseRef.current = null;
-  }, [releaseAudioUrl]);
+  }, [releaseAudioUrl, teardownCaptureAnalysis]);
 
   useEffect(() => {
     stopTracks(streamRef.current);
     streamRef.current = null;
+    teardownCaptureAnalysis();
     preparePromiseRef.current = null;
     setActiveMicrophone(null);
     setStartupMetrics(null);
-  }, [selectionKey]);
+  }, [selectionKey, teardownCaptureAnalysis]);
 
   useEffect(() => {
     return () => {
@@ -284,17 +395,19 @@ export function useAudioRecorder(
       }
       stopTracks(streamRef.current);
       streamRef.current = null;
+      teardownCaptureAnalysis();
       setAudioBlob(null);
       releaseAudioUrl(null);
       setActiveMicrophone(null);
     };
-  }, [releaseAudioUrl]);
+  }, [releaseAudioUrl, teardownCaptureAnalysis]);
 
   return {
     status,
     error,
     audioBlob,
     audioUrl,
+    captureAnalysis,
     elapsedMs,
     activeMicrophone,
     startupMetrics,
@@ -303,6 +416,19 @@ export function useAudioRecorder(
     stop,
     reset,
   };
+}
+
+function combineAnalysisSamples(chunks: Float32Array[]) {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const combined = new Float32Array(totalLength);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return combined;
 }
 
 function now() {

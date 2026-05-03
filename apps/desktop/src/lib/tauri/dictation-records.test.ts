@@ -31,9 +31,13 @@ describe("dictation record Tauri API", () => {
         startedAt: null,
         endedAt: null,
         recording: {
+          analysisMs: 12,
+          insertionMs: 9,
+          postProcessingMs: 1044,
           startupMs: 42,
           streamAcquisitionMs: 18,
           reusedWarmStream: false,
+          transcriptionMs: 1023,
         },
         audio: {
           relativePath: "recordings/2026/05/02/record-1.webm",
@@ -88,9 +92,13 @@ describe("dictation record Tauri API", () => {
       startedAt: null,
       endedAt: null,
       recording: {
+        analysisMs: 12,
+        insertionMs: 9,
+        postProcessingMs: 1044,
         startupMs: 42,
         streamAcquisitionMs: 18,
         reusedWarmStream: false,
+        transcriptionMs: 1023,
       },
       audio: {
         relativePath: "recordings/2026/05/02/record-1.webm",

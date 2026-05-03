@@ -52,6 +52,15 @@ describe("HomePanel", () => {
         capturedAt: "2025-05-19T10:24:31Z",
         startedAt: null,
         endedAt: null,
+        recording: {
+          analysisMs: 18,
+          insertionMs: 12,
+          postProcessingMs: 940,
+          startupMs: 42,
+          streamAcquisitionMs: 18,
+          reusedWarmStream: false,
+          transcriptionMs: 910,
+        },
         audio: {
           relativePath: "recordings/2025/05/19/discord-1.webm",
           mimeType: "audio/webm",
@@ -106,6 +115,9 @@ describe("HomePanel", () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText("Discord").length).toBeGreaterThan(0);
     expect(screen.getByText("Message Box")).toBeInTheDocument();
+    expect(
+      screen.getByText("Processing 940 ms · STT 910 ms · Insert 12 ms"),
+    ).toBeInTheDocument();
     expect(screen.getAllByText("Inserted").length).toBeGreaterThan(0);
     expect(
       screen.getByRole("button", { name: "Play audio for Discord" }),

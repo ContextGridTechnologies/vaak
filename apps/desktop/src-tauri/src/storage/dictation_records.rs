@@ -68,6 +68,14 @@ pub struct DictationRecordingDiagnostics {
     pub startup_ms: usize,
     pub stream_acquisition_ms: usize,
     pub reused_warm_stream: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analysis_ms: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcription_ms: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insertion_ms: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_processing_ms: Option<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -452,6 +460,10 @@ mod tests {
                 startup_ms: 42,
                 stream_acquisition_ms: 18,
                 reused_warm_stream: false,
+                analysis_ms: None,
+                transcription_ms: None,
+                insertion_ms: None,
+                post_processing_ms: None,
             }),
             audio: Some(DictationAudioArtifact {
                 relative_path: "recordings/2026/05/02/a86f0b9f.webm".to_string(),
@@ -618,6 +630,10 @@ mod tests {
                 startup_ms: 42,
                 stream_acquisition_ms: 18,
                 reused_warm_stream: false,
+                analysis_ms: None,
+                transcription_ms: None,
+                insertion_ms: None,
+                post_processing_ms: None,
             }),
             audio: Some(DictationAudioArtifact {
                 relative_path: "recordings/2026/05/02/a86f0b9f.webm".to_string(),
