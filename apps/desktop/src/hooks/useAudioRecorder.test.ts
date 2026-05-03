@@ -165,6 +165,7 @@ describe("useAudioRecorder", () => {
     expect(result.current.audioUrl).toBe("blob:recording");
     expect(result.current.elapsedMs).toBe(2000);
     expect(result.current.startupMetrics).toEqual({
+      analysisMs: 0,
       startupMs: 0,
       streamAcquisitionMs: 0,
       reusedWarmStream: false,
@@ -307,6 +308,36 @@ describe("useAudioRecorder", () => {
     expect(result.current.captureAnalysis?.transcriptionSegments[0]?.type).toBe(
       "audio/wav",
     );
+  });
+
+  it("publishes live microphone level while recording and clears it after stop", async () => {
+    const track: MockTrack = {
+      label: "USB microphone",
+      stop: vi.fn(),
+      getSettings: () => ({ deviceId: "usb-mic" }),
+    };
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    });
+    setMediaDevices({ getUserMedia });
+    const { result } = renderHook(() => useAudioRecorder());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    act(() => {
+      emitAnalysisSamples([toneMs(120, 0.32)]);
+    });
+
+    expect(result.current.audioLevel).toBeGreaterThan(0.2);
+
+    await act(async () => {
+      result.current.stop();
+    });
+
+    expect(result.current.audioLevel).toBe(0);
   });
 
   it("marks low-volume speech as unclear before transcription", async () => {

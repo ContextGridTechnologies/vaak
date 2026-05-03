@@ -63,6 +63,7 @@ pub fn run() {
             commands::get_recent_dictation_records,
             commands::persist_dictation_audio,
             commands::load_saved_dictation_audio,
+            commands::export_saved_dictation_audio,
             commands::save_provider_key,
             commands::save_provider_config,
             commands::save_speech_provider_setup,

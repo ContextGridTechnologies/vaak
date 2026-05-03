@@ -31,6 +31,7 @@ export type CaptureThresholds = {
   speechEndSilenceMs: number;
   prefixPaddingMs: number;
   suffixPaddingMs: number;
+  finalSegmentTrailingSilenceMs: number;
   segmentationSilenceMs: number;
   lowSnrDb: number;
   minimumVoiceDbfs: number;
@@ -46,6 +47,7 @@ export const defaultCaptureThresholds: CaptureThresholds = {
   speechEndSilenceMs: 400,
   prefixPaddingMs: 120,
   suffixPaddingMs: 180,
+  finalSegmentTrailingSilenceMs: 1000,
   segmentationSilenceMs: 800,
   lowSnrDb: 8,
   minimumVoiceDbfs: -35,
@@ -172,13 +174,29 @@ export function analyzeAudioCapture(
 
   const prefixPaddingFrames = Math.round(thresholds.prefixPaddingMs / thresholds.frameMs);
   const suffixPaddingFrames = Math.round(thresholds.suffixPaddingMs / thresholds.frameMs);
+  const minimumFinalTrailingSamples = Math.max(
+    0,
+    Math.round((thresholds.finalSegmentTrailingSilenceMs / 1000) * sampleRate),
+  );
   const segmentSamples = segmentWindows
-    .map((window) => {
+    .map((window, index) => {
       const startFrame = Math.max(0, window.startFrame - prefixPaddingFrames);
       const endFrame = Math.min(frames.length - 1, window.endFrame + suffixPaddingFrames);
       const startSample = startFrame * frameSize;
       const endSample = Math.min(samples.length, (endFrame + 1) * frameSize);
-      return samples.slice(startSample, endSample);
+      const segmentSample = samples.slice(startSample, endSample);
+
+      if (index !== segmentWindows.length - 1) {
+        return segmentSample;
+      }
+
+      const voicedEndSample = Math.min(samples.length, (window.endFrame + 1) * frameSize);
+      const capturedTrailingSamples = Math.max(0, endSample - voicedEndSample);
+      return ensureTrailingSilence(
+        segmentSample,
+        minimumFinalTrailingSamples,
+        capturedTrailingSamples,
+      );
     })
     .filter((segmentSample) => segmentSample.length > 0);
   const transcriptionSegments = segmentSamples.map((segmentSample) =>
@@ -340,6 +358,24 @@ function joinSegmentSamples(segments: Float32Array[], sampleRate: number) {
   }
 
   return combined;
+}
+
+function ensureTrailingSilence(
+  samples: Float32Array,
+  minimumTrailingSamples: number,
+  capturedTrailingSamples: number,
+) {
+  const missingTrailingSamples = Math.max(
+    0,
+    minimumTrailingSamples - capturedTrailingSamples,
+  );
+  if (missingTrailingSamples === 0) {
+    return samples;
+  }
+
+  const padded = new Float32Array(samples.length + missingTrailingSamples);
+  padded.set(samples, 0);
+  return padded;
 }
 
 function dbfsFromAmplitude(value: number) {

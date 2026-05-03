@@ -10,8 +10,8 @@ use crate::providers::{
 use crate::session::{HotkeyBindings, SessionStore};
 use crate::storage::{
     AppShellPreferences, DictationAudioArtifact, DictationRecordDraftV1, DictationRecordV1,
-    LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection, OnboardingState,
-    SavedDictationAudio, VoiceCapsulePlacement,
+    ExportedDictationAudio, LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection,
+    OnboardingState, SavedDictationAudio, VoiceCapsulePlacement,
 };
 use crate::windowing;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -105,6 +105,18 @@ pub fn load_saved_dictation_audio(
     records: State<'_, LocalDictationRecordStore>,
 ) -> Result<SavedDictationAudio, ProviderError> {
     records.load_audio(&relative_path)
+}
+
+#[tauri::command]
+pub fn export_saved_dictation_audio(
+    relative_path: String,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<ExportedDictationAudio, ProviderError> {
+    let download_dir = dirs::download_dir().ok_or_else(|| {
+        ProviderFailure::SettingsStore("downloads directory is not available".to_string())
+    })?;
+
+    records.export_audio_to_dir(&relative_path, download_dir)
 }
 
 #[tauri::command]

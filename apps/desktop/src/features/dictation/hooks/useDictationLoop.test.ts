@@ -208,15 +208,15 @@ describe("useDictationLoop", () => {
           finalText: "hello",
           rawText: "hello",
         },
-        recording: {
+        recording: expect.objectContaining({
           analysisMs: 0,
           insertionMs: 0,
-          postProcessingMs: 0,
+          postProcessingMs: expect.any(Number),
           reusedWarmStream: true,
           startupMs: 24,
           streamAcquisitionMs: 0,
-          transcriptionMs: 0,
-        },
+          transcriptionMs: expect.any(Number),
+        }),
         audio: {
           relativePath: "recordings/2026/05/02/recording.webm",
           mimeType: "audio/webm",

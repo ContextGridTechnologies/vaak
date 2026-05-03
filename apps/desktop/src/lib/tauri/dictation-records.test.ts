@@ -6,6 +6,7 @@ import {
 } from "@/test/tauri";
 
 import {
+  exportSavedDictationAudio,
   getRecentDictationRecords,
   loadSavedDictationAudio,
   persistDictationAudio,
@@ -231,6 +232,25 @@ describe("dictation record Tauri API", () => {
     });
 
     expectTauriCommand(tauri, "load_saved_dictation_audio", {
+      relativePath: "recordings/2026/05/02/record-1.webm",
+    });
+  });
+
+  it("exports persisted recorded audio to a user-visible path through the backend storage command", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("export_saved_dictation_audio", {
+      savedPath: "C:\\Users\\nikhi\\Downloads\\Vaak\\record-1.webm",
+      fileName: "record-1.webm",
+    });
+
+    await expect(
+      exportSavedDictationAudio("recordings/2026/05/02/record-1.webm"),
+    ).resolves.toEqual({
+      savedPath: "C:\\Users\\nikhi\\Downloads\\Vaak\\record-1.webm",
+      fileName: "record-1.webm",
+    });
+
+    expectTauriCommand(tauri, "export_saved_dictation_audio", {
       relativePath: "recordings/2026/05/02/record-1.webm",
     });
   });

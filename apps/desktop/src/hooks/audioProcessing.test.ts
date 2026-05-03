@@ -79,6 +79,20 @@ describe("analyzeAudioCapture", () => {
     expect(analysis.disposition).toBe("unclear");
     expect(analysis.reason).toBe("low_volume");
   });
+
+  it("pads the final transcription segment with at least one second of trailing silence", async () => {
+    const samples = createSamples([
+      silenceMs(120),
+      toneMs(500, 0.28),
+    ]);
+
+    const analysis = analyzeAudioCapture(samples, sampleRate);
+    const segment = analysis.transcriptionSegments[0];
+    const durationMs = await wavDurationMs(segment);
+
+    expect(analysis.disposition).toBe("ready");
+    expect(durationMs).toBeGreaterThanOrEqual(1450);
+  });
 });
 
 describe("createWavBlob", () => {
@@ -116,6 +130,15 @@ function toneMs(durationMs: number, amplitude: number) {
     samples[index] = Math.sin((2 * Math.PI * 220 * index) / sampleRate) * amplitude;
   }
   return samples;
+}
+
+async function wavDurationMs(blob: Blob | undefined) {
+  if (!blob) {
+    throw new Error("Expected a wav blob.");
+  }
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const sampleCount = (bytes.length - 44) / 2;
+  return (sampleCount / sampleRate) * 1000;
 }
 
 describe("defaultCaptureThresholds", () => {

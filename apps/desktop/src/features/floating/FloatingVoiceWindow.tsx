@@ -58,6 +58,7 @@ export function FloatingVoiceWindow() {
 
   const state = dictation.state;
   const message = dictation.message;
+  const audioLevel = session.audioLevel ?? 0;
   const isRecording = state === "recording";
   const isBusy = state === "transcribing" || state === "inserting";
   const Icon =
@@ -237,9 +238,18 @@ export function FloatingVoiceWindow() {
               className="voice-wave-active flex items-end gap-0.5"
               aria-label="Recording wave"
             >
-              <span className="voice-wave-bar h-1.5" />
-              <span className="voice-wave-bar h-2.5" />
-              <span className="voice-wave-bar h-2" />
+              <span
+                className="voice-wave-bar"
+                style={meterStyle(audioLevel, 0.72)}
+              />
+              <span
+                className="voice-wave-bar"
+                style={meterStyle(audioLevel, 1)}
+              />
+              <span
+                className="voice-wave-bar"
+                style={meterStyle(audioLevel, 0.84)}
+              />
             </div>
           ) : isBusy ? (
             <div
@@ -267,4 +277,11 @@ export function FloatingVoiceWindow() {
       </section>
     </main>
   );
+}
+
+function meterStyle(audioLevel: number, multiplier: number) {
+  const height = 6 + Math.round(audioLevel * multiplier * 12);
+  return {
+    height: `${height}px`,
+  };
 }

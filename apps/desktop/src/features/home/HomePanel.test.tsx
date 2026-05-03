@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderApp } from "@/test/render";
@@ -7,21 +8,32 @@ import { HomePanel } from "./HomePanel";
 
 const {
   getRecentDictationRecords,
+  exportSavedDictationAudio,
   isTauriRuntime,
   loadSavedDictationAudio,
   sanitizeTargetControlName,
 } = vi.hoisted(() => ({
   getRecentDictationRecords: vi.fn(),
+  exportSavedDictationAudio: vi.fn(),
   isTauriRuntime: vi.fn(),
   loadSavedDictationAudio: vi.fn(),
   sanitizeTargetControlName: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
+  exportSavedDictationAudio,
   getRecentDictationRecords,
   isTauriRuntime,
   loadSavedDictationAudio,
   sanitizeTargetControlName,
+}));
+
+const { revealItemInDir } = vi.hoisted(() => ({
+  revealItemInDir: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  revealItemInDir,
 }));
 
 describe("HomePanel", () => {
@@ -31,7 +43,7 @@ describe("HomePanel", () => {
   let observeSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     intersectionObserverCallback = null;
     observeSpy = vi.fn();
     class MockIntersectionObserver {
@@ -57,6 +69,10 @@ describe("HomePanel", () => {
     loadSavedDictationAudio.mockResolvedValue({
       audioBytes: new Uint8Array([1, 2, 3]),
       mimeType: "audio/webm",
+    });
+    exportSavedDictationAudio.mockResolvedValue({
+      savedPath: "C:\\Users\\nikhi\\Downloads\\Vaak\\discord-1.webm",
+      fileName: "discord-1.webm",
     });
     sanitizeTargetControlName.mockImplementation(({ controlName, controlType }) =>
       controlName || controlType,
@@ -398,7 +414,9 @@ describe("HomePanel", () => {
     expect(screen.getByText("Showing 15 of 15 captures on this device")).toBeInTheDocument();
     expect(screen.getByText("Transcript 15")).toBeInTheDocument();
     expect(screen.queryByText("Transcript 16")).not.toBeInTheDocument();
-    expect(observeSpy).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(observeSpy).toHaveBeenCalled();
+    });
 
     intersectionObserverCallback?.([{ isIntersecting: true }]);
 
@@ -410,6 +428,74 @@ describe("HomePanel", () => {
     expect(screen.getByText("Transcript 20")).toBeInTheDocument();
     expect(screen.getByText("Showing 20 of 20 captures on this device")).toBeInTheDocument();
     expect(screen.getByText("20 inserted")).toBeInTheDocument();
+  });
+
+  it("exports saved audio into a user-visible location when download is clicked", async () => {
+    const user = userEvent.setup();
+    getRecentDictationRecords.mockResolvedValue([
+      {
+        schemaVersion: 1,
+        recordId: "7f3e2c91-5b6a-4a23-9f8e-1b7d2a9c3e41",
+        userId: "b4c8d2f0-2a71-4c8a-9bde-3f1a7e9b8c6d",
+        installationId: "c2e9af6b-8d31-4e33-9d24-0f6e7c3b6a11",
+        deviceId: "d1f6b2e9-3c47-4a1f-a2d1-9a3c6f7b8e22",
+        sessionId: "e7d9a3c1-1f6b-4b2a-b8e9-6c3a5d7f9b44",
+        mode: "dictation",
+        trigger: "hotkey",
+        platform: "windows",
+        capturedAt: "2025-05-19T10:24:31Z",
+        startedAt: null,
+        endedAt: null,
+        audio: {
+          relativePath: "recordings/2025/05/19/discord-1.webm",
+          mimeType: "audio/webm",
+          byteLength: 2048,
+        },
+        processedAudio: null,
+        target: {
+          stableId: "discord:messagebox:chat-input",
+          windowTitle: "#product-launch - Discord",
+          controlName: "Message Box",
+          controlType: "Edit",
+          controlTypeId: 50004,
+          automationId: "chat-input",
+          frameworkId: "WebView2",
+          className: "Chrome_WidgetWin_1",
+          nativeWindowHandle: 42,
+          inputKind: "text",
+          currentValue: null,
+        },
+        provider: {
+          providerId: "openai",
+          modelId: "gpt-4o-mini-transcribe",
+        },
+        transcript: {
+          rawText: "Hey team, just a quick update on the launch plan",
+          finalText: "Hey team, just a quick update on the launch plan",
+          characterCount: 44,
+        },
+        insertion: {
+          status: "inserted",
+          method: "send_input",
+          errorCode: null,
+          errorMessage: null,
+        },
+      },
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Play original audio for Discord" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Download audio" }));
+
+    expect(exportSavedDictationAudio).toHaveBeenCalledWith(
+      "recordings/2025/05/19/discord-1.webm",
+    );
+    expect(revealItemInDir).toHaveBeenCalledWith(
+      "C:\\Users\\nikhi\\Downloads\\Vaak\\discord-1.webm",
+    );
   });
 });
 

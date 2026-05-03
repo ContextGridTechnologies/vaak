@@ -39,8 +39,9 @@ pub async fn transcribe(
     settings: &LocalSettingsStore,
 ) -> Result<TranscriptResult, ProviderError> {
     let api_key = credentials::provider_key(provider_id)?;
-    let provider_config =
-        settings.provider_config_or_migrate(provider_id, || credentials::legacy_provider_config(provider_id))?;
+    let provider_config = settings.provider_config_or_migrate(provider_id, || {
+        credentials::legacy_provider_config(provider_id)
+    })?;
     let input = resolve_transcription_input(provider_id, input, provider_config.clone());
 
     match provider_id {
@@ -51,8 +52,7 @@ pub async fn transcribe(
         }
         azure::PROVIDER_ID => {
             azure::AzureOpenAiSpeechProvider::new(
-                provider_config
-                    .ok_or_else(|| ProviderFailure::MissingConfiguration)?,
+                provider_config.ok_or_else(|| ProviderFailure::MissingConfiguration)?,
             )?
             .transcribe(api_key, input)
             .await
@@ -152,6 +152,10 @@ fn resolve_transcription_input(
 }
 
 fn model_supports_prompt(provider_id: &str, model: Option<&str>) -> bool {
+    if provider_id == azure::PROVIDER_ID {
+        return true;
+    }
+
     if provider_id != openai::PROVIDER_ID {
         return false;
     }
@@ -319,8 +323,26 @@ mod tests {
     }
 
     #[test]
+    fn adds_default_prompt_for_azure_openai_transcriptions() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/webm".to_string(),
+            language: None,
+            prompt: None,
+            model: None,
+        };
+
+        let resolved = resolve_transcription_input(azure::PROVIDER_ID, input, None);
+
+        assert!(resolved.prompt.as_deref().is_some_and(
+            |value| value.contains("Preserve the speaker's wording as closely as possible")
+        ));
+    }
+
+    #[test]
     fn default_prompt_allows_lists_when_dictated() {
-        assert!(prompts::default_transcription_prompt().contains("Use numbered lists for ordered steps when sequence is clearly implied"));
+        assert!(prompts::default_transcription_prompt()
+            .contains("Use numbered lists for ordered steps when sequence is clearly implied"));
     }
 
     #[test]

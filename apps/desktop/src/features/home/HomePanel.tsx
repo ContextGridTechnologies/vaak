@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   CircleAlertIcon,
   CircleCheckBigIcon,
@@ -13,6 +14,7 @@ import {
   SquareTerminalIcon,
   StickyNoteIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/app";
 import { appScreenContentClassName } from "@/components/app/AppScreen";
@@ -29,6 +31,7 @@ import {
 } from "@/components/ui/empty";
 import { AudioPlayback } from "@/features/dictation/components/AudioPlayback";
 import {
+  exportSavedDictationAudio,
   getRecentDictationRecords,
   isTauriRuntime,
   loadSavedDictationAudio,
@@ -409,6 +412,25 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
     }
   };
 
+  const handleDownloadAudio = async (kind: "original" | "processed") => {
+    const artifact =
+      kind === "original" ? activity.audio : activity.processedAudio;
+    if (!artifact) {
+      return;
+    }
+
+    try {
+      const exported = await exportSavedDictationAudio(artifact.relativePath);
+      toast.success(`Saved ${exported.fileName}`, {
+        description: exported.savedPath,
+      });
+      await revealItemInDir(exported.savedPath);
+    } catch (error) {
+      console.error("Failed to export saved dictation audio", error);
+      toast.error("Unable to download audio");
+    }
+  };
+
   return (
     <article
       className={cn(
@@ -525,10 +547,16 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
                 <div className="text-xs text-destructive">{audioError}</div>
               ) : null}
               {isOriginalAudioOpen ? (
-                <AudioPlayback audioUrl={originalAudioUrl} />
+                <AudioPlayback
+                  audioUrl={originalAudioUrl}
+                  onDownload={() => handleDownloadAudio("original")}
+                />
               ) : null}
               {isProcessedAudioOpen ? (
-                <AudioPlayback audioUrl={processedAudioUrl} />
+                <AudioPlayback
+                  audioUrl={processedAudioUrl}
+                  onDownload={() => handleDownloadAudio("processed")}
+                />
               ) : null}
             </div>
           ) : null}

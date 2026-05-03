@@ -99,6 +99,13 @@ pub struct SavedDictationAudio {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ExportedDictationAudio {
+    pub saved_path: String,
+    pub file_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DictationTargetSnapshot {
     pub stable_id: String,
     pub window_title: String,
@@ -246,6 +253,45 @@ impl LocalDictationRecordStore {
                     .and_then(|extension| extension.to_str())
                     .unwrap_or_default(),
             ),
+        })
+    }
+
+    pub fn export_audio_to_dir(
+        &self,
+        relative_path: &str,
+        export_dir: impl AsRef<Path>,
+    ) -> Result<ExportedDictationAudio, ProviderError> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        let source_path = self.resolve_audio_path(relative_path)?;
+        let source_bytes = fs::read(&source_path)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+
+        let export_dir = export_dir.as_ref().join("Vaak");
+        fs::create_dir_all(&export_dir)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+
+        let source_file_name = source_path
+            .file_name()
+            .and_then(|file_name| file_name.to_str())
+            .filter(|file_name| !file_name.trim().is_empty())
+            .unwrap_or("vaak-recording.webm");
+        let export_path = next_available_export_path(&export_dir, source_file_name);
+
+        fs::write(&export_path, source_bytes)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+
+        let file_name = export_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(source_file_name)
+            .to_string();
+
+        Ok(ExportedDictationAudio {
+            saved_path: export_path.to_string_lossy().to_string(),
+            file_name,
         })
     }
 
@@ -447,6 +493,34 @@ fn is_safe_relative_audio_path(path: &Path) -> bool {
     }
 
     components.all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn next_available_export_path(export_dir: &Path, file_name: &str) -> PathBuf {
+    let candidate = export_dir.join(file_name);
+    if !candidate.exists() {
+        return candidate;
+    }
+
+    let stem = Path::new(file_name)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("vaak-recording");
+    let extension = Path::new(file_name)
+        .extension()
+        .and_then(|value| value.to_str());
+
+    for suffix in 2.. {
+        let candidate_name = match extension {
+            Some(extension) if !extension.is_empty() => format!("{stem}-{suffix}.{extension}"),
+            _ => format!("{stem}-{suffix}"),
+        };
+        let candidate = export_dir.join(candidate_name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    unreachable!("export filename search should always terminate")
 }
 
 #[cfg(test)]
@@ -837,6 +911,32 @@ mod tests {
         let loaded = store.load_audio(&saved.relative_path).unwrap();
         assert_eq!(loaded.audio_bytes, vec![1, 2, 3]);
         assert_eq!(loaded.mime_type, "audio/webm");
+    }
+
+    #[test]
+    fn exports_recording_audio_into_vaak_downloads_directory() {
+        let dir = temp_config_dir("dictation-record-export");
+        let export_dir = temp_config_dir("dictation-record-export-target");
+        let store = LocalDictationRecordStore::new(&dir);
+
+        let saved = store
+            .persist_audio(
+                vec![1, 2, 3],
+                "audio/webm".to_string(),
+                "2026-05-02T08:30:00Z",
+            )
+            .unwrap();
+
+        let exported = store
+            .export_audio_to_dir(&saved.relative_path, &export_dir)
+            .unwrap();
+
+        assert!(exported.saved_path.contains("Vaak"));
+        assert!(exported.saved_path.ends_with(".webm"));
+        assert_eq!(
+            fs::read(PathBuf::from(&exported.saved_path)).unwrap(),
+            vec![1, 2, 3]
+        );
     }
 
     #[test]

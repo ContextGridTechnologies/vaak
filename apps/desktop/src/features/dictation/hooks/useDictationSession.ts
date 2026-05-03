@@ -59,6 +59,7 @@ export function useDictationSession() {
     error,
     audioBlob,
     audioUrl,
+    audioLevel,
     captureAnalysis,
     elapsedMs,
     activeMicrophone: recordingActiveMicrophone,
@@ -306,6 +307,7 @@ export function useDictationSession() {
   return {
     activeMode,
     audioBlob,
+    audioLevel,
     audioUrl,
     captureAnalysis,
     completedMode,

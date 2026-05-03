@@ -25,6 +25,7 @@ type RecorderState = {
   error: string | null;
   audioBlob: Blob | null;
   audioUrl: string | null;
+  audioLevel: number;
   captureAnalysis: CaptureAnalysis | null;
   elapsedMs: number;
   activeMicrophone: ActiveMicrophone | null;
@@ -58,6 +59,7 @@ export function useAudioRecorder(
   const [error, setError] = useState<string | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [captureAnalysis, setCaptureAnalysis] = useState<CaptureAnalysis | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [activeMicrophone, setActiveMicrophone] =
@@ -72,6 +74,7 @@ export function useAudioRecorder(
   const analysisSetupPromiseRef = useRef<Promise<void> | null>(null);
   const analysisSampleRateRef = useRef(16000);
   const analysisSamplesRef = useRef<Float32Array[]>([]);
+  const recordingAnalysisActiveRef = useRef(false);
   const preparePromiseRef = useRef<Promise<MediaStream> | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number | null>(null);
@@ -154,7 +157,15 @@ export function useAudioRecorder(
         if (typeof payload.sampleRate === "number" && payload.sampleRate > 0) {
           analysisSampleRateRef.current = payload.sampleRate;
         }
-        analysisSamplesRef.current.push(Float32Array.from(payload.samples));
+        if (!recordingAnalysisActiveRef.current) {
+          return;
+        }
+        const chunk = Float32Array.from(payload.samples);
+        analysisSamplesRef.current.push(chunk);
+        setAudioLevel((current) => {
+          const nextLevel = normalizedLevel(chunk);
+          return Math.max(nextLevel, current * 0.82);
+        });
       };
 
       source.connect(node);
@@ -278,7 +289,9 @@ export function useAudioRecorder(
       setActiveMicrophone(activeMicrophoneFromStream(stream));
       chunksRef.current = [];
       analysisSamplesRef.current = [];
+      recordingAnalysisActiveRef.current = true;
       startTimeRef.current = Date.now();
+      setAudioLevel(0);
       setElapsedMs(0);
       setCaptureAnalysis(null);
       releaseAudioUrl(null);
@@ -293,6 +306,8 @@ export function useAudioRecorder(
         setStatus("error");
         setError(event.error?.message ?? "Recording error.");
         clearTimer();
+        recordingAnalysisActiveRef.current = false;
+        setAudioLevel(0);
         stopTracks(streamRef.current);
         streamRef.current = null;
         teardownCaptureAnalysis();
@@ -301,6 +316,7 @@ export function useAudioRecorder(
 
       recorder.onstop = () => {
         clearTimer();
+        recordingAnalysisActiveRef.current = false;
         const durationMs = startTimeRef.current
           ? Date.now() - startTimeRef.current
           : 0;
@@ -325,6 +341,7 @@ export function useAudioRecorder(
             : current,
         );
         releaseAudioUrl(URL.createObjectURL(blob));
+        setAudioLevel(0);
         setElapsedMs(durationMs);
         setStatus("stopped");
         recorderRef.current = null;
@@ -365,6 +382,7 @@ export function useAudioRecorder(
     clearTimer();
     setAudioBlob(null);
     releaseAudioUrl(null);
+    setAudioLevel(0);
     setCaptureAnalysis(null);
     setElapsedMs(0);
     setStatus("idle");
@@ -375,6 +393,7 @@ export function useAudioRecorder(
     streamRef.current = null;
     teardownCaptureAnalysis();
     preparePromiseRef.current = null;
+    recordingAnalysisActiveRef.current = false;
   }, [releaseAudioUrl, teardownCaptureAnalysis]);
 
   useEffect(() => {
@@ -383,6 +402,7 @@ export function useAudioRecorder(
     teardownCaptureAnalysis();
     preparePromiseRef.current = null;
     setActiveMicrophone(null);
+    setAudioLevel(0);
     setStartupMetrics(null);
   }, [selectionKey, teardownCaptureAnalysis]);
 
@@ -391,6 +411,7 @@ export function useAudioRecorder(
       clearTimer();
       const recorder = recorderRef.current;
       if (recorder?.state === "recording") {
+        recordingAnalysisActiveRef.current = false;
         recorder.stop();
       }
       stopTracks(streamRef.current);
@@ -399,6 +420,7 @@ export function useAudioRecorder(
       setAudioBlob(null);
       releaseAudioUrl(null);
       setActiveMicrophone(null);
+      setAudioLevel(0);
     };
   }, [releaseAudioUrl, teardownCaptureAnalysis]);
 
@@ -407,6 +429,7 @@ export function useAudioRecorder(
     error,
     audioBlob,
     audioUrl,
+    audioLevel,
     captureAnalysis,
     elapsedMs,
     activeMicrophone,
@@ -433,4 +456,18 @@ function combineAnalysisSamples(chunks: Float32Array[]) {
 
 function now() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+function normalizedLevel(samples: Float32Array) {
+  if (samples.length === 0) {
+    return 0;
+  }
+
+  let sum = 0;
+  for (const sample of samples) {
+    sum += sample * sample;
+  }
+
+  const rms = Math.sqrt(sum / samples.length);
+  return Math.max(0, Math.min(1, rms * 4));
 }

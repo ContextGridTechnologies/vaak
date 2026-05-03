@@ -85,6 +85,7 @@ describe("useDictationSession", () => {
     vi.mocked(useAudioRecorder).mockReturnValue({
       activeMicrophone: null,
       audioBlob: null,
+      audioLevel: 0,
       audioUrl: null,
       captureAnalysis: null,
       elapsedMs: 0,

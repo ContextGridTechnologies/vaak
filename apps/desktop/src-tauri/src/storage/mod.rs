@@ -5,7 +5,7 @@ mod local_settings;
 pub use dictation_records::{
     DictationAudioArtifact, DictationInsertionOutcome, DictationProviderContext,
     DictationRecordDraftV1, DictationRecordV1, DictationTargetSnapshot, DictationTranscript,
-    LocalDictationRecordStore, LocalIdentity, SavedDictationAudio,
+    ExportedDictationAudio, LocalDictationRecordStore, LocalIdentity, SavedDictationAudio,
 };
 pub use local_settings::{
     AppShellPreferences, LocalSettingsStore, MicrophoneSelection, OnboardingState,

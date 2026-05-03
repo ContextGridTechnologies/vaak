@@ -34,7 +34,7 @@ describe("OnboardingModeChoice", () => {
 
     const grid = container.querySelector("section");
 
-    expect(grid).toHaveClass("mx-auto", "w-full", "max-w-[56rem]", "md:grid-cols-2");
+    expect(grid).toHaveClass("mx-auto", "w-full", "max-w-[42rem]", "md:grid-cols-2");
     expect(grid).not.toHaveClass("md:grid-cols-3");
   });
 

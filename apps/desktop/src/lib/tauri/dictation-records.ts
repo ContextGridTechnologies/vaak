@@ -118,6 +118,14 @@ export async function loadSavedDictationAudio(
   };
 }
 
+export async function exportSavedDictationAudio(
+  relativePath: string,
+): Promise<{ savedPath: string; fileName: string }> {
+  return invokeTauri("export_saved_dictation_audio", {
+    relativePath,
+  });
+}
+
 type TargetLabelInput = {
   controlName: string;
   controlType: string;
