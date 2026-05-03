@@ -1,15 +1,22 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createTauriCommandHarness } from "@/test/tauri";
 import { FloatingVoiceWindow } from "./FloatingVoiceWindow";
 
 const {
   useDictationLoop,
   useDictationSession,
+  moveFloatingWindow,
+  getFloatingWindowStartState,
+  getFloatingMonitorWorkArea,
 } = vi.hoisted(() => ({
   useDictationLoop: vi.fn(),
   useDictationSession: vi.fn(),
+  moveFloatingWindow: vi.fn(),
+  getFloatingWindowStartState: vi.fn(),
+  getFloatingMonitorWorkArea: vi.fn(),
 }));
 
 vi.mock("@/features/dictation/hooks/useDictationLoop", () => ({
@@ -20,10 +27,28 @@ vi.mock("@/features/dictation/hooks/useDictationSession", () => ({
   useDictationSession,
 }));
 
+vi.mock("./window-controller", () => ({
+  moveFloatingWindow,
+  getFloatingWindowStartState,
+  getFloatingMonitorWorkArea,
+}));
+
 describe("FloatingVoiceWindow", () => {
   beforeEach(() => {
     document.documentElement.removeAttribute("data-window");
     document.body.removeAttribute("data-window");
+    Element.prototype.setPointerCapture = vi.fn();
+    Element.prototype.releasePointerCapture = vi.fn();
+    moveFloatingWindow.mockReset();
+    getFloatingWindowStartState.mockReset();
+    getFloatingMonitorWorkArea.mockReset();
+    getFloatingWindowStartState.mockResolvedValue({ x: 320, y: 640 });
+    getFloatingMonitorWorkArea.mockResolvedValue({
+      x: 0,
+      y: 0,
+      width: 1440,
+      height: 860,
+    });
 
     useDictationSession.mockReturnValue({
       audioBlob: null,
@@ -211,5 +236,67 @@ describe("FloatingVoiceWindow", () => {
     expect(
       screen.getByRole("button", { name: "Start recording" }),
     ).toBeEnabled();
+  });
+
+  it("does not toggle recording when the press turns into a drag gesture", async () => {
+    const startManualDictation = vi.fn();
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("save_voice_capsule_placement", {
+      anchor: "bottomRight",
+      offsetX: 992,
+      offsetY: 112,
+    });
+
+    useDictationSession.mockReturnValue({
+      audioBlob: null,
+      audioUrl: null,
+      focusedField: null,
+      focusedFieldError: null,
+      isRecording: false,
+      recorderError: null,
+      startManualDictation,
+      status: "idle",
+      stopManualRecording: vi.fn(),
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    const button = await screen.findByRole("button", {
+      name: "Start recording",
+    });
+
+    button.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 340,
+        clientY: 680,
+        pointerId: 1,
+      }),
+    );
+    button.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        button: 0,
+        clientX: 392,
+        clientY: 712,
+        pointerId: 1,
+      }),
+    );
+    button.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        clientX: 392,
+        clientY: 712,
+        pointerId: 1,
+      }),
+    );
+    button.click();
+
+    expect(startManualDictation).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(moveFloatingWindow).toHaveBeenCalled();
+    });
   });
 });

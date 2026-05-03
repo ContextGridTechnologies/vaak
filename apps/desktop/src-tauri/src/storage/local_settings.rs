@@ -61,10 +61,34 @@ pub struct OnboardingState {
     pub selected_mode: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppShellPreferences {
     pub sidebar_collapsed: bool,
+    #[serde(default = "default_voice_capsule_placement_option")]
+    pub voice_capsule_placement: Option<VoiceCapsulePlacement>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceCapsulePlacement {
+    #[serde(default)]
+    pub anchor: VoiceCapsuleAnchor,
+    #[serde(default)]
+    pub offset_x: Option<f64>,
+    #[serde(default)]
+    pub offset_y: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VoiceCapsuleAnchor {
+    #[default]
+    BottomCenter,
+    BottomLeft,
+    BottomRight,
+    CenterLeft,
+    CenterRight,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -85,6 +109,25 @@ impl Default for OnboardingState {
             completed: false,
             current_step: "modeChoice".to_string(),
             selected_mode: None,
+        }
+    }
+}
+
+impl Default for AppShellPreferences {
+    fn default() -> Self {
+        Self {
+            sidebar_collapsed: false,
+            voice_capsule_placement: default_voice_capsule_placement_option(),
+        }
+    }
+}
+
+impl Default for VoiceCapsulePlacement {
+    fn default() -> Self {
+        Self {
+            anchor: VoiceCapsuleAnchor::BottomCenter,
+            offset_x: None,
+            offset_y: None,
         }
     }
 }
@@ -211,7 +254,9 @@ impl LocalSettingsStore {
 
     pub fn app_shell_preferences(&self) -> Result<AppShellPreferences, ProviderError> {
         let _guard = self.lock()?;
-        Ok(self.load_unlocked()?.app_shell)
+        Ok(normalize_app_shell_preferences(
+            self.load_unlocked()?.app_shell,
+        ))
     }
 
     pub fn save_app_shell_preferences(
@@ -220,7 +265,7 @@ impl LocalSettingsStore {
     ) -> Result<AppShellPreferences, ProviderError> {
         let _guard = self.lock()?;
         let mut settings = self.load_unlocked()?;
-        settings.app_shell = preferences;
+        settings.app_shell = normalize_app_shell_preferences(preferences);
         self.save_unlocked(&settings)?;
         Ok(settings.app_shell)
     }
@@ -363,6 +408,10 @@ fn default_dictation_hotkey() -> String {
     DEFAULT_DICTATION_BINDING_LABEL.to_string()
 }
 
+fn default_voice_capsule_placement_option() -> Option<VoiceCapsulePlacement> {
+    Some(VoiceCapsulePlacement::default())
+}
+
 fn normalize_onboarding_step(step: &str) -> Option<&'static str> {
     match step.trim() {
         "modeChoice" => Some("modeChoice"),
@@ -378,6 +427,14 @@ fn build_hotkey_bindings(dictation: &str) -> Result<HotkeyBindings, ProviderErro
         command: command_binding_label(dictation).map_err(ProviderFailure::InvalidRequest)?,
         dictation: dictation.to_string(),
     })
+}
+
+fn normalize_app_shell_preferences(mut preferences: AppShellPreferences) -> AppShellPreferences {
+    if preferences.voice_capsule_placement.is_none() {
+        preferences.voice_capsule_placement = default_voice_capsule_placement_option();
+    }
+
+    preferences
 }
 
 fn ensure_local_identity(settings: &mut LocalSettings) -> bool {
@@ -738,7 +795,13 @@ mod tests {
         let dir = temp_config_dir("app-shell-defaults");
         let store = LocalSettingsStore::new(&dir);
 
-        assert!(!store.app_shell_preferences().unwrap().sidebar_collapsed);
+        let preferences = store.app_shell_preferences().unwrap();
+
+        assert!(!preferences.sidebar_collapsed);
+        assert_eq!(
+            preferences.voice_capsule_placement,
+            Some(VoiceCapsulePlacement::default())
+        );
     }
 
     #[test]
@@ -749,20 +812,46 @@ mod tests {
         let saved = store
             .save_app_shell_preferences(AppShellPreferences {
                 sidebar_collapsed: true,
+                voice_capsule_placement: Some(VoiceCapsulePlacement {
+                    anchor: VoiceCapsuleAnchor::BottomRight,
+                    offset_x: Some(32.0),
+                    offset_y: Some(20.0),
+                }),
             })
             .unwrap();
 
         assert!(saved.sidebar_collapsed);
+        assert_eq!(
+            saved.voice_capsule_placement,
+            Some(VoiceCapsulePlacement {
+                anchor: VoiceCapsuleAnchor::BottomRight,
+                offset_x: Some(32.0),
+                offset_y: Some(20.0),
+            })
+        );
         assert!(
             LocalSettingsStore::new(&dir)
                 .app_shell_preferences()
                 .unwrap()
                 .sidebar_collapsed
         );
+        assert_eq!(
+            LocalSettingsStore::new(&dir)
+                .app_shell_preferences()
+                .unwrap()
+                .voice_capsule_placement,
+            Some(VoiceCapsulePlacement {
+                anchor: VoiceCapsuleAnchor::BottomRight,
+                offset_x: Some(32.0),
+                offset_y: Some(20.0),
+            })
+        );
 
         let json = fs::read_to_string(dir.join("settings.json")).unwrap();
         assert!(json.contains("\"appShell\""));
         assert!(json.contains("\"sidebarCollapsed\": true"));
+        assert!(json.contains("\"voiceCapsulePlacement\""));
+        assert!(json.contains("\"bottomRight\""));
     }
 
     #[test]

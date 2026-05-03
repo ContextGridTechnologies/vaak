@@ -21,8 +21,14 @@ pub fn run() {
                 .onboarding_state()
                 .map_err(|err| err.message.clone())?
                 .completed;
+            let app_shell_preferences = settings_store
+                .app_shell_preferences()
+                .map_err(|err| err.message.clone())?;
             if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
-                windowing::prepare_voice_capsule_window(&voice_capsule)?;
+                windowing::prepare_voice_capsule_window(
+                    &voice_capsule,
+                    app_shell_preferences.voice_capsule_placement.as_ref(),
+                )?;
                 if onboarding_completed {
                     windowing::show_voice_capsule_window(&voice_capsule)?;
                 }
@@ -68,6 +74,8 @@ pub fn run() {
             commands::get_onboarding_state,
             commands::get_app_shell_preferences,
             commands::save_app_shell_preferences,
+            commands::get_voice_capsule_placement,
+            commands::save_voice_capsule_placement,
             commands::get_microphone_selection,
             commands::save_microphone_selection,
             commands::save_onboarding_mode,

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
 import {
   AlertCircleIcon,
   CheckIcon,
@@ -9,11 +9,40 @@ import {
 
 import { useDictationLoop } from "@/features/dictation/hooks/useDictationLoop";
 import { useDictationSession } from "@/features/dictation/hooks/useDictationSession";
+import {
+  isTauriRuntime,
+  saveVoiceCapsulePlacement,
+} from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import {
+  createSnapPlacementFromPosition,
+  resolvePlacementPosition,
+} from "./placement";
+import {
+  getFloatingMonitorWorkArea,
+  getFloatingWindowStartState,
+  moveFloatingWindow,
+} from "./window-controller";
+
+const VOICE_CAPSULE_WIDTH = 56;
+const VOICE_CAPSULE_HEIGHT = 36;
+const DRAG_THRESHOLD = 6;
+
+type DragState = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startWindowX: number;
+  startWindowY: number;
+  hasDragged: boolean;
+  positionReady: Promise<void>;
+};
 
 export function FloatingVoiceWindow() {
   const session = useDictationSession();
   const dictation = useDictationLoop(session);
+  const dragStateRef = useRef<DragState | null>(null);
+  const suppressClickRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.dataset.window = "voice-capsule";
@@ -43,6 +72,11 @@ export function FloatingVoiceWindow() {
             : MicIcon;
 
   const handleToggleRecording = () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+
     if (isBusy) {
       return;
     }
@@ -53,6 +87,104 @@ export function FloatingVoiceWindow() {
     }
 
     void session.startManualDictation();
+  };
+
+  const handlePointerDown = async (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || !isTauriRuntime()) {
+      return;
+    }
+
+    const target = event.currentTarget;
+
+    target.setPointerCapture(event.pointerId);
+
+    const dragState: DragState = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startWindowX: 0,
+      startWindowY: 0,
+      hasDragged: false,
+      positionReady: Promise.resolve(),
+    };
+
+    dragState.positionReady = (async () => {
+      const position = await getFloatingWindowStartState();
+
+      dragState.startWindowX = position.x;
+      dragState.startWindowY = position.y;
+    })();
+
+    dragStateRef.current = dragState;
+  };
+
+  const handlePointerMove = async (event: ReactPointerEvent<HTMLElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - dragState.startClientX;
+    const deltaY = event.clientY - dragState.startClientY;
+
+    if (!dragState.hasDragged && Math.hypot(deltaX, deltaY) < DRAG_THRESHOLD) {
+      return;
+    }
+
+    dragState.hasDragged = true;
+    suppressClickRef.current = true;
+    await dragState.positionReady;
+    await moveFloatingWindow({
+      x: dragState.startWindowX + deltaX,
+      y: dragState.startWindowY + deltaY,
+    });
+  };
+
+  const handlePointerUp = async (event: ReactPointerEvent<HTMLElement>) => {
+    const dragState = dragStateRef.current;
+    dragStateRef.current = null;
+
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.currentTarget.releasePointerCapture(event.pointerId);
+
+    if (!dragState.hasDragged) {
+      return;
+    }
+
+    await dragState.positionReady;
+
+    const deltaX = event.clientX - dragState.startClientX;
+    const deltaY = event.clientY - dragState.startClientY;
+    const workArea = await getFloatingMonitorWorkArea();
+
+    if (!workArea) {
+      return;
+    }
+    const currentPosition = {
+      x: dragState.startWindowX + deltaX,
+      y: dragState.startWindowY + deltaY,
+    };
+    const placement = createSnapPlacementFromPosition({
+      currentPosition,
+      windowSize: {
+        width: VOICE_CAPSULE_WIDTH,
+        height: VOICE_CAPSULE_HEIGHT,
+      },
+      workArea,
+    });
+    const snappedPosition = resolvePlacementPosition({
+      placement,
+      windowSize: {
+        width: VOICE_CAPSULE_WIDTH,
+        height: VOICE_CAPSULE_HEIGHT,
+      },
+      workArea,
+    });
+    await moveFloatingWindow(snappedPosition);
+    await saveVoiceCapsulePlacement(placement);
   };
 
   return (
@@ -66,6 +198,9 @@ export function FloatingVoiceWindow() {
           state === "error" && "border-rose-500/45",
         )}
         data-tauri-drag-region
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
       >
         <button
           type="button"

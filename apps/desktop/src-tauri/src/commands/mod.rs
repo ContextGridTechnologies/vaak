@@ -11,7 +11,7 @@ use crate::session::{HotkeyBindings, SessionStore};
 use crate::storage::{
     AppShellPreferences, DictationAudioArtifact, DictationRecordDraftV1, DictationRecordV1,
     LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection, OnboardingState,
-    SavedDictationAudio,
+    SavedDictationAudio, VoiceCapsulePlacement,
 };
 use crate::windowing;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -249,6 +249,34 @@ pub fn save_app_shell_preferences(
 }
 
 #[tauri::command]
+pub fn get_voice_capsule_placement(
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<VoiceCapsulePlacement, ProviderError> {
+    Ok(settings
+        .app_shell_preferences()?
+        .voice_capsule_placement
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn save_voice_capsule_placement(
+    app: AppHandle,
+    settings: State<'_, LocalSettingsStore>,
+    placement: VoiceCapsulePlacement,
+) -> Result<VoiceCapsulePlacement, ProviderError> {
+    let mut preferences = settings.app_shell_preferences()?;
+    preferences.voice_capsule_placement = Some(placement.clone());
+    settings.save_app_shell_preferences(preferences)?;
+
+    if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
+        windowing::apply_voice_capsule_placement(&voice_capsule, Some(&placement))
+            .map_err(ProviderFailure::SettingsStore)?;
+    }
+
+    Ok(placement)
+}
+
+#[tauri::command]
 pub fn get_microphone_selection(
     settings: State<'_, LocalSettingsStore>,
 ) -> Result<MicrophoneSelection, ProviderError> {
@@ -286,8 +314,13 @@ pub fn complete_onboarding(
 ) -> Result<OnboardingState, ProviderError> {
     let saved_state = settings.complete_onboarding()?;
     if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
-        windowing::show_voice_capsule_window(&voice_capsule)
-            .map_err(ProviderFailure::SettingsStore)?;
+        let preferences = settings.app_shell_preferences()?;
+        windowing::prepare_voice_capsule_window(
+            &voice_capsule,
+            preferences.voice_capsule_placement.as_ref(),
+        )
+        .map_err(ProviderFailure::SettingsStore)?;
+        windowing::show_voice_capsule_window(&voice_capsule).map_err(ProviderFailure::SettingsStore)?;
     }
     Ok(saved_state)
 }
