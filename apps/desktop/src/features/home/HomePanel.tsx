@@ -20,10 +20,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -34,7 +32,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Separator } from "@/components/ui/separator";
 import { AudioPlayback } from "@/features/dictation/components/AudioPlayback";
 import {
   getRecentDictationRecords,
@@ -60,6 +57,7 @@ type HomeActivity = {
   capturedAt: string;
   isLatest: boolean;
   audio: DictationRecord["audio"] | null | undefined;
+  processedAudio: DictationRecord["processedAudio"] | null | undefined;
   processingSummary: string | null;
 };
 
@@ -167,15 +165,17 @@ export function HomePanel() {
       contentClassName="max-w-[74rem] gap-5"
     >
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <Card className="border-border/70 bg-card/95 shadow-sm">
-          <CardHeader className="gap-3 border-b border-border/70">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex flex-col gap-1">
-              <CardTitle>Activity feed</CardTitle>
-              <CardDescription>
+              <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+                Activity feed
+              </h2>
+              <p className="text-sm text-muted-foreground">
                 Local-first capture history from your latest dictation sessions.
-              </CardDescription>
+              </p>
             </div>
-            <CardAction className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               <StatusBadge
                 tone="success"
                 className="normal-case tracking-normal"
@@ -191,21 +191,21 @@ export function HomePanel() {
               <StatusBadge tone="error" className="normal-case tracking-normal">
                 {activityOverview.failedCount} failed
               </StatusBadge>
-            </CardAction>
-          </CardHeader>
+            </div>
+          </div>
 
-          <CardContent className="p-0">
-            {activities.length > 0 ? (
-              <div className="flex flex-col">
-                {activities.map((activity, index) => (
-                  <div key={activity.recordId}>
-                    {index > 0 ? <Separator /> : null}
-                    <ActivityFeedItem activity={activity} />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <Empty className="min-h-[24rem] rounded-none border-0">
+          {activities.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {activities.map((activity) => (
+                <ActivityFeedItem
+                  key={activity.recordId}
+                  activity={activity}
+                />
+              ))}
+            </div>
+          ) : (
+            <Card className="border-border/70 bg-card shadow-sm">
+              <Empty className="min-h-[24rem] rounded-xl border-0">
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
                     <Clock3Icon />
@@ -217,18 +217,18 @@ export function HomePanel() {
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>
-            )}
-          </CardContent>
+            </Card>
+          )}
 
-          <CardFooter className="justify-between gap-3 text-sm text-muted-foreground">
+          <div className="flex flex-col gap-1 px-1 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <span>Showing the latest {DEFAULT_LIMIT} captures on this device</span>
             <span>
               {activities[0]
                 ? `Latest ${formatRelativeTime(activities[0].capturedAt)}`
                 : "Waiting for the first capture"}
             </span>
-          </CardFooter>
-        </Card>
+          </div>
+        </div>
 
         <Card
           size="sm"
@@ -275,59 +275,78 @@ type ActivityFeedItemProps = {
 function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
   const RowIcon = activity.icon;
   const ActivityStatusIcon = statusMeta[activity.status].icon;
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [isAudioOpen, setIsAudioOpen] = useState(false);
-  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [originalAudioUrl, setOriginalAudioUrl] = useState<string | null>(null);
+  const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(null);
+  const [isOriginalAudioOpen, setIsOriginalAudioOpen] = useState(false);
+  const [isProcessedAudioOpen, setIsProcessedAudioOpen] = useState(false);
+  const [loadingAudioKind, setLoadingAudioKind] = useState<"original" | "processed" | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
-      if (audioUrl) {
-        URL.revokeObjectURL(audioUrl);
+      if (originalAudioUrl) {
+        URL.revokeObjectURL(originalAudioUrl);
+      }
+      if (processedAudioUrl) {
+        URL.revokeObjectURL(processedAudioUrl);
       }
     };
-  }, [audioUrl]);
+  }, [originalAudioUrl, processedAudioUrl]);
 
-  const handlePlayAudio = async () => {
-    if (!activity.audio) {
+  const handlePlayAudio = async (kind: "original" | "processed") => {
+    const artifact = kind === "original" ? activity.audio : activity.processedAudio;
+    const currentUrl = kind === "original" ? originalAudioUrl : processedAudioUrl;
+    const setUrl = kind === "original" ? setOriginalAudioUrl : setProcessedAudioUrl;
+
+    if (!artifact) {
       return;
     }
 
-    if (audioUrl) {
-      setIsAudioOpen((current) => !current);
+    if (currentUrl) {
+      if (kind === "original") {
+        setIsOriginalAudioOpen((current) => !current);
+      } else {
+        setIsProcessedAudioOpen((current) => !current);
+      }
       return;
     }
 
-    setIsLoadingAudio(true);
+    setLoadingAudioKind(kind);
     setAudioError(null);
 
     try {
-      const savedAudio = await loadSavedDictationAudio(activity.audio.relativePath);
+      const savedAudio = await loadSavedDictationAudio(artifact.relativePath);
       const nextAudioUrl = URL.createObjectURL(
         new Blob([savedAudio.audioBytes], {
           type: savedAudio.mimeType,
         }),
       );
-      setAudioUrl((current) => {
+      setUrl((current) => {
         if (current) {
           URL.revokeObjectURL(current);
         }
         return nextAudioUrl;
       });
-      setIsAudioOpen(true);
+      if (kind === "original") {
+        setIsOriginalAudioOpen(true);
+      } else {
+        setIsProcessedAudioOpen(true);
+      }
     } catch (error) {
       console.error("Failed to load saved dictation audio", error);
       setAudioError("Audio unavailable");
     } finally {
-      setIsLoadingAudio(false);
+      setLoadingAudioKind(null);
     }
   };
 
   return (
     <article
       className={cn(
-        "flex flex-col gap-4 px-4 py-4 transition-colors sm:px-5",
-        activity.isLatest ? "bg-muted/45" : "hover:bg-muted/35",
+        "flex flex-col gap-4 rounded-xl border border-border/70 bg-card px-4 py-4 shadow-sm transition-[border-color,box-shadow,transform] sm:px-5",
+        activity.isLatest
+          ? "border-border shadow-md"
+          : "hover:border-border hover:shadow-md",
       )}
     >
       <div className="flex items-start gap-4">
@@ -377,34 +396,69 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
             ) : null}
           </div>
 
-          {activity.audio ? (
+          {activity.audio || activity.processedAudio ? (
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    void handlePlayAudio();
-                  }}
-                  disabled={isLoadingAudio}
-                  aria-label={`Play audio for ${activity.appName}`}
-                >
-                  {isLoadingAudio ? (
-                    <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-                  ) : (
-                    <PlayIcon data-icon="inline-start" />
-                  )}
-                  {audioUrl && isAudioOpen ? "Hide audio" : "Play audio"}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  {Math.max(1, Math.round(activity.audio.byteLength / 1024))} KB
-                </span>
+                {activity.audio ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void handlePlayAudio("original");
+                    }}
+                    disabled={loadingAudioKind !== null}
+                    aria-label={`Play original audio for ${activity.appName}`}
+                  >
+                    {loadingAudioKind === "original" ? (
+                      <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
+                    ) : (
+                      <PlayIcon data-icon="inline-start" />
+                    )}
+                    {isOriginalAudioOpen ? "Hide original audio" : "Play original audio"}
+                  </Button>
+                ) : null}
+                {activity.processedAudio ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void handlePlayAudio("processed");
+                    }}
+                    disabled={loadingAudioKind !== null}
+                    aria-label={`Play processed audio for ${activity.appName}`}
+                  >
+                    {loadingAudioKind === "processed" ? (
+                      <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
+                    ) : (
+                      <PlayIcon data-icon="inline-start" />
+                    )}
+                    {isProcessedAudioOpen
+                      ? "Hide processed audio"
+                      : "Play processed audio"}
+                  </Button>
+                ) : null}
+                {activity.audio ? (
+                  <span className="text-xs text-muted-foreground">
+                    Original {Math.max(1, Math.round(activity.audio.byteLength / 1024))} KB
+                  </span>
+                ) : null}
+                {activity.processedAudio ? (
+                  <span className="text-xs text-muted-foreground">
+                    Processed {Math.max(1, Math.round(activity.processedAudio.byteLength / 1024))} KB
+                  </span>
+                ) : null}
               </div>
               {audioError ? (
                 <div className="text-xs text-destructive">{audioError}</div>
               ) : null}
-              {isAudioOpen ? <AudioPlayback audioUrl={audioUrl} /> : null}
+              {isOriginalAudioOpen ? (
+                <AudioPlayback audioUrl={originalAudioUrl} />
+              ) : null}
+              {isProcessedAudioOpen ? (
+                <AudioPlayback audioUrl={processedAudioUrl} />
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -506,6 +560,7 @@ function mapRecordToActivity(
     capturedAt: record.capturedAt,
     isLatest: index === 0,
     audio: record.audio,
+    processedAudio: record.processedAudio,
     processingSummary: formatProcessingSummary(record),
   };
 }
@@ -567,18 +622,26 @@ function formatProviderLabel(record: DictationRecord) {
 
 function formatProcessingSummary(record: DictationRecord) {
   const processingMs = record.recording?.postProcessingMs;
+  const startupMs = record.recording?.startupMs;
+  const analysisMs = record.recording?.analysisMs;
   const transcriptionMs = record.recording?.transcriptionMs;
   const insertionMs = record.recording?.insertionMs;
 
   const parts = [
     typeof processingMs === "number"
-      ? `Processing ${formatDurationMs(processingMs)}`
+      ? `Post ${formatDurationMs(processingMs)}`
       : null,
     typeof transcriptionMs === "number"
       ? `STT ${formatDurationMs(transcriptionMs)}`
       : null,
+    typeof analysisMs === "number"
+      ? `Analyze ${formatDurationMs(analysisMs)}`
+      : null,
     typeof insertionMs === "number"
       ? `Insert ${formatDurationMs(insertionMs)}`
+      : null,
+    typeof startupMs === "number"
+      ? `Startup ${formatDurationMs(startupMs)}`
       : null,
   ].filter((value): value is string => value !== null);
 
