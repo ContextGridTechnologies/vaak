@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useMicrophoneSelection } from "@/hooks/useMicrophoneSelection";
@@ -127,6 +127,10 @@ describe("useDictationSession", () => {
     prepareRecording.mockReset();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("blocks recording when the selected manual microphone is unavailable", async () => {
     const { result } = renderHook(() => useDictationSession());
 
@@ -203,7 +207,8 @@ describe("useDictationSession", () => {
     expect(result.current.focusedField).toEqual(field);
   });
 
-  it("stops recording when a dictation hotkey stop arrives", async () => {
+  it("stops recording 250ms after a dictation hotkey stop arrives", async () => {
+    vi.useFakeTimers();
     setWindowsPlatform();
     useAvailableMicrophone();
     isTauriRuntime.mockReturnValue(true);
@@ -230,12 +235,26 @@ describe("useDictationSession", () => {
       });
     });
 
+    expect(stopRecording).not.toHaveBeenCalled();
+    expect(result.current.activeMode).toBe("idle");
+    expect(result.current.completedMode).toBe("dictation");
+
+    await act(async () => {
+      vi.advanceTimersByTime(249);
+    });
+    expect(stopRecording).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+
     expect(stopRecording).toHaveBeenCalledTimes(1);
     expect(result.current.activeMode).toBe("idle");
     expect(result.current.completedMode).toBe("dictation");
   });
 
   it("remembers that a command hotkey stop produced command audio", async () => {
+    vi.useFakeTimers();
     setWindowsPlatform();
     useAvailableMicrophone();
     isTauriRuntime.mockReturnValue(true);
@@ -271,6 +290,11 @@ describe("useDictationSession", () => {
           shortcut: "Ctrl+Win+Alt",
         },
       });
+    });
+
+    expect(stopRecording).not.toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(250);
     });
 
     expect(stopRecording).toHaveBeenCalledTimes(1);

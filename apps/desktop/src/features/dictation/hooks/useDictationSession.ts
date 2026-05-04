@@ -16,6 +16,8 @@ import {
 type ActiveMode = "idle" | "dictation" | "command";
 type DictationTrigger = "hotkey" | "manual" | null;
 
+const HOTKEY_STOP_TAIL_MS = 250;
+
 export function useDictationSession() {
   const tauriAvailable = isTauriRuntime();
   const {
@@ -54,6 +56,9 @@ export function useDictationSession() {
   const selectedDeviceId =
     selection.mode === "manual" ? selection.deviceId : "system";
   const lastDeviceIdRef = useRef<string>("system");
+  const hotkeyStopTimerRef = useRef<ReturnType<
+    typeof globalThis.setTimeout
+  > | null>(null);
   const {
     status,
     error,
@@ -96,11 +101,19 @@ export function useDictationSession() {
     return platform.includes("win");
   }, []);
 
+  const clearPendingHotkeyStop = useCallback(() => {
+    if (hotkeyStopTimerRef.current !== null) {
+      globalThis.clearTimeout(hotkeyStopTimerRef.current);
+      hotkeyStopTimerRef.current = null;
+    }
+  }, []);
+
   const startWithFocusCapture = useCallback(
     async (
       knownField?: FocusedFieldInfo | null,
       trigger: Exclude<DictationTrigger, null> = "manual",
     ) => {
+      clearPendingHotkeyStop();
       setFocusedFieldError(null);
       setCompletedMode(null);
       setDictationTrigger(trigger);
@@ -146,14 +159,27 @@ export function useDictationSession() {
         });
       }
     },
-    [isManualUnavailable, manualUnavailableMessage, start],
+    [
+      clearPendingHotkeyStop,
+      isManualUnavailable,
+      manualUnavailableMessage,
+      start,
+    ],
   );
 
-  const stopHotkeyRecording = useCallback((mode: ActiveMode) => {
-    setCompletedMode(mode);
-    setActiveMode("idle");
-    stop();
-  }, [stop]);
+  const stopHotkeyRecording = useCallback(
+    (mode: ActiveMode) => {
+      setCompletedMode(mode);
+      setActiveMode("idle");
+      clearPendingHotkeyStop();
+      hotkeyStopTimerRef.current = globalThis.setTimeout(() => {
+        setRecordingEndedAt(new Date().toISOString());
+        stop();
+        hotkeyStopTimerRef.current = null;
+      }, HOTKEY_STOP_TAIL_MS);
+    },
+    [clearPendingHotkeyStop, stop],
+  );
 
   const startManualDictation = useCallback(async () => {
     setActiveMode("dictation");
@@ -161,11 +187,12 @@ export function useDictationSession() {
   }, [startWithFocusCapture]);
 
   const stopManualRecording = useCallback(() => {
+    clearPendingHotkeyStop();
     setCompletedMode("dictation");
     setActiveMode("idle");
     setRecordingEndedAt(new Date().toISOString());
     stop();
-  }, [stop]);
+  }, [clearPendingHotkeyStop, stop]);
 
   const selectDevice = useCallback((value: string) => {
     if (value === "default" || value === "system") {
@@ -213,10 +240,11 @@ export function useDictationSession() {
     }
     lastDeviceIdRef.current = selectedDeviceId;
     if (isRecording) {
+      clearPendingHotkeyStop();
       setRestartOnStop(true);
       stop();
     }
-  }, [selectedDeviceId, isRecording, stop]);
+  }, [clearPendingHotkeyStop, selectedDeviceId, isRecording, stop]);
 
   useEffect(() => {
     if (restartOnStop && status === "stopped") {
@@ -255,7 +283,6 @@ export function useDictationSession() {
             }
 
             if (payload.phase === "stop") {
-              setRecordingEndedAt(new Date().toISOString());
               stopHotkeyRecording("dictation");
               return;
             }
@@ -263,6 +290,7 @@ export function useDictationSession() {
 
           if (payload.mode === "command") {
             if (payload.phase === "start") {
+              clearPendingHotkeyStop();
               setActiveMode("command");
               setFocusedFieldError(null);
               setFocusedField(null);
@@ -300,9 +328,16 @@ export function useDictationSession() {
     isWindows,
     start,
     startWithFocusCapture,
+    clearPendingHotkeyStop,
     stopHotkeyRecording,
     tauriAvailable,
   ]);
+
+  useEffect(() => {
+    return () => {
+      clearPendingHotkeyStop();
+    };
+  }, [clearPendingHotkeyStop]);
 
   return {
     activeMode,
