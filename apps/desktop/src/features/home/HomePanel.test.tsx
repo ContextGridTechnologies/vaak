@@ -36,6 +36,19 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   revealItemInDir,
 }));
 
+const { appEnvironment } = vi.hoisted(() => ({
+  appEnvironment: {
+    appEnv: "development",
+    cloudBaseUrl: null,
+    enableDebugUi: false,
+    exposeProcessedAudioArtifacts: true,
+  },
+}));
+
+vi.mock("@/config/app-env", () => ({
+  appEnvironment,
+}));
+
 describe("HomePanel", () => {
   let intersectionObserverCallback:
     | ((entries: Array<{ isIntersecting: boolean }>) => void)
@@ -74,6 +87,8 @@ describe("HomePanel", () => {
       savedPath: "C:\\Users\\nikhi\\Downloads\\Vaak\\discord-1.webm",
       fileName: "discord-1.webm",
     });
+    appEnvironment.appEnv = "development";
+    appEnvironment.exposeProcessedAudioArtifacts = true;
     sanitizeTargetControlName.mockImplementation(({ controlName, controlType }) =>
       controlName || controlType,
     );
@@ -177,6 +192,40 @@ describe("HomePanel", () => {
     expect(screen.getByText("OpenAI · gpt-4o-mini-transcribe")).toBeInTheDocument();
     expect(screen.queryByText("Capture record")).not.toBeInTheDocument();
     expect(screen.queryByText("Versioned record")).not.toBeInTheDocument();
+  });
+
+  it("hides processed audio artifacts in production", async () => {
+    appEnvironment.appEnv = "production";
+    appEnvironment.exposeProcessedAudioArtifacts = false;
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "production-record",
+        capturedAt: "2025-05-19T10:24:31Z",
+        finalText: "Production transcript",
+        processedAudio: {
+          relativePath: "recordings/2025/05/19/processed.wav",
+          mimeType: "audio/wav",
+          byteLength: 1536,
+        },
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Production transcript")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByRole("button", {
+        name: "Play original audio for Windows Terminal",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "Play processed audio for Windows Terminal",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a polished empty state when there is no persisted dictation history yet", async () => {
@@ -503,10 +552,12 @@ function makeRecord({
   recordId,
   capturedAt,
   finalText,
+  processedAudio = null,
 }: {
   recordId: string;
   capturedAt: string;
   finalText: string;
+  processedAudio?: unknown;
 }) {
   return {
     schemaVersion: 1,
@@ -521,6 +572,12 @@ function makeRecord({
     capturedAt,
     startedAt: null,
     endedAt: null,
+    audio: {
+      relativePath: `recordings/2025/05/19/${recordId}.webm`,
+      mimeType: "audio/webm",
+      byteLength: 2048,
+    },
+    processedAudio,
     target: {
       stableId: `powershell:${recordId}`,
       windowTitle: "PowerShell",

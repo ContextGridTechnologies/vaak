@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { appEnvironment } from "@/config/app-env";
 import { normalizeError } from "@/lib/errors";
 import {
   getSelectedSpeechProvider,
@@ -588,7 +589,10 @@ async function persistDraft(input: {
         console.error("Failed to persist dictation audio", err);
       }
     }
-    if (input.processedAudioBlob) {
+    if (
+      input.processedAudioBlob &&
+      appEnvironment.exposeProcessedAudioArtifacts
+    ) {
       try {
         processedAudio = await persistDictationAudio({
           audioBlob: input.processedAudioBlob,

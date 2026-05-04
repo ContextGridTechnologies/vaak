@@ -32,6 +32,19 @@ vi.mock("@/lib/tauri", () => ({
   transcribeRecording,
 }));
 
+const { appEnvironment } = vi.hoisted(() => ({
+  appEnvironment: {
+    appEnv: "development",
+    cloudBaseUrl: null,
+    enableDebugUi: false,
+    exposeProcessedAudioArtifacts: true,
+  },
+}));
+
+vi.mock("@/config/app-env", () => ({
+  appEnvironment,
+}));
+
 function session(overrides: Partial<DictationLoopSession> = {}) {
   return {
     dictationTrigger: "hotkey",
@@ -125,6 +138,8 @@ describe("useDictationLoop", () => {
       providerId: "openai",
       text: "hello",
     });
+    appEnvironment.appEnv = "development";
+    appEnvironment.exposeProcessedAudioArtifacts = true;
   });
 
   it("transcribes a stopped audio blob exactly once", async () => {
@@ -448,6 +463,56 @@ describe("useDictationLoop", () => {
         }),
       );
     });
+  });
+
+  it("does not persist processed audio artifacts in production", async () => {
+    appEnvironment.appEnv = "production";
+    appEnvironment.exposeProcessedAudioArtifacts = false;
+    const audioBlob = recordingBlob();
+    const processedAudioBlob = new Blob(["processed"], { type: "audio/wav" });
+    persistDictationAudio.mockResolvedValueOnce({
+      relativePath: "recordings/2026/05/02/raw.webm",
+      mimeType: "audio/webm",
+      byteLength: 3,
+    });
+
+    renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 900,
+              leadingTrimMs: 120,
+              trailingTrimMs: 180,
+              longestPauseMs: 0,
+              estimatedSnrDb: 16,
+              averageDbfs: -20,
+              peakDbfs: -8,
+            },
+            processedAudio: processedAudioBlob,
+            transcriptionSegments: [recordingBlob()],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(saveDictationRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audio: {
+            relativePath: "recordings/2026/05/02/raw.webm",
+            mimeType: "audio/webm",
+            byteLength: 3,
+          },
+          processedAudio: null,
+        }),
+      );
+    });
+
+    expect(persistDictationAudio).toHaveBeenCalledTimes(1);
   });
 
   it("skips insertion for empty transcripts", async () => {
