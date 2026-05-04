@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "voice-capsule",
+  "description": "Least-privilege capability for the floating voice capsule",
+  "windows": ["voice-capsule"],
+  "permissions": [
+    "core:window:default",
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-position"
+  ]
+}

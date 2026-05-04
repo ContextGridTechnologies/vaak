@@ -18,6 +18,7 @@ type TauriConfig = {
   app: {
     windows: TauriWindowConfig[];
     security?: {
+      capabilities?: string[];
       csp?: string | null;
       devCsp?: string | null;
     };
@@ -69,12 +70,18 @@ describe("Tauri security configuration", () => {
     const config = JSON.parse(
       readFileSync(join(process.cwd(), "src-tauri", "tauri.conf.json"), "utf8"),
     ) as TauriConfig;
-    const capabilities = JSON.parse(
+    const mainCapability = JSON.parse(
       readFileSync(
-        join(process.cwd(), "src-tauri", "capabilities", "default.json"),
+        join(process.cwd(), "src-tauri", "capabilities", "main.json"),
         "utf8",
       ),
-    ) as { permissions: string[] };
+    ) as { windows: string[]; permissions: string[] };
+    const voiceCapsuleCapability = JSON.parse(
+      readFileSync(
+        join(process.cwd(), "src-tauri", "capabilities", "voice-capsule.json"),
+        "utf8",
+      ),
+    ) as { windows: string[]; permissions: string[] };
 
     const csp = config.app.security?.csp ?? "";
     const devCsp = config.app.security?.devCsp ?? "";
@@ -95,8 +102,20 @@ describe("Tauri security configuration", () => {
     expect(devCsp).toContain("http://127.0.0.1:1420");
     expect(devCsp).toContain("ws://127.0.0.1:1421");
     expect(devCsp).toContain("script-src 'self' 'unsafe-eval' 'unsafe-inline'");
-    expect(capabilities.permissions).toContain("opener:allow-reveal-item-in-dir");
-    expect(capabilities.permissions).not.toContain("opener:default");
+    expect(config.app.security?.capabilities).toEqual([
+      "main",
+      "voice-capsule",
+    ]);
+    expect(mainCapability.windows).toEqual(["main"]);
+    expect(mainCapability.permissions).toContain("opener:allow-reveal-item-in-dir");
+    expect(mainCapability.permissions).not.toContain("opener:default");
+    expect(voiceCapsuleCapability.windows).toEqual(["voice-capsule"]);
+    expect(voiceCapsuleCapability.permissions).toEqual([
+      "core:window:default",
+      "core:event:default",
+      "core:window:allow-start-dragging",
+      "core:window:allow-set-position",
+    ]);
   });
 
   it("does not duplicate CSP delivery in index.html", () => {
