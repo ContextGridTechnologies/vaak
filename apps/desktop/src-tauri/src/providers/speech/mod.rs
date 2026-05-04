@@ -2,7 +2,10 @@ use async_trait::async_trait;
 
 use crate::providers::credentials;
 use crate::providers::errors::{ProviderError, ProviderFailure};
-use crate::providers::{ProviderStatus, TranscriptResult, TranscriptionInput};
+use crate::providers::{
+    normalize_audio_mime_type, normalize_language_field, normalize_optional_provider_field,
+    normalize_transcription_prompt, ProviderStatus, TranscriptResult, TranscriptionInput,
+};
 use crate::storage::LocalSettingsStore;
 
 mod assemblyai;
@@ -39,10 +42,12 @@ pub async fn transcribe(
     input: TranscriptionInput,
     settings: &LocalSettingsStore,
 ) -> Result<TranscriptResult, ProviderError> {
+    validate_provider_id(provider_id)?;
     let api_key = credentials::provider_key(provider_id)?;
     let provider_config = settings.provider_config_or_migrate(provider_id, || {
         credentials::legacy_provider_config(provider_id)
     })?;
+    let input = normalize_transcription_input(input)?;
     let input = resolve_transcription_input(provider_id, input, provider_config.clone());
 
     match provider_id {
@@ -161,6 +166,18 @@ fn resolve_transcription_input(
     }
 
     input
+}
+
+fn normalize_transcription_input(
+    input: TranscriptionInput,
+) -> Result<TranscriptionInput, ProviderError> {
+    Ok(TranscriptionInput {
+        audio: input.audio,
+        mime_type: normalize_audio_mime_type(&input.mime_type)?,
+        language: normalize_language_field(input.language)?,
+        prompt: normalize_transcription_prompt(input.prompt)?,
+        model: normalize_optional_provider_field(input.model, "model")?,
+    })
 }
 
 fn model_supports_prompt(provider_id: &str, model: Option<&str>) -> bool {
@@ -436,6 +453,38 @@ mod tests {
         let resolved = resolve_transcription_input(elevenlabs::PROVIDER_ID, input, None);
 
         assert_eq!(resolved.prompt, None);
+    }
+
+    #[test]
+    fn accepts_long_bounded_prompts_before_resolution() {
+        let prompt = "a".repeat(4_096);
+
+        let normalized = normalize_transcription_input(TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/webm".to_string(),
+            language: Some("en".to_string()),
+            prompt: Some(prompt.clone()),
+            model: Some("gpt-4o-mini-transcribe".to_string()),
+        })
+        .unwrap();
+
+        assert_eq!(normalized.prompt.as_deref(), Some(prompt.as_str()));
+    }
+
+    #[test]
+    fn rejects_over_limit_prompts_before_resolution() {
+        let prompt = "a".repeat(4_097);
+
+        let err = normalize_transcription_input(TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/webm".to_string(),
+            language: Some("en".to_string()),
+            prompt: Some(prompt),
+            model: Some("gpt-4o-mini-transcribe".to_string()),
+        })
+        .unwrap_err();
+
+        assert_eq!(err.code, "invalid_provider_request");
     }
 
     #[test]

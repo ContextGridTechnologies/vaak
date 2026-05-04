@@ -242,8 +242,8 @@ impl LocalDictationRecordStore {
             .lock()
             .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
         let full_path = self.resolve_audio_path(relative_path)?;
-        let audio_bytes = fs::read(&full_path)
-            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        let audio_bytes =
+            fs::read(&full_path).map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
 
         Ok(SavedDictationAudio {
             audio_bytes,
@@ -341,10 +341,9 @@ impl LocalDictationRecordStore {
             return Err(ProviderFailure::InvalidRequest("invalid audio path".to_string()).into());
         }
 
-        let config_dir = self
-            .records_path
-            .parent()
-            .ok_or_else(|| ProviderFailure::SettingsStore("missing config directory".to_string()))?;
+        let config_dir = self.records_path.parent().ok_or_else(|| {
+            ProviderFailure::SettingsStore("missing config directory".to_string())
+        })?;
         Ok(config_dir.join(path))
     }
 }
@@ -946,7 +945,7 @@ mod tests {
 
         let err = store.load_audio("../outside.webm").unwrap_err();
 
-        assert_eq!(err.code, "invalid_request");
+        assert_eq!(err.code, "invalid_provider_request");
     }
 
     fn temp_config_dir(name: &str) -> PathBuf {
@@ -972,7 +971,9 @@ mod tests {
         )
         .unwrap();
 
-        let records = LocalDictationRecordStore::new(&dir).list_recent(1, 0).unwrap();
+        let records = LocalDictationRecordStore::new(&dir)
+            .list_recent(1, 0)
+            .unwrap();
 
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].recording, None);

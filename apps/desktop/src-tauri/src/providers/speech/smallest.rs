@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
-use crate::providers::{TranscriptResult, TranscriptionInput};
+use crate::providers::{build_http_client, request_failure, TranscriptResult, TranscriptionInput};
 
 pub const PROVIDER_ID: &str = "smallest";
 pub const DEFAULT_MODEL: &str = "pulse";
@@ -31,7 +31,7 @@ impl SpeechProvider for SmallestSpeechProvider {
         validate_input(&input)?;
 
         let model = resolve_model(input.model.as_deref()).to_string();
-        let client = reqwest::Client::new();
+        let client = build_http_client()?;
         let response = client
             .execute(build_transcription_request(
                 &client,
@@ -44,8 +44,7 @@ impl SpeechProvider for SmallestSpeechProvider {
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(request_failure(status, &body));
+            return Err(request_failure("Smallest AI", status));
         }
 
         let payload = response.json::<SmallestTranscriptionResponse>().await?;
@@ -113,10 +112,6 @@ fn resolve_transcription_response(
         text,
         duration_ms: payload.audio_length.and_then(seconds_to_millis),
     })
-}
-
-fn request_failure(status: reqwest::StatusCode, body: &str) -> ProviderError {
-    ProviderFailure::Request(format!("Smallest AI returned {status}: {body}")).into()
 }
 
 fn seconds_to_millis(seconds: f64) -> Option<u64> {
@@ -229,13 +224,10 @@ mod tests {
     }
 
     #[test]
-    fn non_success_response_surfaces_status_and_body() {
-        let err = request_failure(reqwest::StatusCode::UNAUTHORIZED, "invalid key");
+    fn non_success_response_surfaces_status() {
+        let err = request_failure("Smallest AI", reqwest::StatusCode::UNAUTHORIZED);
 
         assert_eq!(err.code, "provider_request_failed");
-        assert_eq!(
-            err.message,
-            "Smallest AI returned 401 Unauthorized: invalid key"
-        );
+        assert_eq!(err.message, "Smallest AI returned 401 Unauthorized");
     }
 }
