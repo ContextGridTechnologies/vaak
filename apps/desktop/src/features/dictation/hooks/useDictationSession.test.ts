@@ -106,7 +106,7 @@ describe("useDictationSession", () => {
       isManualUnavailable: true,
       isResolving: false,
       manualUnavailableMessage:
-        "Selected microphone is unavailable. Choose another device or switch to system selected.",
+        "Selected microphone is unavailable. Choose another device or switch to automatic mode.",
       refresh: vi.fn(),
       requestMicrophoneAccess: vi.fn(),
       requestPermission: vi.fn(),
@@ -139,7 +139,7 @@ describe("useDictationSession", () => {
     });
     expect(startRecording).not.toHaveBeenCalled();
     expect(result.current.focusedFieldError).toBe(
-      "Selected microphone is unavailable. Choose another device or switch to system selected.",
+      "Selected microphone is unavailable. Choose another device or switch to automatic mode.",
     );
   });
 

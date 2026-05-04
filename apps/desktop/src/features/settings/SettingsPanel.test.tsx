@@ -1,6 +1,6 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { azureReadyStatus, openAiNeedsKeyStatus } from "@/test/fixtures";
 import { renderApp } from "@/test/render";
@@ -13,15 +13,96 @@ const providerApi = vi.hoisted(() => ({
   getSelectedSpeechProvider: vi.fn(),
   saveSpeechProviderSetup: vi.fn(),
   testSpeechProvider: vi.fn(),
+  isTauriRuntime: vi.fn(),
+  getMicrophoneSelection: vi.fn(),
+  saveMicrophoneSelection: vi.fn(),
+  getHotkeyBindings: vi.fn(),
+  saveDictationHotkey: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
   ...providerApi,
 }));
 
+type MockMediaDevice = {
+  kind: MediaDeviceKind;
+  deviceId: string;
+  label: string;
+};
+
+type MockTrack = {
+  label: string;
+  stop: ReturnType<typeof vi.fn>;
+  getSettings: () => MediaTrackSettings;
+};
+
+const originalMediaDevices = navigator.mediaDevices;
+const originalHasPointerCapture = HTMLElement.prototype.hasPointerCapture;
+const originalReleasePointerCapture = HTMLElement.prototype.releasePointerCapture;
+const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
+function setMediaDevices(value: Partial<MediaDevices> | undefined) {
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value,
+  });
+}
+
 describe("SettingsPanel provider setup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+
+    const enumerateDevices = vi.fn().mockResolvedValue([
+      {
+        kind: "audioinput",
+        deviceId: "default",
+        label: "Default - Studio USB microphone",
+      },
+      {
+        kind: "audioinput",
+        deviceId: "studio-usb",
+        label: "Studio USB microphone",
+      },
+      {
+        kind: "audioinput",
+        deviceId: "conference-mic",
+        label: "Conference microphone",
+      },
+    ] satisfies MockMediaDevice[]);
+    const track: MockTrack = {
+      label: "Studio USB microphone",
+      stop: vi.fn(),
+      getSettings: () => ({ deviceId: "studio-usb" }),
+    };
+
+    setMediaDevices({
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      enumerateDevices,
+      getUserMedia: vi.fn().mockResolvedValue({
+        getAudioTracks: () => [track],
+        getTracks: () => [track],
+      }),
+    });
+
+    providerApi.isTauriRuntime.mockReturnValue(false);
+    providerApi.getMicrophoneSelection.mockResolvedValue({ mode: "system" });
+    providerApi.saveMicrophoneSelection.mockImplementation((selection) =>
+      Promise.resolve(selection),
+    );
+    providerApi.getHotkeyBindings.mockResolvedValue({
+      dictation: "Ctrl+Win",
+      command: "Ctrl+Win+Alt",
+    });
+    providerApi.saveDictationHotkey.mockResolvedValue({
+      dictation: "Ctrl+Shift",
+      command: "Ctrl+Shift+Alt",
+    });
     providerApi.getProviderStatus.mockImplementation((providerId: string) => {
       if (providerId === "azure-openai") {
         return Promise.resolve(azureReadyStatus());
@@ -35,6 +116,14 @@ describe("SettingsPanel provider setup", () => {
     });
     providerApi.getSelectedSpeechProvider.mockResolvedValue("azure-openai");
     providerApi.testSpeechProvider.mockResolvedValue(azureReadyStatus());
+  });
+
+  afterEach(() => {
+    setMediaDevices(originalMediaDevices);
+    HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
+    HTMLElement.prototype.releasePointerCapture = originalReleasePointerCapture;
+    HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
   });
 
   it("loads the active Azure provider without showing the OpenAI form", async () => {
@@ -75,6 +164,80 @@ describe("SettingsPanel provider setup", () => {
     expect(screen.getByLabelText("API version")).toHaveValue(
       "2025-04-01-preview",
     );
+  });
+
+  it("shows microphone and shortcut settings as separate cards after provider setup", async () => {
+    renderApp(<SettingsPanel />);
+
+    expect(await screen.findByText("Speech provider")).toBeInTheDocument();
+
+    const microphoneCard = screen
+      .getByText("Choose the input device Vaak uses for dictation.")
+      .closest('[data-slot="card"]') as HTMLElement | null;
+    expect(microphoneCard).not.toBeNull();
+    expect(within(microphoneCard!).getAllByText("Microphone").length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      within(microphoneCard!).getByRole("button", { name: "Test microphone" }),
+    ).toBeInTheDocument();
+    expect(
+      within(microphoneCard!).getByText("Studio USB microphone (system default)"),
+    ).toBeInTheDocument();
+    expect(
+      within(microphoneCard!).getByText(
+        "Vaak follows this OS default unless you choose a specific microphone.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(microphoneCard!).queryByText("System selected"),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(within(microphoneCard!).getByRole("combobox"));
+
+    expect(
+      await screen.findByRole("option", {
+        name: "Studio USB microphone (system default)",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Studio USB microphone" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Conference microphone" }),
+    ).toBeInTheDocument();
+
+    const shortcutCard = screen
+      .getByText("Change the hold-to-talk shortcut used by the voice capsule.")
+      .closest('[data-slot="card"]') as HTMLElement | null;
+    expect(shortcutCard).not.toBeNull();
+    expect(within(shortcutCard!).getByText("Keyboard shortcut")).toBeInTheDocument();
+    expect(within(shortcutCard!).getByText("Ctrl")).toBeInTheDocument();
+    expect(within(shortcutCard!).getByText("Win")).toBeInTheDocument();
+  });
+
+  it("saves a changed dictation shortcut from Settings", async () => {
+    const user = userEvent.setup();
+    renderApp(<SettingsPanel />);
+
+    const shortcutCard = (await screen.findByText("Keyboard shortcut")).closest(
+      '[data-slot="card"]',
+    ) as HTMLElement | null;
+    expect(shortcutCard).not.toBeNull();
+
+    await user.click(
+      within(shortcutCard!).getByRole("button", { name: "Change shortcut" }),
+    );
+    await user.keyboard("{Control>}{Shift>}{/Shift}{/Control}");
+    await user.click(
+      within(shortcutCard!).getByRole("button", { name: "Save shortcut" }),
+    );
+
+    await waitFor(() => {
+      expect(providerApi.saveDictationHotkey).toHaveBeenCalledWith("Ctrl+Shift");
+    });
+    expect(within(shortcutCard!).getByText("Ctrl")).toBeInTheDocument();
+    expect(within(shortcutCard!).getByText("Shift")).toBeInTheDocument();
   });
 
   it("validates first-time Azure setup locally before calling Tauri", async () => {

@@ -86,7 +86,7 @@ export function useDictationSession() {
     recordingActiveMicrophone?.label ??
     probedActiveMicrophone?.label ??
     (selection.mode === "system"
-      ? "System selected"
+      ? "OS default microphone"
       : selectedDevice?.label || "Unavailable microphone");
   const isWindows = useMemo(() => {
     const uaPlatform = (
@@ -110,7 +110,7 @@ export function useDictationSession() {
         setActiveMode("idle");
         setFocusedFieldError(
           manualUnavailableMessage ??
-            "Selected microphone is unavailable. Choose another device or switch to system selected.",
+            "Selected microphone is unavailable. Choose another device or switch to automatic mode.",
         );
         return;
       }
