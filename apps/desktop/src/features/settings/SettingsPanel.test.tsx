@@ -149,6 +149,10 @@ describe("SettingsPanel provider setup", () => {
       "max-w-[52rem]",
     );
     expect(screen.getByTestId("settings-screen-shell").parentElement).toHaveClass(
+      "py-5",
+      "lg:py-6",
+    );
+    expect(screen.getByTestId("settings-screen-shell").parentElement).not.toHaveClass(
       "pt-[4.05rem]",
       "sm:pt-[5.0625rem]",
       "lg:pt-[6.075rem]",

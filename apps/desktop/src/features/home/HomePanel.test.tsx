@@ -247,7 +247,7 @@ describe("HomePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("centers the voice activity column with deliberate top spacing", async () => {
+  it("centers the voice activity column without a fake top-bar offset", async () => {
     getRecentDictationRecords.mockResolvedValue([]);
 
     renderApp(<HomePanel />);
@@ -255,7 +255,12 @@ describe("HomePanel", () => {
     const content = await screen.findByTestId("app-screen-content");
     const shell = await screen.findByTestId("voice-activity-shell");
 
-    expect(content).toHaveClass("pt-[4.05rem]", "sm:pt-[5.0625rem]", "lg:pt-[6.075rem]");
+    expect(content).not.toHaveClass(
+      "pt-[4.05rem]",
+      "sm:pt-[5.0625rem]",
+      "lg:pt-[6.075rem]",
+    );
+    expect(content).toHaveClass("py-5", "lg:py-6");
     expect(shell).toHaveClass("mx-auto", "w-full", "max-w-[52rem]");
   });
 

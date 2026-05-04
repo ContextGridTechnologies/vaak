@@ -158,11 +158,18 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
           <SidebarDockToggle />
         </Sidebar>
         <SidebarInset className="min-w-0 overflow-hidden">
-          {notice ? <div className="border-b px-4 py-3">{notice}</div> : null}
           <div
             data-testid="app-content-scroll-region"
             className="min-h-0 flex-1 overflow-y-auto p-0"
           >
+            {notice ? (
+              <div
+                data-testid="app-shell-notice"
+                className="mx-auto w-full max-w-[68rem] px-4 pt-4 sm:px-6"
+              >
+                {notice}
+              </div>
+            ) : null}
             {children}
           </div>
         </SidebarInset>

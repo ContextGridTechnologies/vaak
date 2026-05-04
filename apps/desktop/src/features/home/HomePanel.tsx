@@ -227,7 +227,7 @@ export function HomePanel() {
         data-testid="app-screen-content"
         className={cn(
           appScreenContentClassName,
-          "max-w-[74rem] gap-5 pt-[4.05rem] sm:pt-[5.0625rem] lg:pt-[6.075rem]",
+          "max-w-[74rem] gap-5",
         )}
       >
         <section
