@@ -56,6 +56,11 @@
   --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
+  --scrollbar-size: 0.7rem;
+  --scrollbar-radius: 9999px;
+  --scrollbar-thumb: color-mix(in oklch, var(--foreground) 24%, transparent);
+  --scrollbar-thumb-hover: color-mix(in oklch, var(--foreground) 38%, transparent);
+  --scrollbar-track: color-mix(in oklch, var(--background) 82%, transparent);
 }
 
 body {
@@ -102,6 +107,62 @@ body[data-window="voice-capsule"] #root {
 
 .voice-wave-active .voice-wave-bar:nth-child(4) {
   animation-delay: 0.36s;
+}
+
+.vaak-scroll-area {
+  scrollbar-gutter: stable;
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
+}
+
+.vaak-scroll-area:hover,
+.vaak-scroll-area:focus-visible,
+.vaak-scroll-area:focus-within {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.vaak-scroll-area::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.vaak-scroll-area:hover::-webkit-scrollbar,
+.vaak-scroll-area:focus-visible::-webkit-scrollbar,
+.vaak-scroll-area:focus-within::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+.vaak-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: var(--scrollbar-radius);
+}
+
+.vaak-scroll-area:hover::-webkit-scrollbar-track,
+.vaak-scroll-area:focus-visible::-webkit-scrollbar-track,
+.vaak-scroll-area:focus-within::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+.vaak-scroll-area::-webkit-scrollbar-thumb {
+  min-height: 2.75rem;
+  border: 3px solid transparent;
+  border-radius: var(--scrollbar-radius);
+  background-clip: content-box;
+  background-color: transparent;
+}
+
+.vaak-scroll-area:hover::-webkit-scrollbar-thumb,
+.vaak-scroll-area:focus-visible::-webkit-scrollbar-thumb,
+.vaak-scroll-area:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+
+.vaak-scroll-area:hover::-webkit-scrollbar-thumb:hover,
+.vaak-scroll-area:focus-visible::-webkit-scrollbar-thumb:hover,
+.vaak-scroll-area:focus-within::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
 }
 
 @keyframes voice-wave {

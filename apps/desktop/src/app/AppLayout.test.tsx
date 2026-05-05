@@ -100,7 +100,7 @@ describe("AppLayout", () => {
     expect(screen.getByTestId("app-shell")).toHaveClass("overflow-hidden");
     expect(screen.getByTestId("app-content-scroll-region")).toHaveClass(
       "min-h-0",
-      "overflow-y-auto",
+      "vaak-scroll-area",
     );
   });
 

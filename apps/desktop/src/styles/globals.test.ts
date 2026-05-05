@@ -31,4 +31,18 @@ describe("globals.css", () => {
     expect(readToken(":root", "--primary")).toBe("#DD6040");
     expect(readToken(".dark", "--primary")).toBe("#DD6040");
   });
+
+  it("defines the shared branded scrollbar rules with hover visibility", () => {
+    expect(globalsCss).toContain("--scrollbar-size: 0.7rem;");
+    expect(globalsCss).toContain("--scrollbar-thumb: color-mix(in oklch, var(--foreground) 24%, transparent);");
+    expect(globalsCss).toContain(".vaak-scroll-area {");
+    expect(globalsCss).toContain("scrollbar-width: none;");
+    expect(globalsCss).toContain(".vaak-scroll-area:hover,");
+    expect(globalsCss).toContain(".vaak-scroll-area:focus-visible,");
+    expect(globalsCss).toContain("scrollbar-width: thin;");
+    expect(globalsCss).toContain(".vaak-scroll-area::-webkit-scrollbar {");
+    expect(globalsCss).toContain("width: 0;");
+    expect(globalsCss).toContain(".vaak-scroll-area:hover::-webkit-scrollbar,");
+    expect(globalsCss).toContain("width: var(--scrollbar-size);");
+  });
 });
