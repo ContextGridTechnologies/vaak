@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
@@ -8,6 +9,7 @@ use crate::providers::{build_http_client, request_failure, TranscriptResult, Tra
 
 pub const PROVIDER_ID: &str = "smallest";
 pub const DEFAULT_MODEL: &str = "pulse";
+const LOG_TARGET: &str = "vaak::providers::speech::smallest";
 
 const TRANSCRIPTIONS_URL: &str = "https://api.smallest.ai/waves/v1/pulse/get_text";
 const DEFAULT_LANGUAGE: &str = "multi";
@@ -47,7 +49,8 @@ impl SpeechProvider for SmallestSpeechProvider {
             return Err(request_failure("Smallest AI", status));
         }
 
-        let payload = response.json::<SmallestTranscriptionResponse>().await?;
+        let body = response.text().await?;
+        let payload = parse_transcription_response(&body)?;
         resolve_transcription_response(payload, &model)
     }
 }
@@ -97,12 +100,34 @@ fn build_transcription_request(
         .map_err(ProviderError::from)
 }
 
+fn parse_transcription_response(body: &str) -> Result<SmallestTranscriptionResponse, ProviderError> {
+    serde_json::from_str(body).map_err(|err| {
+        log::warn!(
+            target: LOG_TARGET,
+            "smallest_transcription_parse_failed error={} body={}",
+            err,
+            summarize_response_body(body)
+        );
+        ProviderError::from(ProviderFailure::Request(format!(
+            "Smallest AI returned an unreadable response: {err}"
+        )))
+    })
+}
+
 fn resolve_transcription_response(
     payload: SmallestTranscriptionResponse,
     model: &str,
 ) -> Result<TranscriptResult, ProviderError> {
+    let transcription_present = payload.transcription.is_some();
+    let audio_length_present = payload.audio_length.is_some();
     let text = payload.transcription.unwrap_or_default();
     if text.trim().is_empty() {
+        log::warn!(
+            target: LOG_TARGET,
+            "smallest_transcription_missing_text transcription_present={} audio_length_present={}",
+            transcription_present,
+            audio_length_present
+        );
         return Err(ProviderFailure::InvalidResponse.into());
     }
 
@@ -120,6 +145,37 @@ fn seconds_to_millis(seconds: f64) -> Option<u64> {
     }
 
     Some((seconds * 1000.0).round() as u64)
+}
+
+fn summarize_response_body(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return "<empty>".to_string();
+    }
+
+    if let Ok(json) = serde_json::from_str::<Value>(trimmed) {
+        return match json {
+            Value::Object(map) => {
+                let mut keys = map.keys().map(String::as_str).collect::<Vec<_>>();
+                keys.sort_unstable();
+                format!("json_object_keys={}", keys.join(","))
+            }
+            Value::Array(values) => format!("json_array_len={}", values.len()),
+            other => truncate_for_log(&other.to_string(), 240),
+        };
+    }
+
+    truncate_for_log(trimmed, 240)
+}
+
+fn truncate_for_log(text: &str, limit: usize) -> String {
+    let mut chars = text.chars();
+    let truncated = chars.by_ref().take(limit).collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
 }
 
 #[cfg(test)]
@@ -229,5 +285,32 @@ mod tests {
 
         assert_eq!(err.code, "provider_request_failed");
         assert_eq!(err.message, "Smallest AI returned 401 Unauthorized");
+    }
+
+    #[test]
+    fn parses_complete_transcription_response_text() {
+        let payload = parse_transcription_response(
+            r#"{"transcription":"hello from pulse","audio_length":2.5}"#,
+        )
+        .expect("valid response");
+
+        assert_eq!(payload.transcription.as_deref(), Some("hello from pulse"));
+        assert_eq!(payload.audio_length, Some(2.5));
+    }
+
+    #[test]
+    fn invalid_json_response_surfaces_provider_request_failure() {
+        let err = parse_transcription_response("not-json").expect_err("invalid json should fail");
+
+        assert_eq!(err.code, "provider_request_failed");
+        assert!(err.message.contains("Smallest AI returned an unreadable response"));
+    }
+
+    #[test]
+    fn response_summary_reports_json_keys() {
+        assert_eq!(
+            summarize_response_body(r#"{"foo":1,"bar":"x"}"#),
+            "json_object_keys=bar,foo"
+        );
     }
 }
