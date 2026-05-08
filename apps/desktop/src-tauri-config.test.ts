@@ -15,6 +15,27 @@ type TauriWindowConfig = {
 type TauriConfig = {
   identifier: string;
   productName: string;
+  bundle?: {
+    active?: boolean;
+    publisher?: string | null;
+    homepage?: string | null;
+    category?: string | null;
+    shortDescription?: string | null;
+    longDescription?: string | null;
+    icon?: string[];
+    windows?: {
+      allowDowngrades?: boolean;
+      webviewInstallMode?: {
+        type?: string;
+        silent?: boolean;
+      };
+      nsis?: {
+        installerIcon?: string | null;
+        installMode?: string | null;
+        startMenuFolder?: string | null;
+      };
+    };
+  };
   app: {
     windows: TauriWindowConfig[];
     security?: {
@@ -30,11 +51,16 @@ describe("Tauri window configuration", () => {
     const config = JSON.parse(
       readFileSync(join(process.cwd(), "src-tauri", "tauri.conf.json"), "utf8"),
     ) as TauriConfig;
+    const credentialsSource = readFileSync(
+      join(process.cwd(), "src-tauri", "src", "providers", "credentials.rs"),
+      "utf8",
+    );
 
     const mainWindow = config.app.windows.find((window) => window.label === "main");
 
     expect(config.productName).toBe("Vaak");
-    expect(config.identifier).toBe("ai.vaak.app");
+    expect(config.identifier).toBe("ai.vaak.desktop");
+    expect(credentialsSource).toContain('const SERVICE_NAME: &str = "ai.vaak.desktop";');
     expect(mainWindow).toMatchObject({
       title: "Vaak",
       width: 1120,
@@ -122,6 +148,61 @@ describe("Tauri security configuration", () => {
     const indexHtml = readFileSync(join(process.cwd(), "index.html"), "utf8");
 
     expect(indexHtml).not.toContain("http-equiv=\"Content-Security-Policy\"");
+  });
+});
+
+describe("Desktop release metadata", () => {
+  it("uses production package metadata and release build settings", () => {
+    const cargoToml = readFileSync(join(process.cwd(), "src-tauri", "Cargo.toml"), "utf8");
+    const packageJson = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    ) as { name: string };
+    const rootGitignore = readFileSync(join(process.cwd(), "..", "..", ".gitignore"), "utf8");
+    const config = JSON.parse(
+      readFileSync(join(process.cwd(), "src-tauri", "tauri.conf.json"), "utf8"),
+    ) as TauriConfig;
+
+    expect(packageJson.name).toBe("vaak-desktop");
+    expect(cargoToml).toContain('name = "vaak-desktop"');
+    expect(cargoToml).toContain('description = "Open-source, local-first voice input for desktop workflows."');
+    expect(cargoToml).toContain('authors = ["Vaak Contributors"]');
+    expect(cargoToml).toContain('homepage = "https://github.com/vaak-ai/vaak"');
+    expect(cargoToml).toContain('license = "MIT"');
+    expect(cargoToml).toContain("[profile.release]");
+    expect(cargoToml).toContain('codegen-units = 1');
+    expect(cargoToml).toContain('lto = true');
+    expect(cargoToml).toContain('opt-level = "s"');
+    expect(cargoToml).toContain('panic = "abort"');
+    expect(cargoToml).toContain('strip = true');
+    expect(rootGitignore).not.toContain("src-tauri/*.lock");
+
+    expect(config.bundle).toMatchObject({
+      active: true,
+      publisher: "Vaak Contributors",
+      homepage: "https://github.com/vaak-ai/vaak",
+      category: "Productivity",
+      shortDescription: "Open-source, local-first voice input for desktop workflows.",
+      windows: {
+        allowDowngrades: false,
+        webviewInstallMode: {
+          type: "downloadBootstrapper",
+          silent: true,
+        },
+        nsis: {
+          installerIcon: "icons/icon.ico",
+          installMode: "currentUser",
+          startMenuFolder: "Vaak",
+        },
+      },
+    });
+    expect(config.bundle?.longDescription).toContain("bring your own model or API key");
+    expect(config.bundle?.icon).toEqual([
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+    ]);
   });
 });
 

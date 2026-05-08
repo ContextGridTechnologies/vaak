@@ -1,9 +1,11 @@
 [package]
-name = "appsdesktop"
+name = "vaak-desktop"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Open-source, local-first voice input for desktop workflows."
+authors = ["Vaak Contributors"]
 edition = "2021"
+homepage = "https://github.com/vaak-ai/vaak"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,7 +13,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "appsdesktop_lib"
+name = "vaak_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -44,3 +46,10 @@ windows = { version = "0.56", features = [
 windows-sys = { version = "0.59", features = [
   "Win32_Graphics_Gdi"
 ] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

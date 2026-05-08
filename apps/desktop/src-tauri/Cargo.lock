@@ -76,28 +76,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
-name = "appsdesktop"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "dirs",
- "keyring",
- "log",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-log",
- "tauri-plugin-opener",
- "thiserror 2.0.17",
- "tokio",
- "uuid",
- "windows 0.56.0",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4767,6 +4745,28 @@ dependencies = [
  "js-sys",
  "serde_core",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "vaak-desktop"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dirs",
+ "keyring",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-log",
+ "tauri-plugin-opener",
+ "thiserror 2.0.17",
+ "tokio",
+ "uuid",
+ "windows 0.56.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
