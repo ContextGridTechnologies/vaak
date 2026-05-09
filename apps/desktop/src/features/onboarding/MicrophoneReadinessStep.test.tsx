@@ -2,9 +2,21 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { selectComboboxOption } from "@/test/select";
 import { renderApp } from "@/test/render";
 
 import { MicrophoneReadinessStep } from "./MicrophoneReadinessStep";
+
+const tauriApi = vi.hoisted(() => ({
+  getMicrophoneSelection: vi.fn(),
+  isTauriRuntime: vi.fn(),
+  saveMicrophoneSelection: vi.fn(),
+}));
+
+vi.mock("@/lib/tauri", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri")),
+  ...tauriApi,
+}));
 
 type MockMediaDevice = {
   kind: MediaDeviceKind;
@@ -33,10 +45,16 @@ function setMediaDevices(value: Partial<MediaDevices> | undefined) {
 
 describe("MicrophoneReadinessStep", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
     HTMLElement.prototype.releasePointerCapture = vi.fn();
     HTMLElement.prototype.setPointerCapture = vi.fn();
     HTMLElement.prototype.scrollIntoView = vi.fn();
+    tauriApi.isTauriRuntime.mockReturnValue(false);
+    tauriApi.getMicrophoneSelection.mockResolvedValue({ mode: "system" });
+    tauriApi.saveMicrophoneSelection.mockImplementation((selection) =>
+      Promise.resolve(selection),
+    );
 
     const enumerateDevices = vi
       .fn()
@@ -241,14 +259,18 @@ describe("MicrophoneReadinessStep", () => {
       expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
     });
 
-    await user.click(screen.getByRole("combobox"));
-    await user.click(await screen.findByText("Studio USB microphone"));
+    await selectComboboxOption(
+      user,
+      screen.getByRole("combobox"),
+      "Studio USB microphone",
+    );
     await user.click(screen.getByRole("button", { name: "Refresh" }));
 
     const unavailableMessage =
       "Selected microphone is unavailable. Choose another device or switch to automatic mode.";
 
     await waitFor(() => {
+      expect(enumerateDevices).toHaveBeenCalledTimes(3);
       expect(screen.getAllByText(unavailableMessage).length).toBeGreaterThan(0);
       expect(screen.getByText("Needs attention")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();

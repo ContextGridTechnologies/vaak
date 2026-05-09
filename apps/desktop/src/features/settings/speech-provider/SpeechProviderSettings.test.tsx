@@ -4,6 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { azureReadyStatus, openAiNeedsKeyStatus } from "@/test/fixtures";
 import { renderApp } from "@/test/render";
+import { selectComboboxOption } from "@/test/select";
 
 import { SpeechProviderSettings } from "./SpeechProviderSettings";
 
@@ -88,9 +89,11 @@ describe("SpeechProviderSettings", () => {
   it("renders provider setup without the generic Settings heading in onboarding variant", async () => {
     renderApp(<SpeechProviderSettings variant="onboarding" />);
 
-    expect(
-      await screen.findByRole("heading", { name: "OpenAI" }),
-    ).toBeInTheDocument();
+    const modelCombobox = await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => {
+      expect(modelCombobox).toHaveTextContent("GPT-4o mini Transcribe");
+    });
+    expect(screen.getByRole("heading", { name: "OpenAI" })).toBeInTheDocument();
     expect(screen.getByText("Speech provider")).toBeInTheDocument();
     expect(screen.getAllByRole("combobox")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "OpenAI" })).toBeInTheDocument();
@@ -190,16 +193,19 @@ describe("SpeechProviderSettings", () => {
 
     renderApp(<SpeechProviderSettings variant="settings" />);
 
-    await screen.findByRole("heading", { name: "OpenAI" });
+    const modelCombobox = await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => {
+      expect(modelCombobox).toHaveTextContent("GPT-4o Transcribe");
+    });
     expect(
       screen.getByText("Providers, microphone, hotkey, and app preferences."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent(
-      "GPT-4o Transcribe",
-    );
 
-    await user.click(screen.getByRole("combobox", { name: "Model" }));
-    await user.click(screen.getByRole("option", { name: "GPT-4o mini Transcribe" }));
+    await selectComboboxOption(
+      user,
+      modelCombobox,
+      "GPT-4o mini Transcribe",
+    );
     await user.type(screen.getByLabelText("API key"), "sk-test");
     await user.click(screen.getByRole("button", { name: "Save and use OpenAI" }));
 
@@ -231,11 +237,11 @@ describe("SpeechProviderSettings", () => {
     renderApp(<SpeechProviderSettings variant="settings" />);
 
     await user.click(await screen.findByRole("button", { name: "ElevenLabs" }));
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent(
-      "Scribe v1",
-    );
-    await user.click(screen.getByRole("combobox", { name: "Model" }));
-    await user.click(screen.getByRole("option", { name: "Scribe v2" }));
+    const modelCombobox = await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => {
+      expect(modelCombobox).toHaveTextContent("Scribe v1");
+    });
+    await selectComboboxOption(user, modelCombobox, "Scribe v2");
     await user.type(screen.getByLabelText("API key"), "el-test");
     await user.click(screen.getByRole("button", { name: "Save and use ElevenLabs" }));
 
@@ -278,11 +284,11 @@ describe("SpeechProviderSettings", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "AssemblyAI" }));
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent(
-      "Universal-2",
-    );
-    await user.click(screen.getByRole("combobox", { name: "Model" }));
-    await user.click(screen.getByRole("option", { name: "Universal-3 Pro" }));
+    const modelCombobox = await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => {
+      expect(modelCombobox).toHaveTextContent("Universal-2");
+    });
+    await selectComboboxOption(user, modelCombobox, "Universal-3 Pro");
     await user.type(screen.getByLabelText("API key"), "aa-test");
     await user.click(screen.getByRole("button", { name: "Save and use AssemblyAI" }));
 
