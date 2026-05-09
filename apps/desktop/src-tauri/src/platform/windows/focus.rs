@@ -413,6 +413,32 @@ mod tests {
     }
 
     #[test]
+    fn best_candidate_selection_prefers_send_input_for_focused_chromium_terminal_textarea() {
+        let candidates = vec![FocusCandidateDiagnostics::for_test("xterm-helper")
+            .with_control_type("Edit", 50004)
+            .with_keyboard_focus(true)
+            .with_keyboard_focusable(true)
+            .with_value_pattern(true)
+            .with_text_pattern(true)
+            .with_framework_id("Chrome")
+            .with_class_name("xterm-helper-textarea")
+            .with_control_name("pwsh")];
+
+        let selected =
+            select_best_candidate(candidates).expect("chromium terminal helper should be selected");
+
+        assert_eq!(selected.snapshot.stable_id, "xterm-helper");
+        assert_eq!(
+            selected.accept_reason.as_deref(),
+            Some("keyboard-focused terminal surface")
+        );
+        assert_eq!(
+            selected.selected_strategy,
+            Some(InsertionStrategy::SendInput)
+        );
+    }
+
+    #[test]
     fn best_candidate_selection_rejects_generic_text_without_terminal_hints() {
         let candidates = vec![FocusCandidateDiagnostics::for_test("generic-text")
             .with_control_type("Text", 50020)

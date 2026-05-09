@@ -100,7 +100,9 @@ fn build_transcription_request(
         .map_err(ProviderError::from)
 }
 
-fn parse_transcription_response(body: &str) -> Result<SmallestTranscriptionResponse, ProviderError> {
+fn parse_transcription_response(
+    body: &str,
+) -> Result<SmallestTranscriptionResponse, ProviderError> {
     serde_json::from_str(body).map_err(|err| {
         log::warn!(
             target: LOG_TARGET,
@@ -303,7 +305,9 @@ mod tests {
         let err = parse_transcription_response("not-json").expect_err("invalid json should fail");
 
         assert_eq!(err.code, "provider_request_failed");
-        assert!(err.message.contains("Smallest AI returned an unreadable response"));
+        assert!(err
+            .message
+            .contains("Smallest AI returned an unreadable response"));
     }
 
     #[test]

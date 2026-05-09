@@ -283,7 +283,7 @@ fn looks_like_terminal_surface(candidate: &FocusCandidateDiagnostics) -> bool {
 
     let control_type_matches = matches!(
         candidate.snapshot.control_type.as_str(),
-        "Document" | "Pane" | "Custom" | "Text"
+        "Edit" | "Document" | "Pane" | "Custom" | "Text"
     );
 
     control_type_matches && has_terminal_hint(candidate)
