@@ -138,9 +138,7 @@ export function useAudioRecorder(
 
     const setupPromise = (async () => {
       const context = new AudioContext();
-      await context.audioWorklet.addModule(
-        new URL("./audioCaptureProcessor.js", import.meta.url),
-      );
+      await context.audioWorklet.addModule(workletModuleUrl());
       const source = context.createMediaStreamSource(stream);
       const node = new AudioWorkletNode(context, "vaak-capture-analysis", {
         numberOfOutputs: 0,
@@ -470,4 +468,8 @@ function normalizedLevel(samples: Float32Array) {
 
   const rms = Math.sqrt(sum / samples.length);
   return Math.max(0, Math.min(1, rms * 4));
+}
+
+function workletModuleUrl() {
+  return new URL("/audioCaptureProcessor.js", globalThis.location.origin).toString();
 }

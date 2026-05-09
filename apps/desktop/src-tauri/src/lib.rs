@@ -98,21 +98,34 @@ pub fn run() {
 fn build_log_plugin(
     runtime_config: config::RuntimeConfig,
 ) -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    let mut builder = tauri_plugin_log::Builder::new()
-        .clear_targets()
-        .target(Target::new(TargetKind::LogDir {
-            file_name: Some("backend".to_string()),
-        }))
-        .level(runtime_config.log_level.as_level_filter())
-        .level_for(
-            "appsdesktop_lib::platform::windows",
-            runtime_config.log_level.as_level_filter(),
-        );
-
     #[cfg(debug_assertions)]
     {
-        builder = builder.target(Target::new(TargetKind::Stdout));
+        let builder = tauri_plugin_log::Builder::new()
+            .clear_targets()
+            .target(Target::new(TargetKind::LogDir {
+                file_name: Some("backend".to_string()),
+            }))
+            .level(runtime_config.log_level.as_level_filter())
+            .level_for(
+                "vaak_desktop_lib::platform::windows",
+                runtime_config.log_level.as_level_filter(),
+            )
+            .target(Target::new(TargetKind::Stdout));
+        return builder.build();
     }
 
-    builder.build()
+    #[cfg(not(debug_assertions))]
+    {
+        tauri_plugin_log::Builder::new()
+            .clear_targets()
+            .target(Target::new(TargetKind::LogDir {
+                file_name: Some("backend".to_string()),
+            }))
+            .level(runtime_config.log_level.as_level_filter())
+            .level_for(
+                "vaak_desktop_lib::platform::windows",
+                runtime_config.log_level.as_level_filter(),
+            )
+            .build()
+    }
 }
