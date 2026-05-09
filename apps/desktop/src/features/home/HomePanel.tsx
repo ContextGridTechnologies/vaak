@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
 } from "@/components/ui/card";
+import { appEnvironment } from "@/config/app-env";
 import {
   Empty,
   EmptyDescription,
@@ -226,7 +227,7 @@ export function HomePanel() {
         data-testid="app-screen-content"
         className={cn(
           appScreenContentClassName,
-          "max-w-[74rem] gap-5 pt-[4.05rem] sm:pt-[5.0625rem] lg:pt-[6.075rem]",
+          "max-w-[74rem] gap-5",
         )}
       >
         <section
@@ -328,6 +329,9 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
   >(null);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const processedAudio = appEnvironment.exposeProcessedAudioArtifacts
+    ? activity.processedAudio
+    : null;
 
   useEffect(() => {
     return () => {
@@ -356,7 +360,7 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
 
   const handlePlayAudio = async (kind: "original" | "processed") => {
     const artifact =
-      kind === "original" ? activity.audio : activity.processedAudio;
+      kind === "original" ? activity.audio : processedAudio;
     const currentUrl = kind === "original" ? originalAudioUrl : processedAudioUrl;
     const setUrl = kind === "original" ? setOriginalAudioUrl : setProcessedAudioUrl;
 
@@ -414,7 +418,7 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
 
   const handleDownloadAudio = async (kind: "original" | "processed") => {
     const artifact =
-      kind === "original" ? activity.audio : activity.processedAudio;
+      kind === "original" ? activity.audio : processedAudio;
     if (!artifact) {
       return;
     }
@@ -509,7 +513,7 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
             */}
           </div>
 
-          {activity.audio || activity.processedAudio ? (
+          {activity.audio || processedAudio ? (
             <div className="flex flex-col gap-2 border-t border-border/60 pt-2">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
@@ -523,9 +527,9 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
                       void handlePlayAudio("original");
                     },
                   }) : null}
-                  {activity.processedAudio ? renderAudioControl({
+                  {processedAudio ? renderAudioControl({
                     appName: activity.appName,
-                    byteLength: activity.processedAudio.byteLength,
+                    byteLength: processedAudio.byteLength,
                     isLoading: loadingAudioKind === "processed",
                     isOpen: isProcessedAudioOpen,
                     kind: "processed",

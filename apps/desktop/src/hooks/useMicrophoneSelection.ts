@@ -38,7 +38,7 @@ type UseMicrophoneSelectionActions = {
 
 const DEFAULT_SELECTION: MicrophoneSelection = { mode: "system" };
 const MANUAL_UNAVAILABLE_MESSAGE =
-  "Selected microphone is unavailable. Choose another device or switch to system selected.";
+  "Selected microphone is unavailable. Choose another device or switch to automatic mode.";
 
 export function microphoneConstraints(
   selection: MicrophoneSelection,

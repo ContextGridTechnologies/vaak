@@ -100,7 +100,25 @@ describe("AppLayout", () => {
     expect(screen.getByTestId("app-shell")).toHaveClass("overflow-hidden");
     expect(screen.getByTestId("app-content-scroll-region")).toHaveClass(
       "min-h-0",
-      "overflow-y-auto",
+      "vaak-scroll-area",
+    );
+  });
+
+  it("keeps preview notices inside the main scroll region instead of as a fake top bar", () => {
+    renderLayout(
+      <AppLayout notice={<div>Browser preview notice</div>}>
+        <TabsContent value="home">Home content</TabsContent>
+      </AppLayout>,
+    );
+
+    const scrollRegion = screen.getByTestId("app-content-scroll-region");
+
+    expect(scrollRegion).toContainElement(
+      screen.getByText("Browser preview notice"),
+    );
+    expect(scrollRegion.firstElementChild).toHaveAttribute(
+      "data-testid",
+      "app-shell-notice",
     );
   });
 

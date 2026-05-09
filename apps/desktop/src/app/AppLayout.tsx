@@ -19,6 +19,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs } from "@/components/ui/tabs";
 import {
   getAppShellPreferences,
@@ -158,13 +159,20 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
           <SidebarDockToggle />
         </Sidebar>
         <SidebarInset className="min-w-0 overflow-hidden">
-          {notice ? <div className="border-b px-4 py-3">{notice}</div> : null}
-          <div
+          <ScrollArea
             data-testid="app-content-scroll-region"
-            className="min-h-0 flex-1 overflow-y-auto p-0"
+            className="flex-1 p-0"
           >
+            {notice ? (
+              <div
+                data-testid="app-shell-notice"
+                className="mx-auto w-full max-w-[68rem] px-4 pt-4 sm:px-6"
+              >
+                {notice}
+              </div>
+            ) : null}
             {children}
-          </div>
+          </ScrollArea>
         </SidebarInset>
       </SidebarProvider>
     </Tabs>

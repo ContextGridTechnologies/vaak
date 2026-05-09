@@ -44,7 +44,7 @@ export function MicrophoneReadinessStep({
   } = useMicrophoneSelection();
   const canContinue = Boolean(activeMicrophone) && !isManualUnavailable;
   const selectionLabel =
-    selection.mode === "manual" ? "Manual selection" : "System selected";
+    selection.mode === "manual" ? "Specific microphone" : "Automatic default";
   const readinessTone = activeMicrophone
     ? "success"
     : hasPermission

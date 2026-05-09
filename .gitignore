@@ -19,10 +19,12 @@ target/
 
 # Tauri bundler outputs
 src-tauri/target/release/bundle/
-src-tauri/*.lock # (uncommitted build artifacts, keep Cargo.lock if desired)
 
 # Environment
 .env
+.env.development
+.env.production
+.env.test
 .env.local
 .env.*.local
 

@@ -1,4 +1,5 @@
 mod commands;
+mod config;
 mod platform;
 mod providers;
 mod session;
@@ -10,9 +11,15 @@ use tauri_plugin_log::{Target, TargetKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let runtime_config = config::RuntimeConfig::from_process_env().unwrap_or_else(|err| {
+        eprintln!("invalid Vaak runtime config: {err}");
+        std::process::exit(1);
+    });
+
     tauri::Builder::default()
         .manage(session::SessionStore::default())
-        .plugin(build_log_plugin())
+        .manage(runtime_config)
+        .plugin(build_log_plugin(runtime_config))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let settings_store =
@@ -88,16 +95,18 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+fn build_log_plugin(
+    runtime_config: config::RuntimeConfig,
+) -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let mut builder = tauri_plugin_log::Builder::new()
         .clear_targets()
         .target(Target::new(TargetKind::LogDir {
             file_name: Some("backend".to_string()),
         }))
-        .level(log::LevelFilter::Info)
+        .level(runtime_config.log_level.as_level_filter())
         .level_for(
             "appsdesktop_lib::platform::windows",
-            log::LevelFilter::Trace,
+            runtime_config.log_level.as_level_filter(),
         );
 
     #[cfg(debug_assertions)]

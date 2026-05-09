@@ -4,7 +4,10 @@ use serde::Deserialize;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
-use crate::providers::{ProviderConfig, TranscriptResult, TranscriptionInput};
+use crate::providers::{
+    build_http_client, normalize_provider_config, request_failure, ProviderConfig,
+    TranscriptResult, TranscriptionInput,
+};
 
 pub const PROVIDER_ID: &str = "azure-openai";
 const DEFAULT_API_VERSION: &str = "2025-04-01-preview";
@@ -23,28 +26,19 @@ struct AzureTranscriptionResponse {
 
 impl AzureOpenAiSpeechProvider {
     pub fn new(config: ProviderConfig) -> Result<Self, ProviderError> {
-        let endpoint = required_field(config.endpoint, "Azure OpenAI endpoint")?;
-        let deployment_id = required_field(config.deployment_id, "Azure OpenAI deployment id")?;
-        let api_version = config
+        let normalized = normalize_provider_config(PROVIDER_ID, config)?;
+        let endpoint = normalized.endpoint.ok_or_else(|| {
+            ProviderFailure::InvalidRequest("Azure OpenAI endpoint is required".to_string())
+        })?;
+        let deployment_id = normalized.deployment_id.ok_or_else(|| {
+            ProviderFailure::InvalidRequest("Azure OpenAI deployment id is required".to_string())
+        })?;
+        let api_version = normalized
             .api_version
-            .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_API_VERSION.to_string());
 
-        if !endpoint.starts_with("https://") && !endpoint.starts_with("http://") {
-            return Err(ProviderFailure::InvalidRequest(
-                "Azure OpenAI endpoint must start with http:// or https://".to_string(),
-            )
-            .into());
-        }
-        if deployment_id.contains('/') {
-            return Err(ProviderFailure::InvalidRequest(
-                "Azure OpenAI deployment id cannot contain /".to_string(),
-            )
-            .into());
-        }
-
         Ok(Self {
-            endpoint: endpoint.trim_end_matches('/').to_string(),
+            endpoint,
             deployment_id,
             api_version,
         })
@@ -100,7 +94,7 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
             form = form.text("prompt", prompt);
         }
 
-        let response = reqwest::Client::new()
+        let response = build_http_client()?
             .post(self.transcription_url())
             .header("api-key", api_key)
             .multipart(form)
@@ -109,20 +103,10 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(ProviderFailure::Request(format!(
-                "Azure OpenAI returned {status}: {body}"
-            ))
-            .into());
+            return Err(request_failure("Azure OpenAI", status));
         }
 
         let body = response.text().await?;
-        log::info!(
-            "[vaak][provider][azure-openai] transcription_response deployment_id={} body={}",
-            self.deployment_id,
-            body
-        );
-
         let payload = parse_transcription_response(&body)?;
         if payload.text.trim().is_empty() {
             return Err(ProviderFailure::InvalidResponse.into());
@@ -138,19 +122,8 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
 }
 
 fn parse_transcription_response(body: &str) -> Result<AzureTranscriptionResponse, ProviderError> {
-    serde_json::from_str::<AzureTranscriptionResponse>(body).map_err(|err| {
-        ProviderFailure::Request(format!(
-            "failed to parse Azure OpenAI transcription response: {err}; body: {body}"
-        ))
-        .into()
-    })
-}
-
-fn required_field(value: Option<String>, label: &str) -> Result<String, ProviderError> {
-    value
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| ProviderFailure::InvalidRequest(format!("{label} is required")).into())
+    serde_json::from_str::<AzureTranscriptionResponse>(body)
+        .map_err(|_| ProviderFailure::InvalidResponse.into())
 }
 
 fn file_name_for_mime(mime_type: &str) -> &'static str {
@@ -175,6 +148,22 @@ mod tests {
             endpoint: Some("https://example.openai.azure.com/".to_string()),
             deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
+            model: None,
+        })
+        .expect("valid config");
+
+        assert_eq!(
+            provider.transcription_url(),
+            "https://example.openai.azure.com/openai/deployments/gpt-4o-mini-transcribe/audio/transcriptions?api-version=2025-04-01-preview"
+        );
+    }
+
+    #[test]
+    fn builds_transcription_url_with_default_api_version() {
+        let provider = AzureOpenAiSpeechProvider::new(ProviderConfig {
+            endpoint: Some("https://example.openai.azure.com".to_string()),
+            deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
+            api_version: None,
             model: None,
         })
         .expect("valid config");

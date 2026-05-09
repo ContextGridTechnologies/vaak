@@ -47,34 +47,47 @@ Build a profitable open-core voice product:
 
 ## Active Milestones
 
-### Milestone 1: Local BYOM Dictation Loop
+### Milestone 1: Local BYOM Dictation Foundation
 
-Status: active next milestone.
+Status: mostly built, closeout in progress.
 
-Goal: make the app useful without login or backend.
+Goal: make the app useful without login or backend on the primary desktop path.
 
-Deliverables:
+Current state:
 
-- First-run experience for local mode and provider setup.
-- Local provider settings for transcription and rewrite.
-- Secure local API key storage.
-- Audio recording to transcription provider.
-- Transcript cleanup/rewrite through a selected model.
-- Text insertion into the focused app.
-- Visible latency, errors, and retry states.
+- First-run onboarding for local mode is implemented.
+- Microphone readiness, provider setup, and hold-to-talk verification are implemented.
+- Local speech-provider settings and secure local API key storage are implemented.
+- Speech adapters are implemented for OpenAI, Azure OpenAI, AssemblyAI,
+  ElevenLabs, and Smallest AI.
+- Hold-to-talk capture and manual floating voice capsule capture are implemented.
+- Focus capture and guarded text insertion into the original target are implemented
+  on Windows.
+- Local dictation records, audio artifacts, and activity history are implemented.
+- No Vaak backend account is required for the local dictation path.
+
+Closeout work:
+
+- Finish the transcript cleanup/rewrite stage behind the provider boundary.
+- Tighten quality and recovery across more real target apps and edge cases.
+- Align the shipped provider set with the public provider roadmap.
+- Package the current Windows build clearly enough for wider developer testing.
 
 Exit criteria:
 
-- A user can check out the repo, run the desktop app, add their own provider key,
-  dictate into another app, and see clean text inserted.
-- No Vaak backend account is required.
+- A user can check out the repo, run the desktop app, complete onboarding, add
+  their own provider key, dictate into another app, and see reliable text
+  inserted without any Vaak account.
+- The app exposes clear states for recording, transcription, insertion, and
+  recoverable failure.
 
-### Milestone 2: Local Personalization
+### Milestone 2: Quality And Personalization
 
-Goal: improve quality enough that users prefer Vaak over raw transcription.
+Goal: make Vaak meaningfully better than raw transcription while staying local-first.
 
 Deliverables:
 
+- Transcript cleanup/rewrite through a selected model.
 - Personal dictionary.
 - Snippets.
 - Rewrite styles.
@@ -85,6 +98,8 @@ Exit criteria:
 
 - Dictation output respects user vocabulary, names, snippets, and preferred
   writing style.
+- Users can choose between direct transcript insertion and a more polished
+  rewrite path.
 
 ### Milestone 3: Open-Source Launch Readiness
 
@@ -170,10 +185,9 @@ metered or bounded.
 
 ## Current First Step
 
-Continue Milestone 1 implementation from the desktop shell baseline:
+Close out Milestone 1 from the working Windows desktop baseline:
 
-- app shell, sidebar navigation, account placeholder, and Home empty state are
-  in place
-- next focus is completing the local dictation loop: microphone readiness,
-  provider readiness, hotkey-driven capture, transcription, and insertion into
-  the focused app
+- onboarding, provider setup, hotkey capture, floating voice capsule, local
+  activity history, transcription, and guarded insertion are already in place
+- next focus is reliability, rewrite-stage completion, and packaging the
+  current Windows experience for broader testing before expanding native support

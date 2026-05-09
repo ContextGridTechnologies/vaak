@@ -55,6 +55,11 @@ describe("MicrophoneReadinessStep", () => {
       .mockResolvedValueOnce([
         {
           kind: "audioinput",
+          deviceId: "default",
+          label: "Default - Studio USB microphone",
+        },
+        {
+          kind: "audioinput",
           deviceId: "laptop-mic",
           label: "Laptop microphone",
         },
@@ -142,6 +147,9 @@ describe("MicrophoneReadinessStep", () => {
       expect(screen.getByRole("combobox")).toBeInTheDocument();
       expect(screen.getByRole("combobox")).toHaveAttribute("data-size", "sm");
       expect(screen.getByRole("combobox")).toHaveClass("whitespace-normal");
+      expect(
+        screen.getByText("Studio USB microphone (system default)"),
+      ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Refresh" })).toHaveAttribute(
         "data-size",
@@ -238,7 +246,7 @@ describe("MicrophoneReadinessStep", () => {
     await user.click(screen.getByRole("button", { name: "Refresh" }));
 
     const unavailableMessage =
-      "Selected microphone is unavailable. Choose another device or switch to system selected.";
+      "Selected microphone is unavailable. Choose another device or switch to automatic mode.";
 
     await waitFor(() => {
       expect(screen.getAllByText(unavailableMessage).length).toBeGreaterThan(0);

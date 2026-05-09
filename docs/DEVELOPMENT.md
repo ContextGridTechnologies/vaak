@@ -36,6 +36,43 @@ npm install
 npm run tauri dev
 ```
 
+## Environment Configuration
+
+Vaak keeps environment variables for app/runtime configuration only. Provider
+API keys must stay in the OS keyring through the app UI; do not put provider
+keys in `.env` files or `VITE_*` variables.
+
+Committed examples live in:
+
+- `apps/desktop/.env.example`
+- `apps/desktop/.env.development.example`
+- `apps/desktop/.env.production.example`
+
+Local real env files are ignored by Git:
+
+- `apps/desktop/.env.development`
+- `apps/desktop/.env.production`
+- `apps/desktop/.env.local`
+
+Frontend values use `VITE_*` and are bundled into the WebView. Treat them as
+public. Backend/runtime values use `VAAK_*` and are read by the Tauri process
+when the process environment provides them.
+
+Production-safe defaults:
+
+```powershell
+VITE_APP_ENV=production
+VITE_ENABLE_DEBUG_UI=false
+VAAK_APP_ENV=production
+VAAK_LOG_LEVEL=info
+VAAK_UPDATE_CHANNEL=stable
+VAAK_ENABLE_TELEMETRY=false
+```
+
+Processed audio artifacts are development-only. In production, Vaak may still
+use processed audio in memory for transcription quality, but it does not persist
+or expose the processed audio artifact in the activity feed.
+
 ## Build the App
 
 ```powershell

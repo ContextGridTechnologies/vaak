@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
-use crate::providers::{TranscriptResult, TranscriptionInput};
+use crate::providers::{build_http_client, request_failure, TranscriptResult, TranscriptionInput};
 
 pub const PROVIDER_ID: &str = "elevenlabs";
 const DEFAULT_MODEL: &str = "scribe_v2";
@@ -70,7 +70,7 @@ impl SpeechProvider for ElevenLabsSpeechProvider {
             form = form.text("language_code", language_code);
         }
 
-        let response = reqwest::Client::new()
+        let response = build_http_client()?
             .post(request.url)
             .header("xi-api-key", api_key)
             .multipart(form)
@@ -79,10 +79,7 @@ impl SpeechProvider for ElevenLabsSpeechProvider {
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(
-                ProviderFailure::Request(format!("ElevenLabs returned {status}: {body}")).into(),
-            );
+            return Err(request_failure("ElevenLabs", status));
         }
 
         let payload = response.json::<ElevenLabsTranscriptionResponse>().await?;

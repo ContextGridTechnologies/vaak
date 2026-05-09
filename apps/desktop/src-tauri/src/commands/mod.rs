@@ -17,6 +17,8 @@ use crate::windowing;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const SPEECH_PROVIDER_CHANGED_EVENT: &str = "vaak://speech-provider-changed";
+const MAX_RECENT_RECORD_LIMIT: usize = 200;
+const MAX_RECENT_RECORD_OFFSET: usize = 10_000;
 
 #[tauri::command]
 pub fn get_focused_field() -> Result<FocusedFieldInfo, PlatformError> {
@@ -86,7 +88,22 @@ pub fn get_recent_dictation_records(
     offset: Option<usize>,
     records: State<'_, LocalDictationRecordStore>,
 ) -> Result<Vec<DictationRecordV1>, ProviderError> {
-    records.list_recent(limit.unwrap_or(12), offset.unwrap_or(0))
+    let limit = limit.unwrap_or(12);
+    let offset = offset.unwrap_or(0);
+    if limit == 0 || limit > MAX_RECENT_RECORD_LIMIT {
+        return Err(ProviderFailure::InvalidRequest(format!(
+            "record limit must be between 1 and {MAX_RECENT_RECORD_LIMIT}"
+        ))
+        .into());
+    }
+    if offset > MAX_RECENT_RECORD_OFFSET {
+        return Err(ProviderFailure::InvalidRequest(format!(
+            "record offset must be at most {MAX_RECENT_RECORD_OFFSET}"
+        ))
+        .into());
+    }
+
+    records.list_recent(limit, offset)
 }
 
 #[tauri::command]
@@ -96,6 +113,7 @@ pub fn persist_dictation_audio(
     captured_at: String,
     records: State<'_, LocalDictationRecordStore>,
 ) -> Result<DictationAudioArtifact, ProviderError> {
+    let mime_type = crate::providers::normalize_audio_mime_type(&mime_type)?;
     records.persist_audio(audio_bytes, mime_type, &captured_at)
 }
 
@@ -137,6 +155,7 @@ pub fn save_provider_config(
     settings: State<'_, LocalSettingsStore>,
 ) -> Result<ProviderStatus, ProviderError> {
     speech::validate_provider_id(&provider_id)?;
+    let config = crate::providers::normalize_provider_config(&provider_id, config)?;
     settings.save_provider_config(&provider_id, &config)?;
     speech::provider_status(&provider_id, &settings)
 }
@@ -154,6 +173,7 @@ pub fn save_speech_provider_setup(
     let api_key = api_key.trim();
 
     if let Some(config) = config {
+        let config = crate::providers::normalize_provider_config(&provider_id, config)?;
         settings.save_provider_config(&provider_id, &config)?;
     }
 
@@ -333,7 +353,8 @@ pub fn complete_onboarding(
             preferences.voice_capsule_placement.as_ref(),
         )
         .map_err(ProviderFailure::SettingsStore)?;
-        windowing::show_voice_capsule_window(&voice_capsule).map_err(ProviderFailure::SettingsStore)?;
+        windowing::show_voice_capsule_window(&voice_capsule)
+            .map_err(ProviderFailure::SettingsStore)?;
     }
     Ok(saved_state)
 }
@@ -348,6 +369,7 @@ pub async fn transcribe_recording(
     model: Option<String>,
     settings: State<'_, LocalSettingsStore>,
 ) -> Result<TranscriptResult, ProviderError> {
+    speech::validate_provider_id(&provider_id)?;
     speech::transcribe(
         &provider_id,
         TranscriptionInput {

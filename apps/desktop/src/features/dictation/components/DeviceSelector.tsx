@@ -17,6 +17,11 @@ import { Spinner } from "@/components/ui/spinner";
 import type { AudioInputDevice } from "@/hooks/useAudioDevices";
 import type { MicrophoneSelection } from "@/hooks/useMicrophoneSelection";
 
+import {
+  isSystemDefaultMicrophoneDuplicate,
+  systemDefaultMicrophoneLabel,
+} from "./microphoneLabels";
+
 type DeviceSelectorProps = {
   deviceOptions: AudioInputDevice[];
   selection: MicrophoneSelection;
@@ -42,10 +47,14 @@ export function DeviceSelector({
 }: DeviceSelectorProps) {
   const selectableDevices = deviceOptions.filter(
     (device) =>
-      device.deviceId.trim().length > 0 && device.deviceId !== "default",
+      device.deviceId.trim().length > 0 &&
+      device.deviceId !== "default" &&
+      !isSystemDefaultMicrophoneDuplicate(device, deviceOptions),
   );
   const selectedValue =
     selection.mode === "manual" ? selection.deviceId : "system";
+  const defaultMicrophoneLabel =
+    systemDefaultMicrophoneLabel(deviceOptions);
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
@@ -77,8 +86,11 @@ export function DeviceSelector({
                   className="w-[var(--radix-select-trigger-width)] max-w-[var(--radix-select-trigger-width)]"
                 >
                   <SelectGroup>
-                    <SelectItem className="items-start py-2 whitespace-normal break-words" value="system">
-                      System selected
+                    <SelectItem
+                      className="items-start py-2 whitespace-normal break-words"
+                      value="system"
+                    >
+                      {defaultMicrophoneLabel}
                     </SelectItem>
                     {selectableDevices.map((device, index) => (
                       <SelectItem
@@ -115,8 +127,8 @@ export function DeviceSelector({
             </div>
             <FieldDescription>
               {selection.mode === "manual"
-                ? "Pinned to a specific input until you switch back to system selected."
-                : "Use system selected unless you need to pin a specific microphone."}
+                ? "Pinned to this input until you switch back to automatic mode."
+                : "Vaak follows this OS default unless you choose a specific microphone."}
             </FieldDescription>
             {manualUnavailableMessage ? (
               <FieldDescription className="text-destructive">

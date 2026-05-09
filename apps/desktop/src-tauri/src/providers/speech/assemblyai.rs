@@ -5,14 +5,13 @@ use std::time::Duration;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
-use crate::providers::{TranscriptResult, TranscriptionInput};
+use crate::providers::{build_http_client, request_failure, TranscriptResult, TranscriptionInput};
 
 pub const PROVIDER_ID: &str = "assemblyai";
 pub const DEFAULT_MODEL: &str = "universal-3-pro";
 
 const BASE_URL: &str = "https://api.assemblyai.com";
 const MAX_AUDIO_BYTES: usize = 2_200_000_000;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
 const MAX_POLL_ATTEMPTS: usize = 40;
 
@@ -56,7 +55,7 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
     ) -> Result<TranscriptResult, ProviderError> {
         validate_input(&input)?;
 
-        let client = reqwest::Client::builder().timeout(REQUEST_TIMEOUT).build()?;
+        let client = build_http_client()?;
         let model = resolve_model(input.model.as_deref()).to_string();
 
         let upload_response = client
@@ -70,10 +69,7 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
 
         if !upload_response.status().is_success() {
             let status = upload_response.status();
-            let body = upload_response.text().await.unwrap_or_default();
-            return Err(
-                ProviderFailure::Request(format!("AssemblyAI returned {status}: {body}")).into(),
-            );
+            return Err(request_failure("AssemblyAI", status));
         }
 
         let upload_payload = upload_response.json::<UploadResponse>().await?;
@@ -94,10 +90,7 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
 
         if !create_response.status().is_success() {
             let status = create_response.status();
-            let body = create_response.text().await.unwrap_or_default();
-            return Err(
-                ProviderFailure::Request(format!("AssemblyAI returned {status}: {body}")).into(),
-            );
+            return Err(request_failure("AssemblyAI", status));
         }
 
         let create_payload = create_response.json::<CreateTranscriptResponse>().await?;
@@ -117,11 +110,7 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
 
             if !poll_response.status().is_success() {
                 let status = poll_response.status();
-                let body = poll_response.text().await.unwrap_or_default();
-                return Err(ProviderFailure::Request(format!(
-                    "AssemblyAI returned {status} while polling: {body}"
-                ))
-                .into());
+                return Err(request_failure("AssemblyAI", status));
             }
 
             let payload = poll_response.json::<TranscriptStatusResponse>().await?;
@@ -233,7 +222,9 @@ fn resolve_poll_response(
                     .filter(|value| !value.is_empty())
                     .unwrap_or_else(|| requested_model.to_string()),
                 text,
-                duration_ms: payload.audio_duration.and_then(|seconds| seconds.checked_mul(1000)),
+                duration_ms: payload
+                    .audio_duration
+                    .and_then(|seconds| seconds.checked_mul(1000)),
             }))
         }
         "error" => Err(ProviderFailure::Request(
@@ -258,13 +249,22 @@ mod tests {
         let request = build_upload_request(&client, "assembly-test", &[1, 2, 3], "audio/webm")
             .expect("request to build");
 
-        assert_eq!(request.url().as_str(), "https://api.assemblyai.com/v2/upload");
         assert_eq!(
-            request.headers().get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
+            request.url().as_str(),
+            "https://api.assemblyai.com/v2/upload"
+        );
+        assert_eq!(
+            request
+                .headers()
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
             Some("assembly-test")
         );
         assert_eq!(
-            request.headers().get(CONTENT_TYPE).and_then(|value| value.to_str().ok()),
+            request
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
             Some("audio/webm")
         );
         assert_eq!(
@@ -290,7 +290,10 @@ mod tests {
             "https://api.assemblyai.com/v2/transcript"
         );
         assert_eq!(
-            request.headers().get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
+            request
+                .headers()
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
             Some("assembly-test")
         );
 
