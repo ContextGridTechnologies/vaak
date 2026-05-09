@@ -77,6 +77,7 @@ describe("AppLayout", () => {
       "--sidebar-width": "11.75rem",
     });
     expect(within(screen.getByTestId("app-sidebar")).getByText("Vaak")).toBeInTheDocument();
+    expect(screen.getByTestId("app-sidebar-brand-mark")).toHaveTextContent("व");
     expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
     expect(screen.queryByTestId("app-sidebar-utility")).not.toBeInTheDocument();
     expect(screen.queryByText("User")).not.toBeInTheDocument();

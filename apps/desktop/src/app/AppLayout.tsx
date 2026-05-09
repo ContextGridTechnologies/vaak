@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
-  SquareTerminalIcon,
 } from "lucide-react";
 
+import { BrandMark } from "@/components/app/BrandMark";
 import {
   Sidebar,
   SidebarContent,
@@ -115,7 +115,10 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
           <SidebarHeader className="px-3 py-3">
             <div className="flex min-w-0 items-center gap-2">
               <div className="flex size-8 items-center justify-center rounded-lg border border-sidebar-border/80 bg-background text-primary shadow-xs">
-                <SquareTerminalIcon data-icon="icon" />
+                <BrandMark
+                  className="text-lg"
+                  data-testid="app-sidebar-brand-mark"
+                />
               </div>
               <span className="truncate text-[1.35rem] font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden">
                 Vaak

@@ -1,5 +1,6 @@
 import { MinusIcon, SquareIcon, XIcon } from "lucide-react";
 
+import { BrandMark } from "@/components/app/BrandMark";
 import { Button } from "@/components/ui/button";
 import {
   closeCurrentWindow,
@@ -21,7 +22,10 @@ export function DesktopTitleBar() {
     >
       <div className="flex min-w-0 items-center gap-2 px-3" data-tauri-drag-region>
         <div className="flex size-5 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-xs font-semibold text-primary">
-          V
+          <BrandMark
+            className="text-[0.9rem]"
+            data-testid="desktop-titlebar-brand-mark"
+          />
         </div>
         <span className="truncate text-sm font-medium" data-tauri-drag-region>
           Vaak
