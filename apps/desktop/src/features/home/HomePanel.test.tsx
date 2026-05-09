@@ -442,21 +442,19 @@ describe("HomePanel", () => {
   });
 
   it("shows 15 items first, keeps full counts, and appends more rows on scroll", async () => {
-    getRecentDictationRecords
-      .mockResolvedValueOnce(
-        Array.from({ length: 15 }, (_, index) => makeRecord({
-          recordId: `feed-record-${index + 1}`,
-          capturedAt: `2025-05-19T10:${String(index).padStart(2, "0")}:31Z`,
-          finalText: `Transcript ${index + 1}`,
-        })),
-      )
-      .mockResolvedValueOnce(
-        Array.from({ length: 5 }, (_, index) => makeRecord({
-          recordId: `feed-record-${index + 16}`,
-          capturedAt: `2025-05-19T11:${String(index).padStart(2, "0")}:31Z`,
-          finalText: `Transcript ${index + 16}`,
-        })),
-      );
+    const initialRecords = Array.from({ length: 15 }, (_, index) => makeRecord({
+      recordId: `feed-record-${index + 1}`,
+      capturedAt: `2025-05-19T10:${String(index).padStart(2, "0")}:31Z`,
+      finalText: `Transcript ${index + 1}`,
+    }));
+    const appendedRecords = Array.from({ length: 5 }, (_, index) => makeRecord({
+      recordId: `feed-record-${index + 16}`,
+      capturedAt: `2025-05-19T11:${String(index).padStart(2, "0")}:31Z`,
+      finalText: `Transcript ${index + 16}`,
+    }));
+    getRecentDictationRecords.mockImplementation((_limit: number, offset: number) =>
+      Promise.resolve(offset === 15 ? appendedRecords : initialRecords),
+    );
 
     renderApp(<HomePanel />);
 
@@ -475,7 +473,7 @@ describe("HomePanel", () => {
     intersectionObserverCallback?.([{ isIntersecting: true }]);
 
     await waitFor(() => {
-      expect(getRecentDictationRecords).toHaveBeenNthCalledWith(2, 15, 15);
+      expect(getRecentDictationRecords).toHaveBeenCalledWith(15, 15);
       expect(screen.getByText("Transcript 16")).toBeInTheDocument();
     });
 

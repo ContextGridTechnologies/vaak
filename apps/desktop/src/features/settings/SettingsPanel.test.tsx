@@ -129,9 +129,11 @@ describe("SettingsPanel provider setup", () => {
   it("loads the active Azure provider without showing the OpenAI form", async () => {
     renderApp(<SettingsPanel />);
 
-    expect(
-      await screen.findByRole("heading", { name: "Azure OpenAI" }),
-    ).toBeInTheDocument();
+    const endpointInput = await screen.findByLabelText("Endpoint");
+    await waitFor(() => {
+      expect(endpointInput).toHaveValue("https://example.openai.azure.com");
+    });
+    expect(screen.getByRole("heading", { name: "Azure OpenAI" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Settings" }).closest('[data-slot="card"]'),
@@ -159,7 +161,7 @@ describe("SettingsPanel provider setup", () => {
     );
 
     expect(screen.queryByRole("heading", { name: "OpenAI" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Endpoint")).toHaveValue(
+    expect(endpointInput).toHaveValue(
       "https://example.openai.azure.com",
     );
     expect(screen.getByLabelText("Deployment ID")).toHaveValue(
@@ -273,9 +275,12 @@ describe("SettingsPanel provider setup", () => {
     const user = userEvent.setup();
     renderApp(<SettingsPanel />);
 
-    await screen.findByRole("heading", { name: "Azure OpenAI" });
-    await user.clear(screen.getByLabelText("Deployment ID"));
-    await user.type(screen.getByLabelText("Deployment ID"), "new-deployment");
+    const deploymentIdInput = await screen.findByLabelText("Deployment ID");
+    await waitFor(() => {
+      expect(deploymentIdInput).toHaveValue("gpt-4o-transcribe");
+    });
+    await user.clear(deploymentIdInput);
+    await user.type(deploymentIdInput, "new-deployment");
     await user.click(screen.getByRole("button", { name: "Save and use Azure OpenAI" }));
 
     await waitFor(() => {
