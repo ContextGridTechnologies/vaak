@@ -50,11 +50,11 @@
     "homepage": "https://github.com/vaak-ai/vaak",
     "copyright": "Copyright (c) Vaak Contributors",
     "license": "MIT",
-    "licenseFile": "../../LICENSE",
+    "licenseFile": "../../../LICENSE",
     "category": "Productivity",
     "shortDescription": "Open-source, local-first voice input for desktop workflows.",
     "longDescription": "Vaak is an open-source, local-first voice input layer for desktop workflows with production-grade desktop UX and bring your own model or API key support.",
-    "targets": "all",
+    "targets": "nsis",
     "windows": {
       "allowDowngrades": false,
       "webviewInstallMode": {

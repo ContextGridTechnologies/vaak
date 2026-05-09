@@ -19,6 +19,8 @@ type TauriConfig = {
     active?: boolean;
     publisher?: string | null;
     homepage?: string | null;
+    licenseFile?: string | null;
+    targets?: string | string[] | null;
     category?: string | null;
     shortDescription?: string | null;
     longDescription?: string | null;
@@ -180,6 +182,8 @@ describe("Desktop release metadata", () => {
       active: true,
       publisher: "Vaak Contributors",
       homepage: "https://github.com/vaak-ai/vaak",
+      licenseFile: "../../../LICENSE",
+      targets: "nsis",
       category: "Productivity",
       shortDescription: "Open-source, local-first voice input for desktop workflows.",
       windows: {

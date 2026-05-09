@@ -8,6 +8,23 @@ const SERVICE_NAME: &str = "ai.vaak.desktop";
 const SELECTED_SPEECH_PROVIDER_ACCOUNT: &str = "selected.speech-provider";
 const LEGACY_SELECTED_SPEECH_PROVIDER_ACCOUNT: &str = "selected:speech-provider";
 
+trait CredentialStore {
+    fn get_password(&self, account: &str) -> Result<String, KeyringError>;
+    fn set_password(&self, account: &str, password: &str) -> Result<(), KeyringError>;
+}
+
+struct KeyringCredentialStore;
+
+impl CredentialStore for KeyringCredentialStore {
+    fn get_password(&self, account: &str) -> Result<String, KeyringError> {
+        Entry::new(SERVICE_NAME, account)?.get_password()
+    }
+
+    fn set_password(&self, account: &str, password: &str) -> Result<(), KeyringError> {
+        Entry::new(SERVICE_NAME, account)?.set_password(password)
+    }
+}
+
 pub fn save_provider_key(provider_id: &str, api_key: &str) -> Result<(), ProviderError> {
     let trimmed = api_key.trim();
     if trimmed.is_empty() {
@@ -84,18 +101,28 @@ fn legacy_provider_config_account(provider_id: &str) -> String {
 }
 
 fn read_password_with_legacy(account: &str, legacy_account: &str) -> Result<String, ProviderError> {
-    match Entry::new(SERVICE_NAME, account)
-        .map_err(map_keyring_error)?
-        .get_password()
-    {
+    read_password_with_legacy_using_store(&KeyringCredentialStore, account, legacy_account)
+}
+
+fn read_password_with_legacy_using_store(
+    store: &impl CredentialStore,
+    account: &str,
+    legacy_account: &str,
+) -> Result<String, ProviderError> {
+    match store.get_password(account) {
         Ok(value) => Ok(value),
-        Err(KeyringError::NoEntry) => Entry::new(SERVICE_NAME, legacy_account)
-            .map_err(map_keyring_error)?
-            .get_password()
-            .map_err(|err| match err {
-                KeyringError::NoEntry => ProviderFailure::MissingCredential.into(),
-                other => map_keyring_error(other),
-            }),
+        Err(KeyringError::NoEntry) => {
+            let value = store
+                .get_password(legacy_account)
+                .map_err(|err| match err {
+                    KeyringError::NoEntry => ProviderFailure::MissingCredential.into(),
+                    other => map_keyring_error(other),
+                })?;
+            store
+                .set_password(account, &value)
+                .map_err(map_keyring_error)?;
+            Ok(value)
+        }
         Err(err) => Err(map_keyring_error(err)),
     }
 }
@@ -114,6 +141,8 @@ fn map_keyring_error(error: KeyringError) -> ProviderError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
 
     #[test]
     fn provider_credential_accounts_do_not_use_colons() {
@@ -137,5 +166,95 @@ mod tests {
             legacy_provider_config_account("azure-openai"),
             "provider-config:azure-openai"
         );
+    }
+
+    #[derive(Default)]
+    struct FakeCredentialStore {
+        values: RefCell<HashMap<String, String>>,
+        reads: RefCell<Vec<String>>,
+        writes: RefCell<Vec<(String, String)>>,
+    }
+
+    impl FakeCredentialStore {
+        fn with_value(self, account: &str, value: &str) -> Self {
+            self.values
+                .borrow_mut()
+                .insert(account.to_string(), value.to_string());
+            self
+        }
+
+        fn read_count(&self, account: &str) -> usize {
+            self.reads
+                .borrow()
+                .iter()
+                .filter(|value| value.as_str() == account)
+                .count()
+        }
+    }
+
+    impl CredentialStore for FakeCredentialStore {
+        fn get_password(&self, account: &str) -> Result<String, KeyringError> {
+            self.reads.borrow_mut().push(account.to_string());
+            self.values
+                .borrow()
+                .get(account)
+                .cloned()
+                .ok_or(KeyringError::NoEntry)
+        }
+
+        fn set_password(&self, account: &str, password: &str) -> Result<(), KeyringError> {
+            self.writes
+                .borrow_mut()
+                .push((account.to_string(), password.to_string()));
+            self.values
+                .borrow_mut()
+                .insert(account.to_string(), password.to_string());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn read_password_uses_current_account_when_present() {
+        let store = FakeCredentialStore::default().with_value("provider.openai", "current-key");
+
+        let value =
+            read_password_with_legacy_using_store(&store, "provider.openai", "provider:openai")
+                .unwrap();
+
+        assert_eq!(value, "current-key");
+        assert_eq!(store.read_count("provider.openai"), 1);
+        assert_eq!(store.read_count("provider:openai"), 0);
+    }
+
+    #[test]
+    fn read_password_migrates_legacy_value_to_current_account() {
+        let store = FakeCredentialStore::default().with_value("provider:openai", "legacy-key");
+
+        let value =
+            read_password_with_legacy_using_store(&store, "provider.openai", "provider:openai")
+                .unwrap();
+
+        assert_eq!(value, "legacy-key");
+        assert_eq!(
+            store.writes.borrow().as_slice(),
+            [("provider.openai".to_string(), "legacy-key".to_string())]
+        );
+    }
+
+    #[test]
+    fn repeated_reads_after_migration_skip_legacy_fallback() {
+        let store = FakeCredentialStore::default().with_value("provider:openai", "legacy-key");
+
+        let first =
+            read_password_with_legacy_using_store(&store, "provider.openai", "provider:openai")
+                .unwrap();
+        let second =
+            read_password_with_legacy_using_store(&store, "provider.openai", "provider:openai")
+                .unwrap();
+
+        assert_eq!(first, "legacy-key");
+        assert_eq!(second, "legacy-key");
+        assert_eq!(store.read_count("provider.openai"), 2);
+        assert_eq!(store.read_count("provider:openai"), 1);
     }
 }

@@ -90,6 +90,20 @@ npm run tauri dev
 If PowerShell has not reloaded the Rust install path yet, the repo's Tauri
 launcher prepends `%USERPROFILE%\.cargo\bin` automatically.
 
+## Windows Packaging
+
+Local Windows packaging defaults to NSIS rather than WiX/MSI. Install NSIS with
+`winget install NSIS.NSIS`, then run `npm run tauri:build` from the repo root.
+
+Expected outputs:
+
+- NSIS installer: `apps/desktop/src-tauri/target/release/bundle/nsis/`
+- Direct desktop binary: `apps/desktop/src-tauri/target/release/vaak-desktop.exe`
+
+MSI is optional later if you install WiX with
+`winget install WiXToolset.WiXToolset` and re-enable an MSI-specific packaging
+path.
+
 ## Verification
 
 Run the smallest meaningful check for your change. The main repo commands are:

@@ -80,6 +80,36 @@ cd apps/desktop
 npm run build
 ```
 
+## Package the Windows App
+
+Local Windows packaging now defaults to an NSIS installer, so `npm run tauri:build`
+does not require WiX tooling.
+
+Install NSIS once:
+
+```powershell
+winget install NSIS.NSIS
+```
+
+Build the Windows package from the repo root:
+
+```powershell
+npm run tauri:build
+```
+
+Expected outputs:
+
+- NSIS installer: `apps/desktop/src-tauri/target/release/bundle/nsis/`
+- Direct desktop binary: `apps/desktop/src-tauri/target/release/vaak-desktop.exe`
+
+MSI is still possible later, but it is no longer part of the default local build
+path. If you want MSI packaging again, install WiX and then re-enable an MSI
+target in the Tauri bundle configuration or add a separate MSI-specific build path.
+
+```powershell
+winget install WiXToolset.WiXToolset
+```
+
 ## Where to Find Planning and Status
 
 - Product roadmap: `docs/ROADMAP.md`

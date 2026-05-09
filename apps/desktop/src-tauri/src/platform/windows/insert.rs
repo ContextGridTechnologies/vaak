@@ -613,6 +613,24 @@ mod tests {
     }
 
     #[test]
+    fn strategy_selection_prefers_send_input_for_chromium_terminal_helper_textarea() {
+        let candidate = FocusCandidateDiagnostics::for_test("xterm-helper")
+            .with_control_type("Edit", 50004)
+            .with_keyboard_focus(true)
+            .with_keyboard_focusable(true)
+            .with_value_pattern(true)
+            .with_text_pattern(true)
+            .with_framework_id("Chrome")
+            .with_class_name("xterm-helper-textarea")
+            .with_control_name("pwsh");
+
+        assert_eq!(
+            insertion_plan(&candidate),
+            vec![InsertionStrategy::SendInput]
+        );
+    }
+
+    #[test]
     fn target_changed_payload_captures_original_and_current_targets() {
         let captured = FocusCandidateDiagnostics::for_test("captured")
             .with_window_title("CRM")
