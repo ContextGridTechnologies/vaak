@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Download the latest Windows installer
+    url: https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe
+    about: Use this link if you only need the current public Windows installer.
+  - name: View all releases
+    url: https://github.com/ContextGridTechnologies/vaak/releases
+    about: Use this link to find release notes, checksums, and previous versions.

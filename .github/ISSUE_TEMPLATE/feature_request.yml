@@ -1,0 +1,60 @@
+name: Feature request
+description: Suggest a desktop workflow, provider, settings, or release improvement.
+title: "[Feature]: "
+labels: ["enhancement", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Vaak is an open-source, local-first voice input layer for desktop workflows. Please frame requests around the workflow problem, not competitor cloning.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues for a similar request.
+          required: true
+        - label: This request supports local-first desktop voice input or bring-your-own-provider workflows.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Voice workflow
+        - Provider support
+        - Settings
+        - Packaging or updates
+        - Accessibility
+        - Team or sync future feature
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow problem should Vaak solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior, UI, provider support, or release improvement you want.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Mention workarounds or other designs you considered.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add screenshots, examples, or constraints that would help implementation.
+    validations:
+      required: false

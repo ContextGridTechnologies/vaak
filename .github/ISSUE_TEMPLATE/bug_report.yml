@@ -1,0 +1,99 @@
+name: Bug report
+description: Report an install, launch, dictation, provider, or desktop workflow issue.
+title: "[Bug]: "
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a Vaak issue. Please include enough detail for a maintainer to reproduce it on a desktop build.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues for a matching report.
+          required: true
+        - label: I am using a release installer or a locally built copy from this repository.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Pick the closest area.
+      options:
+        - Install or update
+        - App launch
+        - Voice capture
+        - Transcription provider
+        - Settings
+        - Window or tray behavior
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Vaak version
+      description: Use the release tag, installer version, or commit SHA if this is a local build.
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install_source
+    attributes:
+      label: Install source
+      options:
+        - GitHub Release installer
+        - Local development build
+        - Local packaged build
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: system
+    attributes:
+      label: System details
+      description: Include OS version, CPU architecture, WebView2 status if known, and microphone/audio device details if relevant.
+      value: |
+        - OS:
+        - Architecture:
+        - Install path:
+        - Microphone/audio device:
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior. Attach screenshots or logs when useful.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: Describe the behavior you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide exact steps so a maintainer can reproduce the issue.
+      placeholder: |
+        1. Install Vaak from...
+        2. Open...
+        3. Click...
+        4. See...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant logs or attach screenshots. Do not include API keys or private audio content.
+      render: text
+    validations:
+      required: false

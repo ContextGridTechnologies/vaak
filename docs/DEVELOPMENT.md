@@ -131,6 +131,10 @@ matches `v*.*.*` creates or updates a GitHub Release and uploads the Windows
 NSIS installer as `Vaak-Windows-Setup.exe` and the checksum as
 `Vaak-Windows-Setup.exe.sha256`.
 
+The release workflow verifies that the pushed tag, `apps/desktop/package.json`,
+and `apps/desktop/src-tauri/tauri.conf.json` all use the same version. For
+example, tag `v0.1.0` requires both version files to contain `0.1.0`.
+
 Release procedure:
 
 1. Bump `apps/desktop/package.json`.
@@ -172,6 +176,19 @@ The expected SHA256 digest should match the uploaded
 - Provider strategy: `docs/PROVIDER_STRATEGY.md`
 - Architecture details: `docs/ARCHITECTURE.md`
 - Repo layout conventions: `docs/PROJECT_STRUCTURE.md`
+
+## GitHub Issue Intake
+
+Public issue templates live in `.github/ISSUE_TEMPLATE/`.
+
+- Bug reports collect release version, install source, system details, expected
+  behavior, actual behavior, and reproduction steps.
+- Feature requests collect the workflow problem, proposed behavior, alternatives,
+  and local-first/provider context.
+
+Blank issues are disabled for public contributors so early feedback stays
+structured. Maintainers with write access can still open blank issues from the
+template chooser when needed.
 
 ## Common Issues
 

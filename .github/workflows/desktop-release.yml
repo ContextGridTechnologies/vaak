@@ -29,6 +29,21 @@ jobs:
       - name: Install desktop dependencies
         run: npm --prefix apps/desktop ci
 
+      - name: Verify release versions
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          $package = Get-Content -Raw -LiteralPath "apps/desktop/package.json" | ConvertFrom-Json
+          $tauri = Get-Content -Raw -LiteralPath "apps/desktop/src-tauri/tauri.conf.json" | ConvertFrom-Json
+
+          if ($package.version -ne $tagVersion) {
+            throw "Tag version v$tagVersion does not match apps/desktop/package.json version $($package.version)."
+          }
+
+          if ($tauri.version -ne $tagVersion) {
+            throw "Tag version v$tagVersion does not match apps/desktop/src-tauri/tauri.conf.json version $($tauri.version)."
+          }
+
       - name: Install NSIS
         shell: pwsh
         run: |

@@ -18,6 +18,9 @@ Checksum:
 All release builds are available from the
 [GitHub releases page](https://github.com/ContextGridTechnologies/vaak/releases).
 
+Report bugs or request workflow improvements from the
+[GitHub issue chooser](https://github.com/ContextGridTechnologies/vaak/issues/new/choose).
+
 Early Windows installers are unsigned, so Windows may show a SmartScreen warning
 until code signing is added.
 
