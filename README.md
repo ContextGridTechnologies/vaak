@@ -18,6 +18,21 @@ All release builds are available from the
 Early Windows installers are unsigned, so Windows may show a SmartScreen warning
 until code signing is added.
 
+### Windows SmartScreen
+
+The current Windows installer is unsigned. If Windows shows "Windows protected
+your PC" with `Publisher: Unknown publisher`, that is expected for this early
+release. It means Windows cannot verify a code-signing publisher identity yet;
+it does not mean the installer failed.
+
+Before running the installer, you can verify the downloaded file checksum:
+
+```powershell
+Get-FileHash .\Vaak-Windows-Setup.exe -Algorithm SHA256
+```
+
+Compare the result with the SHA256 digest listed on the GitHub Release asset.
+
 ## Status
 
 Vaak is in early active development. The current milestone is the local

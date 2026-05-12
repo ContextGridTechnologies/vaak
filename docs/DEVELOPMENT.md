@@ -148,6 +148,17 @@ https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Wi
 Early Windows installers are unsigned, so Windows may show a SmartScreen warning
 until code signing is added.
 
+For unsigned Windows releases, include a clear SmartScreen note in the release
+body. Users should expect `Publisher: Unknown publisher` until code signing is
+added. Also include a checksum verification command:
+
+```powershell
+Get-FileHash .\Vaak-Windows-Setup.exe -Algorithm SHA256
+```
+
+The expected SHA256 digest should match the uploaded GitHub Release asset
+digest.
+
 ## Where to Find Planning and Status
 
 - Product roadmap: `docs/ROADMAP.md`
