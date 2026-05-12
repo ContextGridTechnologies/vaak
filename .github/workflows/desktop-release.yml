@@ -69,10 +69,18 @@ jobs:
 
           Copy-Item -LiteralPath $installer.FullName -Destination "Vaak-Windows-Setup.exe" -Force
 
+      - name: Generate installer checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -LiteralPath "Vaak-Windows-Setup.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Vaak-Windows-Setup.exe" | Set-Content -Path "Vaak-Windows-Setup.exe.sha256" -Encoding ascii
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Vaak-Windows-Setup.exe
+          files: |
+            Vaak-Windows-Setup.exe
+            Vaak-Windows-Setup.exe.sha256
           fail_on_unmatched_files: true
           overwrite_files: true
           make_latest: true

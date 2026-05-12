@@ -12,6 +12,9 @@ control, and optional account, sync, team, and managed cloud features later.
 Download the latest Windows installer:
 [Vaak-Windows-Setup.exe](https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe)
 
+Checksum:
+[Vaak-Windows-Setup.exe.sha256](https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe.sha256)
+
 All release builds are available from the
 [GitHub releases page](https://github.com/ContextGridTechnologies/vaak/releases).
 
@@ -31,7 +34,8 @@ Before running the installer, you can verify the downloaded file checksum:
 Get-FileHash .\Vaak-Windows-Setup.exe -Algorithm SHA256
 ```
 
-Compare the result with the SHA256 digest listed on the GitHub Release asset.
+Compare the result with the matching `Vaak-Windows-Setup.exe.sha256` release
+asset.
 
 ## Status
 
@@ -127,7 +131,8 @@ Expected outputs:
 - Direct desktop binary: `apps/desktop/src-tauri/target/release/vaak-desktop.exe`
 
 Public GitHub releases publish only the Windows installer as
-`Vaak-Windows-Setup.exe`.
+`Vaak-Windows-Setup.exe`, plus a matching
+`Vaak-Windows-Setup.exe.sha256` checksum file.
 
 MSI is optional later if you install WiX with
 `winget install WiXToolset.WiXToolset` and re-enable an MSI-specific packaging

@@ -113,6 +113,9 @@ Public GitHub releases publish only the Windows installer as
 `Vaak-Windows-Setup.exe`. The raw `target/release/vaak-desktop.exe` binary is a
 local build output and is not attached to releases.
 
+Each release also publishes `Vaak-Windows-Setup.exe.sha256` so users can verify
+the installer before running it.
+
 MSI is still possible later, but it is no longer part of the default local build
 path. If you want MSI packaging again, install WiX and then re-enable an MSI
 target in the Tauri bundle configuration or add a separate MSI-specific build path.
@@ -125,7 +128,8 @@ winget install WiXToolset.WiXToolset
 
 Normal pushes and pull requests run validation only. Pushing a version tag that
 matches `v*.*.*` creates or updates a GitHub Release and uploads the Windows
-NSIS installer as `Vaak-Windows-Setup.exe`.
+NSIS installer as `Vaak-Windows-Setup.exe` and the checksum as
+`Vaak-Windows-Setup.exe.sha256`.
 
 Release procedure:
 
@@ -143,6 +147,7 @@ The latest installer URL is:
 
 ```text
 https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe
+https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe.sha256
 ```
 
 Early Windows installers are unsigned, so Windows may show a SmartScreen warning
@@ -156,8 +161,8 @@ added. Also include a checksum verification command:
 Get-FileHash .\Vaak-Windows-Setup.exe -Algorithm SHA256
 ```
 
-The expected SHA256 digest should match the uploaded GitHub Release asset
-digest.
+The expected SHA256 digest should match the uploaded
+`Vaak-Windows-Setup.exe.sha256` release asset.
 
 ## Where to Find Planning and Status
 
