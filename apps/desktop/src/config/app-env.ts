@@ -5,12 +5,16 @@ export type AppEnvironment = {
   cloudBaseUrl: string | null;
   enableDebugUi: boolean;
   exposeProcessedAudioArtifacts: boolean;
+  posthogHost: string;
+  posthogPublicKey: string | null;
 };
 
 type RawEnvironment = Record<string, unknown>;
 
 const SECRET_ENV_NAME_PATTERN = /(api[_-]?key|secret|token|password|private[_-]?key)/i;
 const LOCAL_HTTP_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+const PUBLIC_FRONTEND_ENV_NAMES = new Set(["VITE_POSTHOG_PUBLIC_KEY"]);
+const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
 
 export function parseAppEnvironment(
   raw: RawEnvironment,
@@ -27,6 +31,12 @@ export function parseAppEnvironment(
     readOptionalString(raw, "VITE_ENABLE_DEBUG_UI"),
     "VITE_ENABLE_DEBUG_UI",
   );
+  const posthogPublicKey = readOptionalString(raw, "VITE_POSTHOG_PUBLIC_KEY");
+  const posthogHost = parseServiceUrl(
+    readOptionalString(raw, "VITE_POSTHOG_HOST") ?? DEFAULT_POSTHOG_HOST,
+    "VITE_POSTHOG_HOST",
+    appEnv,
+  );
 
   if (appEnv === "production" && enableDebugUi) {
     throw new Error("VITE_ENABLE_DEBUG_UI cannot enable debug UI in production");
@@ -38,6 +48,8 @@ export function parseAppEnvironment(
     enableDebugUi,
     exposeProcessedAudioArtifacts:
       shouldExposeProcessedAudioArtifacts(appEnv),
+    posthogHost,
+    posthogPublicKey,
   };
 }
 
@@ -54,7 +66,11 @@ export const appEnvironment = parseAppEnvironment(
 
 function assertNoFrontendSecrets(raw: RawEnvironment): void {
   for (const key of Object.keys(raw)) {
-    if (key.startsWith("VITE_") && SECRET_ENV_NAME_PATTERN.test(key)) {
+    if (
+      key.startsWith("VITE_") &&
+      !PUBLIC_FRONTEND_ENV_NAMES.has(key) &&
+      SECRET_ENV_NAME_PATTERN.test(key)
+    ) {
       throw new Error(`${key} must not expose secrets to the frontend bundle`);
     }
   }
@@ -90,11 +106,19 @@ function parseCloudBaseUrl(
     return null;
   }
 
+  return parseServiceUrl(value, "VITE_CLOUD_BASE_URL", appEnv);
+}
+
+function parseServiceUrl(
+  value: string,
+  key: string,
+  appEnv: AppEnvironmentName,
+): string {
   let parsed: URL;
   try {
     parsed = new URL(value);
   } catch {
-    throw new Error("VITE_CLOUD_BASE_URL must be an absolute URL");
+    throw new Error(`${key} must be an absolute URL`);
   }
 
   if (parsed.protocol === "https:") {
@@ -109,7 +133,7 @@ function parseCloudBaseUrl(
     return parsed.toString().replace(/\/$/, "");
   }
 
-  throw new Error("VITE_CLOUD_BASE_URL must use https outside local development");
+  throw new Error(`${key} must use https outside local development`);
 }
 
 function parseBoolean(value: string | null, key: string): boolean {

@@ -222,6 +222,25 @@ describe("SettingsPanel provider setup", () => {
     expect(within(shortcutCard!).getByText("Win")).toBeInTheDocument();
   });
 
+  it("lets users disable usage analytics from Settings", async () => {
+    const user = userEvent.setup();
+    renderApp(<SettingsPanel />);
+
+    const analyticsCard = (await screen.findByText("Usage analytics")).closest(
+      '[data-slot="card"]',
+    ) as HTMLElement | null;
+    expect(analyticsCard).not.toBeNull();
+
+    const toggle = within(analyticsCard!).getByRole("switch", {
+      name: "Share privacy-safe usage analytics",
+    });
+    expect(toggle).toBeChecked();
+
+    await user.click(toggle);
+
+    expect(toggle).not.toBeChecked();
+  });
+
   it("saves a changed dictation shortcut from Settings", async () => {
     const user = userEvent.setup();
     renderApp(<SettingsPanel />);

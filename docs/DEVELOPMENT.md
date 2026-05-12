@@ -58,11 +58,18 @@ Frontend values use `VITE_*` and are bundled into the WebView. Treat them as
 public. Backend/runtime values use `VAAK_*` and are read by the Tauri process
 when the process environment provides them.
 
+PostHog product analytics is optional. Set `VITE_POSTHOG_PUBLIC_KEY` to the
+public project key for packaged builds and leave it blank to disable analytics.
+Use `VITE_POSTHOG_HOST` for the selected PostHog region, for example
+`https://us.i.posthog.com` or `https://eu.i.posthog.com`.
+
 Production-safe defaults:
 
 ```powershell
 VITE_APP_ENV=production
 VITE_ENABLE_DEBUG_UI=false
+VITE_POSTHOG_PUBLIC_KEY=
+VITE_POSTHOG_HOST=https://us.i.posthog.com
 VAAK_APP_ENV=production
 VAAK_LOG_LEVEL=info
 VAAK_UPDATE_CHANNEL=stable

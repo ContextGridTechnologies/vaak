@@ -9,6 +9,8 @@ describe("parseAppEnvironment", () => {
       cloudBaseUrl: null,
       enableDebugUi: false,
       exposeProcessedAudioArtifacts: true,
+      posthogHost: "https://us.i.posthog.com",
+      posthogPublicKey: null,
     });
   });
 
@@ -25,6 +27,8 @@ describe("parseAppEnvironment", () => {
       cloudBaseUrl: null,
       enableDebugUi: false,
       exposeProcessedAudioArtifacts: false,
+      posthogHost: "https://us.i.posthog.com",
+      posthogPublicKey: null,
     });
   });
 
@@ -61,5 +65,33 @@ describe("parseAppEnvironment", () => {
         "production",
       ),
     ).toThrow(/debug ui/i);
+  });
+
+  it("accepts the public PostHog project key for frontend analytics", () => {
+    expect(
+      parseAppEnvironment(
+        {
+          VITE_POSTHOG_PUBLIC_KEY: "phc_public_project_key",
+          VITE_POSTHOG_HOST: "https://eu.i.posthog.com",
+        },
+        "production",
+      ),
+    ).toMatchObject({
+      posthogHost: "https://eu.i.posthog.com",
+      posthogPublicKey: "phc_public_project_key",
+    });
+  });
+
+  it("requires https PostHog hosts outside local development", () => {
+    expect(() =>
+      parseAppEnvironment(
+        {
+          VITE_APP_ENV: "production",
+          VITE_POSTHOG_PUBLIC_KEY: "phc_public_project_key",
+          VITE_POSTHOG_HOST: "http://analytics.example.com",
+        },
+        "production",
+      ),
+    ).toThrow(/VITE_POSTHOG_HOST must use https/i);
   });
 });

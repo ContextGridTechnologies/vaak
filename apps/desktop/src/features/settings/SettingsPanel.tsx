@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { KeyboardShortcutSettingsCard } from "./KeyboardShortcutSettingsCard";
 import { MicrophoneSettingsCard } from "./MicrophoneSettingsCard";
 import { SpeechProviderSettings } from "./speech-provider";
+import { UsageAnalyticsSettingsCard } from "./UsageAnalyticsSettingsCard";
 
 export function SettingsPanel() {
   return (
@@ -21,6 +22,7 @@ export function SettingsPanel() {
           <SpeechProviderSettings />
           <MicrophoneSettingsCard />
           <KeyboardShortcutSettingsCard />
+          <UsageAnalyticsSettingsCard />
         </section>
       </main>
     </div>
