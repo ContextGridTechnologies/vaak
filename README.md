@@ -7,6 +7,17 @@ already using. The project is being built as a serious desktop productivity
 tool: local-first by default, bring-your-own provider support for users who want
 control, and optional account, sync, team, and managed cloud features later.
 
+## Download
+
+Download the latest Windows installer:
+[Vaak-Windows-Setup.exe](https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe)
+
+All release builds are available from the
+[GitHub releases page](https://github.com/ContextGridTechnologies/vaak/releases).
+
+Early Windows installers are unsigned, so Windows may show a SmartScreen warning
+until code signing is added.
+
 ## Status
 
 Vaak is in early active development. The current milestone is the local
@@ -99,6 +110,9 @@ Expected outputs:
 
 - NSIS installer: `apps/desktop/src-tauri/target/release/bundle/nsis/`
 - Direct desktop binary: `apps/desktop/src-tauri/target/release/vaak-desktop.exe`
+
+Public GitHub releases publish only the Windows installer as
+`Vaak-Windows-Setup.exe`.
 
 MSI is optional later if you install WiX with
 `winget install WiXToolset.WiXToolset` and re-enable an MSI-specific packaging

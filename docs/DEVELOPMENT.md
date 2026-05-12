@@ -109,6 +109,10 @@ Expected outputs:
 - NSIS installer: `apps/desktop/src-tauri/target/release/bundle/nsis/`
 - Direct desktop binary: `apps/desktop/src-tauri/target/release/vaak-desktop.exe`
 
+Public GitHub releases publish only the Windows installer as
+`Vaak-Windows-Setup.exe`. The raw `target/release/vaak-desktop.exe` binary is a
+local build output and is not attached to releases.
+
 MSI is still possible later, but it is no longer part of the default local build
 path. If you want MSI packaging again, install WiX and then re-enable an MSI
 target in the Tauri bundle configuration or add a separate MSI-specific build path.
@@ -116,6 +120,33 @@ target in the Tauri bundle configuration or add a separate MSI-specific build pa
 ```powershell
 winget install WiXToolset.WiXToolset
 ```
+
+## Release the Windows Installer
+
+Normal pushes and pull requests run validation only. Pushing a version tag that
+matches `v*.*.*` creates or updates a GitHub Release and uploads the Windows
+NSIS installer as `Vaak-Windows-Setup.exe`.
+
+Release procedure:
+
+1. Bump `apps/desktop/package.json`.
+2. Bump `apps/desktop/src-tauri/tauri.conf.json`.
+3. Commit the version change.
+4. Create and push a version tag:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The latest installer URL is:
+
+```text
+https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe
+```
+
+Early Windows installers are unsigned, so Windows may show a SmartScreen warning
+until code signing is added.
 
 ## Where to Find Planning and Status
 

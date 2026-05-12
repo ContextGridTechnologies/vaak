@@ -1,0 +1,78 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    name: Build Windows Installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install desktop dependencies
+        run: npm --prefix apps/desktop ci
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-progress
+          }
+
+          $nsisDirs = @(
+            "$env:ProgramFiles\NSIS",
+            "${env:ProgramFiles(x86)}\NSIS"
+          )
+
+          foreach ($dir in $nsisDirs) {
+            if (Test-Path $dir) {
+              Add-Content -Path $env:GITHUB_PATH -Value $dir
+              $env:PATH = "$dir;$env:PATH"
+            }
+          }
+
+          makensis /VERSION
+
+      - name: Build unsigned Windows installer
+        run: npm --prefix apps/desktop run tauri build -- --ci --no-sign --bundles nsis
+        env:
+          VITE_POSTHOG_PUBLIC_KEY: ${{ secrets.VITE_POSTHOG_PUBLIC_KEY }}
+          VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+
+      - name: Normalize installer asset name
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path "apps/desktop/src-tauri/target/release/bundle/nsis" -Filter "*.exe" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $installer) {
+            throw "No NSIS installer was found."
+          }
+
+          Copy-Item -LiteralPath $installer.FullName -Destination "Vaak-Windows-Setup.exe" -Force
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Vaak-Windows-Setup.exe
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          make_latest: true
