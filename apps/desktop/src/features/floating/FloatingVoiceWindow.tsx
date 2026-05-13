@@ -1,4 +1,9 @@
-import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertCircleIcon,
   CheckIcon,
@@ -10,8 +15,11 @@ import {
 import { useDictationLoop } from "@/features/dictation/hooks/useDictationLoop";
 import { useDictationSession } from "@/features/dictation/hooks/useDictationSession";
 import {
+  getOnboardingState,
   isTauriRuntime,
+  listenToTauriEvent,
   saveVoiceCapsulePlacement,
+  type OnboardingState,
 } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +35,7 @@ import {
 const VOICE_CAPSULE_WIDTH = 56;
 const VOICE_CAPSULE_HEIGHT = 36;
 const DRAG_THRESHOLD = 6;
+const ONBOARDING_COMPLETED_EVENT = "vaak://onboarding-completed";
 
 type DragState = {
   pointerId: number;
@@ -39,7 +48,8 @@ type DragState = {
 };
 
 export function FloatingVoiceWindow() {
-  const session = useDictationSession();
+  const [sessionEnabled, setSessionEnabled] = useState(false);
+  const session = useDictationSession({ enabled: sessionEnabled });
   const dictation = useDictationLoop(session);
   const dragStateRef = useRef<DragState | null>(null);
   const suppressClickRef = useRef(false);
@@ -53,6 +63,43 @@ export function FloatingVoiceWindow() {
     return () => {
       document.documentElement.classList.remove("dark");
       document.body.classList.remove("dark");
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    const loadOnboardingState = async () => {
+      try {
+        const state = await getOnboardingState();
+        if (!disposed) {
+          setSessionEnabled(state.completed);
+        }
+      } catch {
+        if (!disposed) {
+          setSessionEnabled(false);
+        }
+      }
+    };
+
+    void loadOnboardingState();
+    void listenToTauriEvent<OnboardingState>(
+      ONBOARDING_COMPLETED_EVENT,
+      (event) => {
+        setSessionEnabled(event.payload.completed);
+      },
+    ).then((detach) => {
+      if (disposed) {
+        detach();
+        return;
+      }
+      unlisten = detach;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
     };
   }, []);
 

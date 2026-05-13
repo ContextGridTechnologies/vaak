@@ -17,6 +17,7 @@ use crate::windowing;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const SPEECH_PROVIDER_CHANGED_EVENT: &str = "vaak://speech-provider-changed";
+const ONBOARDING_COMPLETED_EVENT: &str = "vaak://onboarding-completed";
 const MAX_RECENT_RECORD_LIMIT: usize = 200;
 const MAX_RECENT_RECORD_OFFSET: usize = 10_000;
 
@@ -346,6 +347,7 @@ pub fn complete_onboarding(
     settings: State<'_, LocalSettingsStore>,
 ) -> Result<OnboardingState, ProviderError> {
     let saved_state = settings.complete_onboarding()?;
+    let _ = app.emit(ONBOARDING_COMPLETED_EVENT, saved_state.clone());
     if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
         let preferences = settings.app_shell_preferences()?;
         windowing::prepare_voice_capsule_window(

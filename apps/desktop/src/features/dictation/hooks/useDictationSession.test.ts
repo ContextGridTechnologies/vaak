@@ -171,6 +171,18 @@ describe("useDictationSession", () => {
     await vi.waitFor(() => expect(prepareRecording).toHaveBeenCalledTimes(1));
   });
 
+  it("does not warm or subscribe to hotkeys when disabled", async () => {
+    setWindowsPlatform();
+    useAvailableMicrophone();
+    isTauriRuntime.mockReturnValue(true);
+
+    renderHook(() => useDictationSession({ enabled: false }));
+
+    expect(prepareRecording).not.toHaveBeenCalled();
+    expect(getHotkeyBindings).not.toHaveBeenCalled();
+    expect(listenToTauriEvent).not.toHaveBeenCalled();
+  });
+
   it("starts recording with the captured target from a dictation hotkey start", async () => {
     setWindowsPlatform();
     useAvailableMicrophone();
