@@ -171,9 +171,12 @@ describe("OnboardingGate", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByText("Currently using: Default microphone")).toHaveLength(
-        1,
-      );
+      expect(screen.getByText("Microphone ready")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Vaak verified the selected input and can continue to provider setup.",
+        ),
+      ).toBeInTheDocument();
       expect(screen.getByRole("combobox")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Test microphone" })).toBeInTheDocument();
     });
