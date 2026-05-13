@@ -16,7 +16,7 @@ describe("DesktopTitleBar", () => {
     delete globalScope.__TAURI_INTERNALS__;
   });
 
-  it("uses the app background for the custom titlebar in Tauri", () => {
+  it("is available for custom chrome surfaces when explicitly rendered", () => {
     globalScope.__TAURI__ = {};
 
     renderApp(<DesktopTitleBar />);

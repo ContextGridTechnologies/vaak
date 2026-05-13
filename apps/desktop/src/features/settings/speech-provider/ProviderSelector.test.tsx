@@ -32,7 +32,13 @@ describe("ProviderSelector", () => {
     expect(smallest).toHaveAttribute("aria-pressed", "false");
     expect(openAi).toHaveClass("min-h-9", "px-3", "py-2");
     expect(assemblyAi).toHaveClass("min-h-9", "px-3", "py-2");
-    expect(azureOpenAi).toHaveClass("min-h-9", "px-3", "py-2");
+    expect(azureOpenAi).toHaveClass(
+      "min-h-9",
+      "px-3",
+      "py-2",
+      "border-primary",
+      "bg-primary/10",
+    );
     expect(elevenLabs).toHaveClass("min-h-9", "px-3", "py-2");
     expect(smallest).toHaveClass("min-h-9", "px-3", "py-2");
     expect(openAi.querySelector("svg")).not.toBeInTheDocument();
@@ -40,6 +46,14 @@ describe("ProviderSelector", () => {
     expect(azureOpenAi.querySelector("svg")).not.toBeInTheDocument();
     expect(elevenLabs.querySelector("svg")).not.toBeInTheDocument();
     expect(smallest.querySelector("svg")).not.toBeInTheDocument();
+    expect(azureOpenAi).toHaveTextContent("Azure OpenAI");
+    expect(azureOpenAi).not.toHaveTextContent("Default");
+    expect(openAi).not.toHaveTextContent("Default");
+    expect(assemblyAi).not.toHaveTextContent("Default");
+    expect(screen.getByText("Default provider: Azure OpenAI")).toBeInTheDocument();
+    expect(screen.getByText("Default provider: Azure OpenAI")).toHaveClass(
+      "text-foreground",
+    );
 
     await userEvent.click(openAi);
 

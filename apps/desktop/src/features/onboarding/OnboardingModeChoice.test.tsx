@@ -23,7 +23,7 @@ describe("OnboardingModeChoice", () => {
     );
   });
 
-  it("centers the two mode cards in a constrained two-column grid", () => {
+  it("uses a fit-based mode card grid instead of display-scale breakpoints", () => {
     const { container } = renderApp(
       <OnboardingModeChoice
         error={null}
@@ -34,8 +34,16 @@ describe("OnboardingModeChoice", () => {
 
     const grid = container.querySelector("section");
 
-    expect(grid).toHaveClass("mx-auto", "w-full", "max-w-[42rem]", "md:grid-cols-2");
+    expect(grid).toHaveClass(
+      "mx-auto",
+      "w-full",
+      "max-w-[56rem]",
+      "justify-center",
+      "grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),23.75rem))]",
+    );
     expect(grid).not.toHaveClass("md:grid-cols-3");
+    expect(grid).not.toHaveClass("md:grid-cols-2");
+    expect(grid).not.toHaveClass("lg:grid-cols-2");
   });
 
   it("renders the shared onboarding progress header for step one", () => {

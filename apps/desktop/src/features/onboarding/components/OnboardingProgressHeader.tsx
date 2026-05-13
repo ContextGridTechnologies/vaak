@@ -42,7 +42,7 @@ export function OnboardingProgressHeader({
                 data-testid="onboarding-progress-segment"
                 data-state={active ? "active" : "pending"}
                 className={cn(
-                  "h-1.5 w-10 rounded-full transition-colors",
+                  "h-1.5 w-8 rounded-full transition-colors sm:w-10",
                   active ? "bg-primary" : "bg-border",
                 )}
               />
@@ -52,11 +52,11 @@ export function OnboardingProgressHeader({
       </div>
 
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold leading-tight text-foreground sm:text-3xl md:text-[2.65rem]">
+        <h1 className="text-balance text-2xl font-semibold leading-tight text-foreground sm:text-3xl lg:text-[2.65rem]">
           {title}
         </h1>
         {description ? (
-          <p className="text-sm text-muted-foreground sm:text-[0.95rem]">
+          <p className="mx-auto max-w-xl text-balance text-sm text-muted-foreground sm:text-[0.95rem]">
             {description}
           </p>
         ) : null}

@@ -42,6 +42,17 @@ describe("ProviderSetupStep", () => {
       <ProviderSetupStep error={null} onBack={onBack} onContinue={onContinue} />,
     );
 
+    expect(screen.getByTestId("provider-setup-card")).toContainElement(
+      screen.getByText("Mock provider settings"),
+    );
+    expect(screen.queryByTestId("onboarding-split-layout")).not.toBeInTheDocument();
+    expect(screen.queryByText("Voice capsule preview")).not.toBeInTheDocument();
+    expect(screen.getByTestId("provider-setup-card-footer")).toContainElement(
+      screen.getByRole("button", { name: "Back" }),
+    );
+    expect(screen.getByTestId("onboarding-scroll-region")).toContainElement(
+      screen.getByText("Mock provider settings"),
+    );
     expect(screen.queryByRole("button", { name: "Next" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Mark provider verified" }));
@@ -54,5 +65,22 @@ describe("ProviderSetupStep", () => {
 
     expect(onContinue).toHaveBeenCalledTimes(1);
     expect(onBack).not.toHaveBeenCalled();
+  });
+
+  it("keeps setup errors inside the primary provider card", () => {
+    renderApp(
+      <ProviderSetupStep
+        error="Unable to update setup step."
+        onBack={vi.fn()}
+        onContinue={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("provider-setup-card")).toContainElement(
+      screen.getByRole("alert"),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Unable to update setup step.",
+    );
   });
 });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AudioInputDevice } from "@/hooks/useAudioDevices";
 import { useAudioDevices } from "@/hooks/useAudioDevices";
+import { normalizeError } from "@/lib/errors";
 import {
   getMicrophoneSelection,
   isTauriRuntime,
@@ -130,11 +131,7 @@ export function useMicrophoneSelection(): UseMicrophoneSelectionState &
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setSelectionError(
-            err instanceof Error
-              ? err.message
-              : "Unable to load microphone selection.",
-          );
+          setSelectionError(normalizeError(err));
         }
       });
 
@@ -170,11 +167,7 @@ export function useMicrophoneSelection(): UseMicrophoneSelectionState &
         const savedSelection = await saveMicrophoneSelection(nextSelection);
         setSelection(savedSelection);
       } catch (err) {
-        setSelectionError(
-          err instanceof Error
-            ? err.message
-            : "Unable to save microphone selection.",
-        );
+        setSelectionError(normalizeError(err));
       }
     },
     [],
@@ -196,9 +189,7 @@ export function useMicrophoneSelection(): UseMicrophoneSelectionState &
       return resolved;
     } catch (err) {
       setActiveMicrophone(null);
-      setSelectionError(
-        err instanceof Error ? err.message : "Microphone access failed.",
-      );
+      setSelectionError(normalizeError(err));
       return null;
     } finally {
       setIsResolving(false);
@@ -228,9 +219,7 @@ export function useMicrophoneSelection(): UseMicrophoneSelectionState &
       .catch((err: unknown) => {
         if (!cancelled) {
           setActiveMicrophone(null);
-          setSelectionError(
-            err instanceof Error ? err.message : "Microphone access failed.",
-          );
+          setSelectionError(normalizeError(err));
         }
       })
       .finally(() => {

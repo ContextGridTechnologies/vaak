@@ -178,7 +178,16 @@ describe("SpeechProviderSettings", () => {
     expect(
       await screen.findByText("Provider test passed."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Provider ready")).toBeInTheDocument();
+    expect(
+      screen.getByText("OpenAI is ready for local dictation."),
+    ).toBeInTheDocument();
     expect(onOnboardingVerifiedChange).toHaveBeenLastCalledWith(true);
+
+    await user.type(screen.getByLabelText("API key"), "x");
+
+    expect(screen.queryByText("Provider ready")).not.toBeInTheDocument();
+    expect(onOnboardingVerifiedChange).toHaveBeenLastCalledWith(false);
   });
 
   it("loads and saves the configured OpenAI model", async () => {

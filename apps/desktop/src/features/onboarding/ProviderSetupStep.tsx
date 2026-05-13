@@ -1,10 +1,11 @@
 import { useState } from "react";
+import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { SpeechProviderSettings } from "@/features/settings/speech-provider";
 
 import {
-  OnboardingActionBar,
   OnboardingProgressHeader,
   OnboardingShell,
 } from "./components";
@@ -35,34 +36,42 @@ export function ProviderSetupStep({
       footerHint="Provider keys stay on this device."
       contentClassName="max-w-[48rem]"
     >
-      <div className="flex flex-col gap-4">
-        <SpeechProviderSettings
-          variant="onboarding"
-          onOnboardingVerifiedChange={setProviderVerified}
-        />
+      <Card
+        data-testid="provider-setup-card"
+        className="mx-auto w-full rounded-lg border border-border/80 bg-card py-0 shadow-sm"
+      >
+        <CardContent className="flex flex-col gap-4 p-5 sm:p-6">
+          <SpeechProviderSettings
+            variant="onboarding"
+            onOnboardingVerifiedChange={setProviderVerified}
+          />
 
-        {error ? (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : null}
+          {error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </CardContent>
 
-        <OnboardingActionBar
-          align="between"
-          primaryAction={
+        <CardFooter
+          data-testid="provider-setup-card-footer"
+          className="justify-between gap-3 rounded-b-lg border-t border-border/70 bg-muted/35 p-4 sm:px-5"
+        >
+          <div>
             <Button type="button" size="sm" variant="outline" onClick={onBack}>
+              <ArrowLeftIcon data-icon="inline-start" />
               Back
             </Button>
-          }
-          secondaryAction={
-            providerVerified ? (
-              <Button type="button" size="sm" onClick={onContinue}>
-                Next
-              </Button>
-            ) : null
-          }
-        />
-      </div>
+          </div>
+
+          {providerVerified ? (
+            <Button type="button" size="sm" onClick={onContinue}>
+              Next
+              <ArrowRightIcon data-icon="inline-end" />
+            </Button>
+          ) : null}
+        </CardFooter>
+      </Card>
     </OnboardingShell>
   );
 }

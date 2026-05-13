@@ -3,7 +3,6 @@ import type { CSSProperties } from "react";
 import { PermissionCallout } from "@/components/app";
 import { TabsContent } from "@/components/ui/tabs";
 import { AppLayout } from "./AppLayout";
-import { DesktopTitleBar } from "./DesktopTitleBar";
 import { AppProviders } from "./AppProviders";
 import { isTauriRuntime } from "../lib/tauri";
 import { AccountPanel } from "../features/account";
@@ -17,14 +16,13 @@ function App() {
 
   return (
     <div
-      className="flex min-h-screen flex-col bg-background text-foreground"
+      className="flex h-screen min-h-0 flex-col overflow-hidden bg-background text-foreground"
       style={
         {
-          "--vaak-titlebar-height": tauriAvailable ? "2.5rem" : "0px",
+          "--vaak-titlebar-height": "0px",
         } as CSSProperties
       }
     >
-      <DesktopTitleBar />
       <div className="min-h-0 flex-1">
         <AppProviders>
           <OnboardingGate>
