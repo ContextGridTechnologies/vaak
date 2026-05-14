@@ -18,6 +18,9 @@ export type MicrophoneSelection =
   | { mode: "system" }
   | { mode: "manual"; deviceId: string };
 
+export const MICROPHONE_SELECTION_CHANGED_EVENT =
+  "vaak://microphone-selection-changed";
+
 export async function getOnboardingState(): Promise<OnboardingState> {
   return invokeTauri("get_onboarding_state");
 }

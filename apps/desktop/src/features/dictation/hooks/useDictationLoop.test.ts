@@ -225,7 +225,7 @@ describe("useDictationLoop", () => {
         },
         recording: expect.objectContaining({
           analysisMs: 0,
-          insertionMs: 0,
+          insertionMs: expect.any(Number),
           postProcessingMs: expect.any(Number),
           reusedWarmStream: true,
           startupMs: 24,

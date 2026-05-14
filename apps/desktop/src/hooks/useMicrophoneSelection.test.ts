@@ -1,13 +1,42 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   isManualSelectionUnavailable,
   microphoneConstraints,
   resolveActiveMicrophone,
+  useMicrophoneSelection,
   type MicrophoneSelection,
 } from "./useMicrophoneSelection";
 
+const {
+  getMicrophoneSelection,
+  isTauriRuntime,
+  listenToTauriEvent,
+  saveMicrophoneSelection,
+  useAudioDevices,
+} = vi.hoisted(() => ({
+  getMicrophoneSelection: vi.fn(),
+  isTauriRuntime: vi.fn(),
+  listenToTauriEvent: vi.fn(),
+  saveMicrophoneSelection: vi.fn(),
+  useAudioDevices: vi.fn(),
+}));
+
+vi.mock("@/hooks/useAudioDevices", () => ({
+  useAudioDevices,
+}));
+
+vi.mock("@/lib/tauri", () => ({
+  getMicrophoneSelection,
+  isTauriRuntime,
+  listenToTauriEvent,
+  MICROPHONE_SELECTION_CHANGED_EVENT: "vaak://microphone-selection-changed",
+  saveMicrophoneSelection,
+}));
+
 const originalMediaDevices = navigator.mediaDevices;
+const detachListener = vi.fn();
 
 type MockTrack = {
   label: string;
@@ -30,8 +59,24 @@ function streamWithTrack(track: MockTrack): MediaStream {
 }
 
 describe("microphone selection", () => {
+  beforeEach(() => {
+    getMicrophoneSelection.mockResolvedValue({ mode: "system" });
+    isTauriRuntime.mockReturnValue(false);
+    listenToTauriEvent.mockResolvedValue(detachListener);
+    saveMicrophoneSelection.mockImplementation(async (selection) => selection);
+    useAudioDevices.mockReturnValue({
+      devices: [],
+      error: null,
+      hasPermission: false,
+      isLoading: false,
+      refresh: vi.fn(),
+      requestPermission: vi.fn(),
+    });
+  });
+
   afterEach(() => {
     setMediaDevices(originalMediaDevices);
+    vi.clearAllMocks();
   });
 
   it("opens a system-selected stream and reports the active track instead of the first device", async () => {
@@ -78,5 +123,44 @@ describe("microphone selection", () => {
         [{ deviceId: "usb-mic", label: "USB microphone" }],
       ),
     ).toBe(false);
+  });
+
+  it("updates mounted selection state when another window changes the microphone", async () => {
+    isTauriRuntime.mockReturnValue(true);
+    useAudioDevices.mockReturnValue({
+      devices: [{ deviceId: "usb-mic", label: "USB microphone" }],
+      error: null,
+      hasPermission: false,
+      isLoading: false,
+      refresh: vi.fn(),
+      requestPermission: vi.fn(),
+    });
+    let eventHandler:
+      | ((event: { payload: MicrophoneSelection }) => void | Promise<void>)
+      | null = null;
+    listenToTauriEvent.mockImplementation(async (_event, handler) => {
+      eventHandler = handler;
+      return detachListener;
+    });
+
+    const { result } = renderHook(() => useMicrophoneSelection());
+
+    await waitFor(() =>
+      expect(listenToTauriEvent).toHaveBeenCalledWith(
+        "vaak://microphone-selection-changed",
+        expect.any(Function),
+      ),
+    );
+
+    await act(async () => {
+      await eventHandler?.({
+        payload: { mode: "manual", deviceId: "usb-mic" },
+      });
+    });
+
+    expect(result.current.selection).toEqual({
+      mode: "manual",
+      deviceId: "usb-mic",
+    });
   });
 });

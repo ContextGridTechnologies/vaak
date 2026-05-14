@@ -8,9 +8,14 @@ type TauriCommandCall = {
 };
 
 const invokeMock = vi.fn();
+const listenMock = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock,
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: listenMock,
 }));
 
 export type TauriCommandHarness = {
@@ -26,6 +31,8 @@ export function createTauriCommandHarness(): TauriCommandHarness {
 
   setTauriRuntimeAvailable();
   invokeMock.mockReset();
+  listenMock.mockReset();
+  listenMock.mockResolvedValue(() => {});
   invokeMock.mockImplementation((command: string, args?: InvokeArgs) => {
     calls.push({ command, args });
 

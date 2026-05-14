@@ -6,6 +6,8 @@ import { normalizeError } from "@/lib/errors";
 import {
   getMicrophoneSelection,
   isTauriRuntime,
+  listenToTauriEvent,
+  MICROPHONE_SELECTION_CHANGED_EVENT,
   saveMicrophoneSelection,
   type MicrophoneSelection,
 } from "@/lib/tauri";
@@ -122,6 +124,7 @@ export function useMicrophoneSelection(): UseMicrophoneSelectionState &
     }
 
     let cancelled = false;
+    let unlisten: (() => void) | undefined;
     getMicrophoneSelection()
       .then((loadedSelection) => {
         if (!cancelled) {
@@ -135,8 +138,24 @@ export function useMicrophoneSelection(): UseMicrophoneSelectionState &
         }
       });
 
+    void listenToTauriEvent<MicrophoneSelection>(
+      MICROPHONE_SELECTION_CHANGED_EVENT,
+      (event) => {
+        setSelection(event.payload);
+        setSelectionError(null);
+        setActiveMicrophone(null);
+      },
+    ).then((detach) => {
+      if (cancelled) {
+        detach();
+        return;
+      }
+      unlisten = detach;
+    });
+
     return () => {
       cancelled = true;
+      unlisten?.();
     };
   }, []);
 

@@ -18,6 +18,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 const SPEECH_PROVIDER_CHANGED_EVENT: &str = "vaak://speech-provider-changed";
 const ONBOARDING_COMPLETED_EVENT: &str = "vaak://onboarding-completed";
+const MICROPHONE_SELECTION_CHANGED_EVENT: &str = "vaak://microphone-selection-changed";
 const MAX_RECENT_RECORD_LIMIT: usize = 200;
 const MAX_RECENT_RECORD_OFFSET: usize = 10_000;
 
@@ -319,10 +320,13 @@ pub fn get_microphone_selection(
 
 #[tauri::command]
 pub fn save_microphone_selection(
+    app: AppHandle,
     settings: State<'_, LocalSettingsStore>,
     selection: MicrophoneSelection,
 ) -> Result<MicrophoneSelection, ProviderError> {
-    settings.save_microphone_selection(selection)
+    let saved_selection = settings.save_microphone_selection(selection)?;
+    let _ = app.emit(MICROPHONE_SELECTION_CHANGED_EVENT, saved_selection.clone());
+    Ok(saved_selection)
 }
 
 #[tauri::command]
