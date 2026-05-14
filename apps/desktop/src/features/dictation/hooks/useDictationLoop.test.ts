@@ -390,12 +390,9 @@ describe("useDictationLoop", () => {
     );
   });
 
-  it.each([
-    ["too_short", "Speech too short. Try speaking a bit longer."],
-    ["low_snr", "Speech unclear. Try again closer to the mic."],
-  ] as const)(
+  it.each(["too_short", "low_snr"] as const)(
     "falls back to raw transcription when local capture analysis reports %s",
-    async (reason, _message) => {
+    async (reason) => {
       const audioBlob = recordingBlob();
 
       const { result } = renderHook(() =>
