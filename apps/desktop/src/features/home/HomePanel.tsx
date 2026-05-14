@@ -223,7 +223,7 @@ export function HomePanel() {
   }, [isLoadingMore, records.length]);
 
   return (
-    <div className="min-h-full bg-background text-foreground">
+    <div className="min-h-full text-foreground">
       <main
         data-testid="app-screen-content"
         className={cn(

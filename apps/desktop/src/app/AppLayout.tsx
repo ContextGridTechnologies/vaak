@@ -99,7 +99,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
         open={sidebarOpen}
         onOpenChange={handleSidebarOpenChange}
         data-testid="app-shell"
-        className="h-full min-h-full overflow-hidden bg-background text-foreground"
+        className="vaak-content-surface h-full min-h-full overflow-hidden text-foreground"
         style={
           {
             "--sidebar-width": "11.75rem",
@@ -110,7 +110,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
           data-testid="app-sidebar"
           data-collapsible="icon"
           collapsible="icon"
-          className="relative"
+          className="relative [&_[data-sidebar=sidebar]]:bg-transparent"
         >
           <SidebarHeader className="px-3 py-3">
             <div className="flex min-w-0 items-center gap-2">
@@ -170,7 +170,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
           </SidebarContent>
           <SidebarDockToggle />
         </Sidebar>
-        <SidebarInset className="min-w-0 overflow-hidden">
+        <SidebarInset className="min-w-0 overflow-hidden bg-transparent">
           <ScrollArea
             data-testid="app-content-scroll-region"
             className="flex-1 p-0"

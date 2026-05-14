@@ -93,6 +93,12 @@ body[data-window="voice-capsule"] #root {
   background: transparent;
 }
 
+.vaak-content-surface {
+  background:
+    radial-gradient(circle at 4rem 0, rgb(221 96 64 / 0.045), transparent 18rem),
+    linear-gradient(135deg, #fffaf7 0%, #f8fbfd 52%, #f3f7f6 100%);
+}
+
 .voice-wave-bar {
   width: 2px;
   border-radius: 9999px;
