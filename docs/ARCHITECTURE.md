@@ -119,7 +119,8 @@ Default local mode:
 - no Vaak backend calls
 - BYO keys stay local
 - audio is sent only to the selected provider
-- raw audio is not retained unless explicitly added later
+- original captured audio is retained locally for dictation history/export
+- processed audio artifacts are development-only and are not exposed in production activity history
 
 Managed cloud mode:
 

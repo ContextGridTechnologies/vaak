@@ -50,10 +50,18 @@ Core sections:
 - Identity: `recordId`, `userId`, `installationId`, `deviceId`, `sessionId`
 - Triggering: `mode`, `trigger`, `platform`
 - Timing: `capturedAt`, `startedAt`, `endedAt`
+- Recording diagnostics: startup, stream acquisition, local analysis, transcription, insertion, and post-processing timings when available
+- Audio artifacts: original captured audio, plus development-only processed audio when enabled
 - Target snapshot: window/control metadata plus `inputKind`
 - Provider metadata: `providerId`, `modelId`
 - Transcript payload: `rawText`, `finalText`, `characterCount`
 - Insertion result: `status`, `method`, `errorCode`, `errorMessage`
+
+Capture-analysis outcomes are reflected through the insertion result:
+
+- `status: "skipped"` with `errorCode: "speech_unclear"` means the attempt was intentionally not inserted.
+- `errorMessage: "No speech detected."` is used for true silence/no-speech skips.
+- Low-confidence captures with a meaningful signal peak can still be sent to the provider as the original raw audio. If that provider call succeeds, the final record is an inserted or empty-transcript record rather than a local capture skip.
 
 Recommended privacy default:
 

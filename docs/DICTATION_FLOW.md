@@ -9,7 +9,7 @@ Vaak Milestone 1 uses a hold-to-talk dictation loop for local desktop text inser
 3. The Tauri hotkey monitor captures the currently focused writable field and emits a dictation start event.
 4. The frontend starts microphone recording through `useAudioRecorder`.
 5. The user releases the dictation shortcut.
-6. The frontend stops recording, sends the captured audio to the selected speech provider, and receives a raw transcript.
+6. The frontend stops recording, analyzes the captured audio, sends eligible audio to the selected speech provider, and receives a raw transcript.
 7. Vaak inserts the raw transcript into the originally captured target through the guarded backend insertion command.
 
 Manual start and stop in the floating voice window follows the same frontend recording and insertion path. Manual start also asks the backend to capture and store the focused dictation target before recording starts. The primary activation model remains the Rust-backed global hold-to-talk shortcut.
@@ -40,6 +40,16 @@ The selected speech provider comes from local settings. The first supported path
 - `getSelectedSpeechProvider`
 - `transcribeRecording`
 
+Before transcription, `useAudioRecorder` runs local capture analysis and may produce cleaned WAV segments. The dictation loop uses those segments when capture analysis is `ready`, except for provider paths that explicitly prefer the original recording.
+
+Local capture analysis is a quality signal, not a universal hard gate:
+
+- `no_speech` is skipped locally and is not sent to the provider.
+- Unclear captures with no meaningful peak are skipped locally as `speech_unclear`.
+- Unclear captures with a meaningful peak, currently `peakDbfs >= -24`, fall back to the original raw `.webm` recording and are sent to the selected provider.
+
+This prevents the calibration/cleanup heuristic from dropping real speech while still avoiding provider calls for empty or effectively silent captures.
+
 The Milestone 1 dictation loop inserts the provider's raw transcript. Rewrite, cleanup, command mode, and hosted Vaak transcription credits are out of scope for this slice.
 
 ## Insertion Policy
@@ -64,6 +74,7 @@ The UI should distinguish these error classes enough for users to recover:
 
 - Microphone or recording failure.
 - Focus capture failure, including no writable target.
+- Capture-analysis skip, including no speech or effectively silent audio.
 - Provider or transcription failure.
 - Insertion failure, including target changed.
 

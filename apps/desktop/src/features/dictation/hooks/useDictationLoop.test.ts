@@ -250,7 +250,7 @@ describe("useDictationLoop", () => {
     expect(result.current.transcript).toBe("hello");
   });
 
-  it("skips provider transcription when local capture analysis marks speech as unclear", async () => {
+  it("falls back to raw transcription when local capture analysis marks speech as low volume", async () => {
     const audioBlob = recordingBlob();
 
     const { result } = renderHook(() =>
@@ -267,7 +267,60 @@ describe("useDictationLoop", () => {
               longestPauseMs: 0,
               estimatedSnrDb: 4,
               averageDbfs: -38,
-              peakDbfs: -27,
+              peakDbfs: -12,
+            },
+            processedAudio: null,
+            transcriptionSegments: [],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello");
+    });
+
+    expect(transcribeRecording).toHaveBeenCalledWith({
+      providerId: "openai",
+      audioBlob,
+      language: "en",
+    });
+    expect(result.current.state).toBe("inserted");
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transcript: {
+          characterCount: 5,
+          finalText: "hello",
+          rawText: "hello",
+        },
+        insertion: {
+          errorCode: null,
+          errorMessage: null,
+          method: "send_input",
+          status: "inserted",
+        },
+      }),
+    );
+  });
+
+  it("skips provider transcription when low-volume capture has no meaningful peak", async () => {
+    const audioBlob = recordingBlob();
+
+    const { result } = renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "unclear",
+            reason: "low_volume",
+            metrics: {
+              voicedMs: 0,
+              leadingTrimMs: 0,
+              trailingTrimMs: 0,
+              longestPauseMs: 0,
+              estimatedSnrDb: 0,
+              averageDbfs: -48,
+              peakDbfs: -35,
             },
             processedAudio: null,
             transcriptionSegments: [],
@@ -281,16 +334,8 @@ describe("useDictationLoop", () => {
     });
 
     expect(transcribeRecording).not.toHaveBeenCalled();
-    expect(result.current.message).toBe(
-      "Speech unclear. Try again closer to the mic.",
-    );
     expect(saveDictationRecord).toHaveBeenCalledWith(
       expect.objectContaining({
-        transcript: {
-          characterCount: 0,
-          finalText: "",
-          rawText: "",
-        },
         insertion: {
           errorCode: "speech_unclear",
           errorMessage: "Speech unclear. Try again closer to the mic.",
@@ -300,6 +345,94 @@ describe("useDictationLoop", () => {
       }),
     );
   });
+
+  it("skips provider transcription when local capture analysis detects no speech", async () => {
+    const audioBlob = recordingBlob();
+
+    const { result } = renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "unclear",
+            reason: "no_speech",
+            metrics: {
+              voicedMs: 0,
+              leadingTrimMs: 0,
+              trailingTrimMs: 0,
+              longestPauseMs: 0,
+              estimatedSnrDb: 0,
+              averageDbfs: -100,
+              peakDbfs: -100,
+            },
+            processedAudio: null,
+            transcriptionSegments: [],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(result.current.error?.kind).toBe("capture");
+    });
+
+    expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(result.current.message).toBe("No speech detected.");
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        insertion: {
+          errorCode: "speech_unclear",
+          errorMessage: "No speech detected.",
+          method: null,
+          status: "skipped",
+        },
+      }),
+    );
+  });
+
+  it.each([
+    ["too_short", "Speech too short. Try speaking a bit longer."],
+    ["low_snr", "Speech unclear. Try again closer to the mic."],
+  ] as const)(
+    "falls back to raw transcription when local capture analysis reports %s",
+    async (reason, _message) => {
+      const audioBlob = recordingBlob();
+
+      const { result } = renderHook(() =>
+        useDictationLoop(
+          analyzedSession({
+            audioBlob,
+            captureAnalysis: {
+              disposition: "unclear",
+              reason,
+              metrics: {
+                voicedMs: reason === "too_short" ? 120 : 900,
+                leadingTrimMs: 0,
+                trailingTrimMs: 0,
+                longestPauseMs: 0,
+                estimatedSnrDb: reason === "low_snr" ? 4 : 18,
+                averageDbfs: -29,
+                peakDbfs: -12,
+              },
+              processedAudio: null,
+              transcriptionSegments: [],
+            },
+          }),
+        ),
+      );
+
+      await waitFor(() => {
+        expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello");
+      });
+
+      expect(transcribeRecording).toHaveBeenCalledWith({
+        providerId: "openai",
+        audioBlob,
+        language: "en",
+      });
+      expect(result.current.state).toBe("inserted");
+    },
+  );
 
   it("transcribes capture-analysis segments in order and joins them once", async () => {
     const audioBlob = recordingBlob();

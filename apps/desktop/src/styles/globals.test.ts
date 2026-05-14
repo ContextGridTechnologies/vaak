@@ -33,13 +33,15 @@ describe("globals.css", () => {
     expect(globalsCss).toContain("overflow: hidden;");
   });
 
-  it("uses a clean white desktop palette without the page gradient", () => {
+  it("uses a clean white desktop palette with a branded content surface", () => {
     expect(globalsCss).toContain("--background: #F8FBFD;");
     expect(globalsCss).toContain("--card: #F8FBFD;");
     expect(globalsCss).toContain("--muted: oklch(0.968 0.002 250);");
     expect(globalsCss).toContain("--border: oklch(0.92 0.004 250);");
     expect(globalsCss).toContain("--sidebar: #F8FBFD;");
-    expect(globalsCss).not.toContain("linear-gradient");
+    expect(readCssBlock(".vaak-content-surface")).toContain(
+      "linear-gradient(135deg, #fffaf7 0%, #f8fbfd 52%, #f3f7f6 100%);",
+    );
   });
 
   it("preserves the primary brand color in dark mode", () => {

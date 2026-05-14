@@ -96,6 +96,7 @@ const idleState: DictationLoopState = {
   state: "idle",
   transcript: null,
 };
+const RAW_TRANSCRIPTION_FALLBACK_PEAK_DBFS = -24;
 
 export function useDictationLoop(
   session: DictationLoopSession,
@@ -210,7 +211,7 @@ export function useDictationLoop(
         captureAnalysis,
         audioBlob,
       );
-      if (captureAnalysis?.disposition === "unclear") {
+      if (captureAnalysis && shouldSkipBeforeTranscription(captureAnalysis)) {
         const message = captureMessage(captureAnalysis.reason);
         await persistDraft({
           audioBlob,
@@ -546,7 +547,29 @@ function shouldPreferRawAudio(
   providerId: SpeechProviderId,
   captureAnalysis: CaptureAnalysis | null,
 ) {
-  return providerId === "assemblyai" && captureAnalysis !== null;
+  return (
+    providerId === "assemblyai" ||
+    shouldFallbackToRawTranscription(captureAnalysis)
+  ) && captureAnalysis !== null;
+}
+
+function shouldSkipBeforeTranscription(captureAnalysis: CaptureAnalysis) {
+  return (
+    captureAnalysis.disposition === "unclear" &&
+    !shouldFallbackToRawTranscription(captureAnalysis)
+  );
+}
+
+function shouldFallbackToRawTranscription(captureAnalysis: CaptureAnalysis | null) {
+  if (captureAnalysis?.disposition !== "unclear") {
+    return false;
+  }
+
+  if (captureAnalysis.reason === "no_speech") {
+    return false;
+  }
+
+  return captureAnalysis.metrics.peakDbfs >= RAW_TRANSCRIPTION_FALLBACK_PEAK_DBFS;
 }
 
 function captureMessage(reason: CaptureReason): string {
