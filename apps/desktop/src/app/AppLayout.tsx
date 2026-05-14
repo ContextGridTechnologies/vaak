@@ -4,7 +4,6 @@ import {
   ChevronRightIcon,
 } from "lucide-react";
 
-import { BrandMark } from "@/components/app/BrandMark";
 import {
   Sidebar,
   SidebarContent,
@@ -26,6 +25,7 @@ import {
   isTauriRuntime,
   saveAppShellPreferences,
 } from "@/lib/tauri";
+import appIconUrl from "../../src-tauri/icons/32x32.png?url";
 import { appSections, type AppSection } from "./navigation";
 
 type AppLayoutProps = {
@@ -114,12 +114,13 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
         >
           <SidebarHeader className="px-3 py-3">
             <div className="flex min-w-0 items-center gap-2">
-              <div className="flex size-8 items-center justify-center rounded-lg border border-sidebar-border/80 bg-background text-primary shadow-xs">
-                <BrandMark
-                  className="text-lg"
-                  data-testid="app-sidebar-brand-mark"
-                />
-              </div>
+              <img
+                src={appIconUrl}
+                alt=""
+                aria-hidden="true"
+                data-testid="app-sidebar-brand-mark"
+                className="size-8 shrink-0 rounded-lg"
+              />
               <span className="truncate text-[1.35rem] font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden">
                 Vaak
               </span>
@@ -146,10 +147,18 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
                           isActive={isActive}
                           tooltip={section.label}
                           aria-label={section.label}
-                          className="h-9 rounded-lg px-2.5 pl-4 text-sm font-medium text-sidebar-foreground/84 data-[active=true]:bg-sidebar-accent/80 data-[active=true]:text-sidebar-foreground"
+                          className="h-9 rounded-lg px-2.5 text-sm font-medium text-sidebar-foreground/84 data-[active=true]:bg-sidebar-accent/80 data-[active=true]:text-sidebar-foreground"
                           onClick={() => setActiveSection(section.value)}
                         >
-                          <Icon data-icon="inline-start" />
+                          <span
+                            aria-hidden="true"
+                            className="flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 group-data-[state=collapsed]/sidebar-wrapper:size-4 group-data-[active=true]/menu-button:bg-background/80 group-data-[active=true]/menu-button:text-primary"
+                          >
+                            <Icon
+                              data-icon="inline-start"
+                              data-testid={`app-sidebar-nav-icon-${section.value}`}
+                            />
+                          </span>
                           <span>{section.label}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>

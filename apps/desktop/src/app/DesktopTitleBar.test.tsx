@@ -32,8 +32,9 @@ describe("DesktopTitleBar", () => {
     renderApp(<DesktopTitleBar />);
 
     expect(screen.getByText("Vaak")).toBeInTheDocument();
-    expect(screen.getByTestId("desktop-titlebar-brand-mark")).toHaveTextContent(
-      "व",
+    expect(screen.getByTestId("desktop-titlebar-brand-mark")).toHaveAttribute(
+      "src",
+      expect.stringContaining("32x32.png"),
     );
   });
 

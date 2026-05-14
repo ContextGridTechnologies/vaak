@@ -22,6 +22,12 @@ pub fn run() {
         .plugin(build_log_plugin(runtime_config))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            if let Some(main_window) = app.get_webview_window("main") {
+                let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
+                    .map_err(|err| err.to_string())?;
+                main_window.set_icon(icon).map_err(|err| err.to_string())?;
+            }
+
             let settings_store =
                 storage::LocalSettingsStore::from_app(app.handle()).map_err(|err| err.message)?;
             let onboarding_completed = settings_store

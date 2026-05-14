@@ -54,9 +54,17 @@ describe("HomePanel", () => {
     | ((entries: Array<{ isIntersecting: boolean }>) => void)
     | null;
   let observeSpy: ReturnType<typeof vi.fn>;
+  let playSpy: ReturnType<typeof vi.spyOn>;
+  let pauseSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.resetAllMocks();
+    playSpy = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockResolvedValue(undefined);
+    pauseSpy = vi
+      .spyOn(HTMLMediaElement.prototype, "pause")
+      .mockImplementation(() => undefined);
     intersectionObserverCallback = null;
     observeSpy = vi.fn();
     class MockIntersectionObserver {
@@ -88,6 +96,7 @@ describe("HomePanel", () => {
       fileName: "discord-1.webm",
     });
     appEnvironment.appEnv = "development";
+    appEnvironment.enableDebugUi = false;
     appEnvironment.exposeProcessedAudioArtifacts = true;
     sanitizeTargetControlName.mockImplementation(({ controlName, controlType }) =>
       controlName || controlType,
@@ -177,25 +186,81 @@ describe("HomePanel", () => {
       screen.queryByRole("button", { name: "View full history" }),
     ).not.toBeInTheDocument();
     expect(screen.getAllByText("Discord").length).toBeGreaterThan(0);
-    expect(screen.getByText("Message Box")).toBeInTheDocument();
+    expect(screen.queryByText("Message Box")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Post 940 ms · STT 910 ms · Analyze 18 ms · Insert 12 ms · Startup 42 ms"),
     ).not.toBeInTheDocument();
-    expect(screen.getAllByText("Inserted").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^Inserted$/)).not.toBeInTheDocument();
+    const metadata = screen.getByTestId(
+      "activity-metadata-7f3e2c91-5b6a-4a23-9f8e-1b7d2a9c3e41",
+    );
+    expect(metadata).not.toHaveClass("border-t");
     expect(
-      screen.getByRole("button", { name: "Play original audio for Discord" }),
+      screen.getByRole("button", { name: "Play audio for Discord" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Play processed audio for Discord" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Play original audio for Discord" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Play processed audio for Discord" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Original")).not.toBeInTheDocument();
+    expect(screen.queryByText("Processed")).not.toBeInTheDocument();
     expect(screen.queryByText("Text input")).not.toBeInTheDocument();
     expect(screen.getByText("OpenAI · gpt-4o-mini-transcribe")).toBeInTheDocument();
     expect(screen.queryByText("Capture record")).not.toBeInTheDocument();
     expect(screen.queryByText("Versioned record")).not.toBeInTheDocument();
   });
 
+  it("keeps inserted rows quiet while showing fresh time copy", async () => {
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "current-inserted-record",
+        capturedAt: new Date().toISOString(),
+        finalText: "Recent inserted transcript",
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Voice Activity")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/^Inserted$/)).not.toBeInTheDocument();
+    expect(screen.getByText("Just now")).toBeInTheDocument();
+    expect(screen.queryByText("this minute")).not.toBeInTheDocument();
+  });
+
+  it("keeps skipped and failed badges visible in activity rows", async () => {
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "skipped-record",
+        capturedAt: "2025-05-19T10:24:31Z",
+        finalText: "Skipped transcript",
+        insertionStatus: "skipped",
+      }),
+      makeRecord({
+        recordId: "failed-record",
+        capturedAt: "2025-05-19T10:23:31Z",
+        finalText: "Failed transcript",
+        insertionStatus: "failed",
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Voice Activity")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/^Skipped$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Failed$/)).toBeInTheDocument();
+  });
+
   it("hides processed audio artifacts in production", async () => {
     appEnvironment.appEnv = "production";
+    appEnvironment.enableDebugUi = false;
     appEnvironment.exposeProcessedAudioArtifacts = false;
     getRecentDictationRecords.mockResolvedValue([
       makeRecord({
@@ -218,7 +283,7 @@ describe("HomePanel", () => {
 
     expect(
       screen.getByRole("button", {
-        name: "Play original audio for Windows Terminal",
+        name: "Play audio for Windows Terminal",
       }),
     ).toBeInTheDocument();
     expect(
@@ -226,6 +291,86 @@ describe("HomePanel", () => {
         name: "Play processed audio for Windows Terminal",
       }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows processed audio playback only in dev debug UI", async () => {
+    appEnvironment.enableDebugUi = true;
+    appEnvironment.exposeProcessedAudioArtifacts = true;
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "debug-processed-record",
+        capturedAt: "2025-05-19T10:24:31Z",
+        finalText: "Debug processed audio transcript",
+        processedAudio: {
+          relativePath: "recordings/2025/05/19/debug-processed.wav",
+          mimeType: "audio/wav",
+          byteLength: 1536,
+        },
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Debug processed audio transcript")).toBeInTheDocument();
+    });
+
+    const metadata = screen.getByTestId("activity-metadata-debug-processed-record");
+    expect(metadata).not.toHaveClass("border-t");
+    expect(
+      screen.getByRole("button", {
+        name: "Play audio for Windows Terminal",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Play processed audio for Windows Terminal",
+      }),
+    ).toHaveTextContent("Processed");
+  });
+
+  it("clamps long transcripts and lets the user expand them", async () => {
+    const user = userEvent.setup();
+    const longTranscript =
+      "This is a longer dictated message that should stay compact in the activity feed until the user chooses to read the full transcript. It keeps the row easier to scan while preserving access to the complete captured text. The transcript area should wrap naturally inside the card instead of clipping off the right edge of the window or forcing the audio controls out of view.";
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "long-transcript-record",
+        capturedAt: "2025-05-19T10:24:31Z",
+        finalText: longTranscript,
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    const transcript = await screen.findByTestId(
+      "activity-transcript-long-transcript-record",
+    );
+    expect(transcript).toHaveClass(
+      "line-clamp-3",
+      "text-muted-foreground",
+      "break-words",
+      "[overflow-wrap:anywhere]",
+    );
+
+    const expandButton = screen.getByRole("button", {
+      name: "Expand transcript for Windows Terminal",
+    });
+    expect(expandButton).toHaveTextContent("Show more");
+    expect(expandButton).not.toHaveTextContent(/^More$/);
+    await user.click(expandButton);
+
+    expect(transcript).not.toHaveClass("line-clamp-3");
+    expect(
+      screen.getByRole("button", {
+        name: "Collapse transcript for Windows Terminal",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Collapse transcript for Windows Terminal",
+      }),
+    ).toHaveTextContent("Show less");
   });
 
   it("shows a polished empty state when there is no persisted dictation history yet", async () => {
@@ -324,7 +469,7 @@ describe("HomePanel", () => {
       );
     });
 
-    expect(screen.getAllByText("Editor").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Editor")).not.toBeInTheDocument();
     expect(sanitizeTargetControlName).toHaveBeenCalled();
     expect(
       screen.queryAllByText(/The editor is not accessible at this time/i),
@@ -438,7 +583,9 @@ describe("HomePanel", () => {
       expect(screen.getByText("PowerShell")).toBeInTheDocument();
     });
 
+    expect(screen.getByText("PowerShell")).toBeInTheDocument();
     expect(screen.getAllByText("PowerShell")).toHaveLength(1);
+    expect(screen.queryByText("Terminal Input")).not.toBeInTheDocument();
   });
 
   it("shows 15 items first, keeps full counts, and appends more rows on scroll", async () => {
@@ -482,7 +629,7 @@ describe("HomePanel", () => {
     expect(screen.getByText("20 inserted")).toBeInTheDocument();
   });
 
-  it("exports saved audio into a user-visible location when download is clicked", async () => {
+  it("loads audio from the compact play button without opening an inline audio bar", async () => {
     const user = userEvent.setup();
     getRecentDictationRecords.mockResolvedValue([
       {
@@ -538,16 +685,17 @@ describe("HomePanel", () => {
     renderApp(<HomePanel />);
 
     await user.click(
-      await screen.findByRole("button", { name: "Play original audio for Discord" }),
+      await screen.findByRole("button", { name: "Play audio for Discord" }),
     );
-    await user.click(await screen.findByRole("button", { name: "Download audio" }));
 
-    expect(exportSavedDictationAudio).toHaveBeenCalledWith(
+    expect(loadSavedDictationAudio).toHaveBeenCalledWith(
       "recordings/2025/05/19/discord-1.webm",
     );
-    expect(revealItemInDir).toHaveBeenCalledWith(
-      "C:\\Users\\nikhi\\Downloads\\Vaak\\discord-1.webm",
-    );
+    expect(playSpy).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Download audio" })).not.toBeInTheDocument();
+    expect(exportSavedDictationAudio).not.toHaveBeenCalled();
+    expect(revealItemInDir).not.toHaveBeenCalled();
+    expect(pauseSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -556,11 +704,13 @@ function makeRecord({
   capturedAt,
   finalText,
   processedAudio = null,
+  insertionStatus = "inserted",
 }: {
   recordId: string;
   capturedAt: string;
   finalText: string;
   processedAudio?: unknown;
+  insertionStatus?: "inserted" | "skipped" | "failed";
 }) {
   return {
     schemaVersion: 1,
@@ -604,7 +754,7 @@ function makeRecord({
       characterCount: finalText.length,
     },
     insertion: {
-      status: "inserted",
+      status: insertionStatus,
       method: "send_input",
       errorCode: null,
       errorMessage: null,
