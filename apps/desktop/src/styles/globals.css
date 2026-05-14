@@ -63,9 +63,17 @@
   --scrollbar-track: color-mix(in oklch, var(--background) 82%, transparent);
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
   background: var(--background);
 }
 
@@ -83,6 +91,12 @@ body[data-window="voice-capsule"] #root {
   height: 100%;
   min-height: 0;
   background: transparent;
+}
+
+.vaak-content-surface {
+  background:
+    radial-gradient(circle at 4rem 0, rgb(221 96 64 / 0.045), transparent 18rem),
+    linear-gradient(135deg, #fffaf7 0%, #f8fbfd 52%, #f3f7f6 100%);
 }
 
 .voice-wave-bar {
@@ -111,25 +125,17 @@ body[data-window="voice-capsule"] #root {
 
 .vaak-scroll-area {
   scrollbar-gutter: stable;
-  scrollbar-width: none;
+  scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
 
-.vaak-scroll-area:hover,
+.vaak-scroll-area[data-scrollbar-visibility="visible"],
 .vaak-scroll-area:focus-visible,
 .vaak-scroll-area:focus-within {
-  scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 .vaak-scroll-area::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-.vaak-scroll-area:hover::-webkit-scrollbar,
-.vaak-scroll-area:focus-visible::-webkit-scrollbar,
-.vaak-scroll-area:focus-within::-webkit-scrollbar {
   width: var(--scrollbar-size);
   height: var(--scrollbar-size);
 }
@@ -139,7 +145,7 @@ body[data-window="voice-capsule"] #root {
   border-radius: var(--scrollbar-radius);
 }
 
-.vaak-scroll-area:hover::-webkit-scrollbar-track,
+.vaak-scroll-area[data-scrollbar-visibility="visible"]::-webkit-scrollbar-track,
 .vaak-scroll-area:focus-visible::-webkit-scrollbar-track,
 .vaak-scroll-area:focus-within::-webkit-scrollbar-track {
   background: var(--scrollbar-track);
@@ -153,13 +159,13 @@ body[data-window="voice-capsule"] #root {
   background-color: transparent;
 }
 
-.vaak-scroll-area:hover::-webkit-scrollbar-thumb,
+.vaak-scroll-area[data-scrollbar-visibility="visible"]::-webkit-scrollbar-thumb,
 .vaak-scroll-area:focus-visible::-webkit-scrollbar-thumb,
 .vaak-scroll-area:focus-within::-webkit-scrollbar-thumb {
   background-color: var(--scrollbar-thumb);
 }
 
-.vaak-scroll-area:hover::-webkit-scrollbar-thumb:hover,
+.vaak-scroll-area[data-scrollbar-visibility="visible"]::-webkit-scrollbar-thumb:hover,
 .vaak-scroll-area:focus-visible::-webkit-scrollbar-thumb:hover,
 .vaak-scroll-area:focus-within::-webkit-scrollbar-thumb:hover {
   background-color: var(--scrollbar-thumb-hover);

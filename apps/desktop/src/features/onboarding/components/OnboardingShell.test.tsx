@@ -25,6 +25,11 @@ describe("OnboardingShell", () => {
     expect(
       screen.getByText("You can change this later in Settings."),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("onboarding-scroll-region")).toHaveClass(
+      "vaak-scroll-area",
+      "min-h-0",
+      "overflow-auto",
+    );
     expect(screen.getByTestId("app-screen-content")).toHaveClass(
       "max-w-[64rem]",
       "gap-6",

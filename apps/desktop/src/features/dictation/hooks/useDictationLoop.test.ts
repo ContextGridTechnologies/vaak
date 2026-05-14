@@ -587,6 +587,23 @@ describe("useDictationLoop", () => {
     expect(result.current.state).toBe("idle");
   });
 
+  it("does not transcribe or insert verification-only recordings", async () => {
+    const audioBlob = recordingBlob();
+
+    const { result } = renderHook(() =>
+      useDictationLoop(session({ audioBlob, processingEnabled: false })),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+    expect(saveDictationRecord).not.toHaveBeenCalled();
+    expect(result.current.state).toBe("idle");
+  });
+
   it("resets stale inserted state when a command-mode recording completes", async () => {
     const audioBlob = recordingBlob();
     const { result, rerender } = renderHook(

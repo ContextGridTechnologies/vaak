@@ -1,16 +1,20 @@
-import { MicVocalIcon, SettingsIcon } from "lucide-react";
+import {
+  AudioLinesIcon,
+  SlidersHorizontalIcon,
+  type LucideIcon,
+} from "lucide-react";
 
 type AppSectionConfig = {
   value: "home" | "settings";
   label: string;
-  icon: typeof MicVocalIcon;
+  icon: LucideIcon;
 };
 
 export const primarySections: readonly AppSectionConfig[] = [
   {
     value: "home",
     label: "Voice",
-    icon: MicVocalIcon,
+    icon: AudioLinesIcon,
   },
 ] as const;
 
@@ -18,7 +22,7 @@ export const utilitySections: readonly AppSectionConfig[] = [
   {
     value: "settings",
     label: "Settings",
-    icon: SettingsIcon,
+    icon: SlidersHorizontalIcon,
   },
 ] as const;
 

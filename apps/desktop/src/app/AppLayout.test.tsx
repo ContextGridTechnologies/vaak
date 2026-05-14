@@ -77,12 +77,21 @@ describe("AppLayout", () => {
       "--sidebar-width": "11.75rem",
     });
     expect(within(screen.getByTestId("app-sidebar")).getByText("Vaak")).toBeInTheDocument();
-    expect(screen.getByTestId("app-sidebar-brand-mark")).toHaveTextContent("व");
+    expect(screen.getByTestId("app-sidebar-brand-mark")).toHaveAttribute(
+      "src",
+      expect.stringContaining("32x32.png"),
+    );
     expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
     expect(screen.queryByTestId("app-sidebar-utility")).not.toBeInTheDocument();
     expect(screen.queryByText("User")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Voice" })).toHaveClass("h-9");
     expect(screen.getByRole("button", { name: "Settings" })).toHaveClass("h-9");
+    expect(screen.getByTestId("app-sidebar-nav-icon-home")).toHaveClass(
+      "lucide-audio-lines",
+    );
+    expect(screen.getByTestId("app-sidebar-nav-icon-settings")).toHaveClass(
+      "lucide-sliders-horizontal",
+    );
     expect(screen.getByTestId("app-sidebar-dock-toggle")).toHaveClass(
       "right-0",
       "translate-x-1/2",

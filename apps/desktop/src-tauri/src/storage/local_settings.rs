@@ -495,14 +495,16 @@ mod tests {
     }
 
     #[test]
-    fn saves_selected_provider_and_provider_config_to_json() {
+    fn saves_selected_provider_and_provider_config_without_provider_secrets() {
         let dir = temp_config_dir("save");
         let store = LocalSettingsStore::new(&dir);
+        let provider_key_value = "sk-test-openai-secret";
+        let assemblyai_key_value = "assemblyai-test-secret";
         let config = ProviderConfig {
             endpoint: Some("https://example.openai.azure.com".to_string()),
             deployment_id: Some("whisper".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
-            model: None,
+            model: Some("gpt-4o-mini-transcribe".to_string()),
         };
 
         store.save_selected_speech_provider("azure-openai").unwrap();
@@ -526,7 +528,8 @@ mod tests {
         assert!(json.contains("\"version\""));
         assert!(json.contains("\"selectedSpeechProvider\""));
         assert!(json.contains("\"providerConfigs\""));
-        assert!(!json.contains("apiKey"));
+        assert!(json.contains("gpt-4o-mini-transcribe"));
+        assert_no_provider_secrets(&json, &[provider_key_value, assemblyai_key_value]);
     }
 
     #[test]
@@ -914,5 +917,32 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.code, "invalid_provider_request");
+    }
+
+    fn assert_no_provider_secrets(json: &str, secret_values: &[&str]) {
+        let secret_field_markers = [
+            "apiKey",
+            "api_key",
+            "apikey",
+            "secret",
+            "password",
+            "token",
+            "providerKey",
+            "provider_key",
+        ];
+
+        for marker in secret_field_markers {
+            assert!(
+                !json.to_ascii_lowercase().contains(&marker.to_ascii_lowercase()),
+                "settings.json must not contain secret-like field marker `{marker}`"
+            );
+        }
+
+        for secret_value in secret_values {
+            assert!(
+                !json.contains(secret_value),
+                "settings.json must not contain provider secret value `{secret_value}`"
+            );
+        }
     }
 }

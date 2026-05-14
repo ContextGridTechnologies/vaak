@@ -66,6 +66,7 @@ export type DictationLoopSession = {
   focusedField: FocusedFieldInfo | null;
   focusedFieldError: string | null;
   isRecording: boolean;
+  processingEnabled?: boolean;
   recordingMetrics: DictationRecordingDiagnostics | null;
   recordingEndedAt: string | null;
   recordingStartedAt: string | null;
@@ -173,6 +174,7 @@ export function useDictationLoop(
       session.isRecording ||
       session.focusedFieldError ||
       session.recorderError ||
+      session.processingEnabled === false ||
       session.completedMode !== "dictation"
     ) {
       return;
@@ -475,6 +477,7 @@ export function useDictationLoop(
     session.focusedField,
     session.focusedFieldError,
     session.isRecording,
+    session.processingEnabled,
     session.recordingMetrics,
     session.recordingEndedAt,
     session.recordingStartedAt,

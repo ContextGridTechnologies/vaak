@@ -8,12 +8,14 @@ import { FloatingVoiceWindow } from "./FloatingVoiceWindow";
 const {
   useDictationLoop,
   useDictationSession,
+  getOnboardingState,
   moveFloatingWindow,
   getFloatingWindowStartState,
   getFloatingMonitorWorkArea,
 } = vi.hoisted(() => ({
   useDictationLoop: vi.fn(),
   useDictationSession: vi.fn(),
+  getOnboardingState: vi.fn(),
   moveFloatingWindow: vi.fn(),
   getFloatingWindowStartState: vi.fn(),
   getFloatingMonitorWorkArea: vi.fn(),
@@ -25,6 +27,13 @@ vi.mock("@/features/dictation/hooks/useDictationLoop", () => ({
 
 vi.mock("@/features/dictation/hooks/useDictationSession", () => ({
   useDictationSession,
+}));
+
+vi.mock("@/lib/tauri", () => ({
+  getOnboardingState,
+  isTauriRuntime: () => true,
+  listenToTauriEvent: vi.fn(async () => () => {}),
+  saveVoiceCapsulePlacement: vi.fn(async () => ({})),
 }));
 
 vi.mock("./window-controller", () => ({
@@ -49,6 +58,11 @@ describe("FloatingVoiceWindow", () => {
       width: 1440,
       height: 860,
     });
+    getOnboardingState.mockResolvedValue({
+      completed: true,
+      currentStep: "hotkeyReadiness",
+      selectedMode: "local",
+    });
 
     useDictationSession.mockReturnValue({
       audioBlob: null,
@@ -68,6 +82,18 @@ describe("FloatingVoiceWindow", () => {
       state: "idle",
       transcript: null,
     });
+  });
+
+  it("keeps the hidden capsule hotkey session disabled until onboarding is complete", async () => {
+    getOnboardingState.mockResolvedValue({
+      completed: false,
+      currentStep: "modeChoice",
+      selectedMode: null,
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    expect(useDictationSession).toHaveBeenCalledWith({ enabled: false });
   });
 
   it("renders a compact record button and starts recording when pressed", async () => {

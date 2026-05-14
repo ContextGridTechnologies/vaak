@@ -1,7 +1,9 @@
 import { type FormEvent, useEffect, useState } from "react";
+import { CheckCircle2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/app";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { normalizeError } from "@/lib/errors";
 import {
@@ -81,6 +83,7 @@ export function SpeechProviderSettings({
     useState<ProviderErrors>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
   const selectedStatus = providerStatuses[selectedProviderId];
+  const selectedProviderReadyMessage = providerTestResults[selectedProviderId];
   const azureHasSavedKey = Boolean(providerStatuses["azure-openai"]?.configured);
   const isOnboarding = variant === "onboarding";
 
@@ -159,6 +162,7 @@ export function SpeechProviderSettings({
     setGlobalError(null);
     if (isOnboarding) {
       onOnboardingVerifiedChange?.(false);
+      setProviderTestResults({});
     }
     setSelectedProviderId(providerId);
   };
@@ -487,6 +491,16 @@ export function SpeechProviderSettings({
         selectedProviderId={selectedProviderId}
         onSelectProvider={selectProvider}
       />
+
+      {isOnboarding && selectedProviderReadyMessage ? (
+        <Alert className="border-success/30 bg-success/5 text-foreground">
+          <CheckCircle2Icon aria-hidden={true} className="text-success" />
+          <AlertTitle>Provider ready</AlertTitle>
+          <AlertDescription>
+            {providerLabels[selectedProviderId]} is ready for local dictation.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {selectedProviderId === "openai" ? (
         <OpenAiProviderPanel

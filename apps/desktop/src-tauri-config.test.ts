@@ -10,6 +10,7 @@ type TauriWindowConfig = {
   height?: number;
   minWidth?: number;
   minHeight?: number;
+  decorations?: boolean;
 };
 
 type TauriConfig = {
@@ -65,10 +66,11 @@ describe("Tauri window configuration", () => {
     expect(credentialsSource).toContain('const SERVICE_NAME: &str = "ai.vaak.desktop";');
     expect(mainWindow).toMatchObject({
       title: "Vaak",
-      width: 1120,
-      height: 760,
-      minWidth: 960,
-      minHeight: 680,
+      width: 1040,
+      height: 740,
+      minWidth: 760,
+      minHeight: 620,
+      decorations: true,
     });
   });
 });

@@ -5,19 +5,34 @@ import { describe, expect, it } from "vitest";
 
 const globalsCss = readFileSync(resolve(__dirname, "./globals.css"), "utf8");
 
-function readToken(blockSelector: ":root" | ".dark", tokenName: string) {
-  const escapedSelector = blockSelector.replace(".", "\\.");
+function readCssBlock(selector: string) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const block = globalsCss.match(
     new RegExp(`${escapedSelector} \\{(?<body>[\\s\\S]*?)\\n\\}`),
   )?.groups?.body;
 
   expect(block).toBeDefined();
 
+  return block ?? "";
+}
+
+function readToken(blockSelector: ":root" | ".dark", tokenName: string) {
+  const block = readCssBlock(blockSelector);
+
   return block?.match(new RegExp(`${tokenName}: (?<value>[^;]+);`))?.groups
     ?.value;
 }
 
 describe("globals.css", () => {
+  it("locks document scrolling to app-owned scroll regions", () => {
+    expect(globalsCss).toContain("html,");
+    expect(globalsCss).toContain("body,");
+    expect(globalsCss).toContain("#root {");
+    expect(globalsCss).toContain("height: 100%;");
+    expect(globalsCss).toContain("min-height: 0;");
+    expect(globalsCss).toContain("overflow: hidden;");
+  });
+
   it("uses a clean white desktop palette without the page gradient", () => {
     expect(globalsCss).toContain("--background: #F8FBFD;");
     expect(globalsCss).toContain("--card: #F8FBFD;");
@@ -32,17 +47,22 @@ describe("globals.css", () => {
     expect(readToken(".dark", "--primary")).toBe("#DD6040");
   });
 
-  it("defines the shared branded scrollbar rules with hover visibility", () => {
+  it("defines the shared branded scrollbar rules with stable idle visibility", () => {
     expect(globalsCss).toContain("--scrollbar-size: 0.7rem;");
     expect(globalsCss).toContain("--scrollbar-thumb: color-mix(in oklch, var(--foreground) 24%, transparent);");
     expect(globalsCss).toContain(".vaak-scroll-area {");
-    expect(globalsCss).toContain("scrollbar-width: none;");
-    expect(globalsCss).toContain(".vaak-scroll-area:hover,");
-    expect(globalsCss).toContain(".vaak-scroll-area:focus-visible,");
     expect(globalsCss).toContain("scrollbar-width: thin;");
+    expect(globalsCss).toContain("scrollbar-color: transparent transparent;");
+    expect(globalsCss).toContain(".vaak-scroll-area[data-scrollbar-visibility=\"visible\"],");
+    expect(globalsCss).toContain(".vaak-scroll-area:focus-visible,");
     expect(globalsCss).toContain(".vaak-scroll-area::-webkit-scrollbar {");
-    expect(globalsCss).toContain("width: 0;");
-    expect(globalsCss).toContain(".vaak-scroll-area:hover::-webkit-scrollbar,");
     expect(globalsCss).toContain("width: var(--scrollbar-size);");
+    expect(globalsCss).toContain("height: var(--scrollbar-size);");
+    expect(readCssBlock(".vaak-scroll-area::-webkit-scrollbar")).not.toContain(
+      "width: 0;",
+    );
+    expect(readCssBlock(".vaak-scroll-area::-webkit-scrollbar")).not.toContain(
+      "height: 0;",
+    );
   });
 });

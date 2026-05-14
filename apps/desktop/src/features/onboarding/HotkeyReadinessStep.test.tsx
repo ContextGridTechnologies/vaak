@@ -7,6 +7,7 @@ import { renderApp } from "@/test/render";
 import { HotkeyReadinessStep } from "./HotkeyReadinessStep";
 
 const dictationSessionState = vi.hoisted(() => ({
+  useDictationSession: vi.fn(),
   hookValue: {
     activeMode: "idle",
     hasPermission: true,
@@ -29,7 +30,7 @@ const tauriState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/features/dictation/hooks/useDictationSession", () => ({
-  useDictationSession: () => dictationSessionState.hookValue,
+  useDictationSession: dictationSessionState.useDictationSession,
 }));
 
 vi.mock("@/lib/tauri", () => ({
@@ -53,7 +54,25 @@ describe("HotkeyReadinessStep", () => {
       statusLabel: "Idle",
       tauriAvailable: true,
     };
+    dictationSessionState.useDictationSession.mockReset();
+    dictationSessionState.useDictationSession.mockImplementation(
+      () => dictationSessionState.hookValue,
+    );
     tauriState.saveDictationHotkey.mockReset();
+  });
+
+  it("uses verification-only recording so shortcut test audio is never inserted", async () => {
+    renderApp(
+      <HotkeyReadinessStep
+        error={null}
+        onBack={vi.fn()}
+        onContinue={vi.fn()}
+      />,
+    );
+
+    expect(dictationSessionState.useDictationSession).toHaveBeenCalledWith({
+      processingEnabled: false,
+    });
   });
 
   it("shows the default guided test state before the shortcut succeeds", async () => {

@@ -18,7 +18,13 @@ type DictationTrigger = "hotkey" | "manual" | null;
 
 const HOTKEY_STOP_TAIL_MS = 250;
 
-export function useDictationSession() {
+export function useDictationSession({
+  enabled = true,
+  processingEnabled = true,
+}: {
+  enabled?: boolean;
+  processingEnabled?: boolean;
+} = {}) {
   const tauriAvailable = isTauriRuntime();
   const {
     activeMicrophone: probedActiveMicrophone,
@@ -113,6 +119,10 @@ export function useDictationSession() {
       knownField?: FocusedFieldInfo | null,
       trigger: Exclude<DictationTrigger, null> = "manual",
     ) => {
+      if (!enabled) {
+        return;
+      }
+
       clearPendingHotkeyStop();
       setFocusedFieldError(null);
       setCompletedMode(null);
@@ -161,6 +171,7 @@ export function useDictationSession() {
     },
     [
       clearPendingHotkeyStop,
+      enabled,
       isManualUnavailable,
       manualUnavailableMessage,
       start,
@@ -169,6 +180,10 @@ export function useDictationSession() {
 
   const stopHotkeyRecording = useCallback(
     (mode: ActiveMode) => {
+      if (!enabled) {
+        return;
+      }
+
       setCompletedMode(mode);
       setActiveMode("idle");
       clearPendingHotkeyStop();
@@ -178,21 +193,29 @@ export function useDictationSession() {
         hotkeyStopTimerRef.current = null;
       }, HOTKEY_STOP_TAIL_MS);
     },
-    [clearPendingHotkeyStop, stop],
+    [clearPendingHotkeyStop, enabled, stop],
   );
 
   const startManualDictation = useCallback(async () => {
+    if (!enabled) {
+      return;
+    }
+
     setActiveMode("dictation");
     await startWithFocusCapture(undefined, "manual");
-  }, [startWithFocusCapture]);
+  }, [enabled, startWithFocusCapture]);
 
   const stopManualRecording = useCallback(() => {
+    if (!enabled) {
+      return;
+    }
+
     clearPendingHotkeyStop();
     setCompletedMode("dictation");
     setActiveMode("idle");
     setRecordingEndedAt(new Date().toISOString());
     stop();
-  }, [clearPendingHotkeyStop, stop]);
+  }, [clearPendingHotkeyStop, enabled, stop]);
 
   const selectDevice = useCallback((value: string) => {
     if (value === "default" || value === "system") {
@@ -203,7 +226,7 @@ export function useDictationSession() {
   }, [selectManual, selectSystem]);
 
   useEffect(() => {
-    if (!isWindows || !tauriAvailable) {
+    if (!enabled || !isWindows || !tauriAvailable) {
       return;
     }
 
@@ -224,17 +247,21 @@ export function useDictationSession() {
     return () => {
       cancelled = true;
     };
-  }, [isWindows, tauriAvailable]);
+  }, [enabled, isWindows, tauriAvailable]);
 
   useEffect(() => {
-    if (!hasPermission || isManualUnavailable) {
+    if (!enabled || !hasPermission || isManualUnavailable) {
       return;
     }
 
     void prepare();
-  }, [hasPermission, isManualUnavailable, prepare]);
+  }, [enabled, hasPermission, isManualUnavailable, prepare]);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     if (lastDeviceIdRef.current === selectedDeviceId) {
       return;
     }
@@ -244,19 +271,19 @@ export function useDictationSession() {
       setRestartOnStop(true);
       stop();
     }
-  }, [clearPendingHotkeyStop, selectedDeviceId, isRecording, stop]);
+  }, [clearPendingHotkeyStop, enabled, selectedDeviceId, isRecording, stop]);
 
   useEffect(() => {
-    if (restartOnStop && status === "stopped") {
+    if (enabled && restartOnStop && status === "stopped") {
       setRestartOnStop(false);
       if (!isManualUnavailable) {
         void start();
       }
     }
-  }, [isManualUnavailable, restartOnStop, start, status]);
+  }, [enabled, isManualUnavailable, restartOnStop, start, status]);
 
   useEffect(() => {
-    if (!isWindows || !tauriAvailable) {
+    if (!enabled || !isWindows || !tauriAvailable) {
       return;
     }
 
@@ -329,6 +356,7 @@ export function useDictationSession() {
     start,
     startWithFocusCapture,
     clearPendingHotkeyStop,
+    enabled,
     stopHotkeyRecording,
     tauriAvailable,
   ]);
@@ -357,6 +385,7 @@ export function useDictationSession() {
     isLoading,
     isRecording,
     isWindows,
+    processingEnabled,
     dictationTrigger,
     recorderError: error,
     recordingMetrics: startupMetrics,

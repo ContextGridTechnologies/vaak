@@ -64,7 +64,7 @@ export function ProviderSetupCard({
         className={cn(
           "h-auto min-h-9 w-full justify-center gap-2 rounded-lg px-3 py-2 text-center shadow-sm",
           selected &&
-            "border-primary bg-primary/5 text-foreground shadow-primary/10 hover:border-primary hover:bg-primary/8",
+            "border-primary bg-primary/10 text-foreground shadow-primary/10 ring-1 ring-primary/20 hover:border-primary hover:bg-primary/12 hover:text-foreground",
         )}
         onClick={onSelect}
       >

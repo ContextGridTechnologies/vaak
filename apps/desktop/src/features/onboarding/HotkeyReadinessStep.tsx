@@ -42,7 +42,7 @@ export function HotkeyReadinessStep({
     reset,
     status,
     tauriAvailable,
-  } = useDictationSession();
+  } = useDictationSession({ processingEnabled: false });
   const [savedBindings, setSavedBindings] = useState<HotkeyBindings | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [draftShortcut, setDraftShortcut] = useState("");

@@ -51,7 +51,7 @@ export function ChoiceCard({
     <Card
       size="sm"
       className={cn(
-        "min-h-[18rem] rounded-lg border border-border bg-card shadow-sm transition-[border-color,background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5",
+        "min-h-[18rem] min-w-0 rounded-lg border border-border bg-card shadow-sm transition-[border-color,background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5",
         selected && "hover:border-primary/35 hover:shadow-md",
         !selected && "hover:border-border/90 hover:shadow-md",
         future && "bg-card/70 hover:border-border hover:bg-card",

@@ -16,7 +16,7 @@ describe("DesktopTitleBar", () => {
     delete globalScope.__TAURI_INTERNALS__;
   });
 
-  it("uses the app background for the custom titlebar in Tauri", () => {
+  it("is available for custom chrome surfaces when explicitly rendered", () => {
     globalScope.__TAURI__ = {};
 
     renderApp(<DesktopTitleBar />);
@@ -32,8 +32,9 @@ describe("DesktopTitleBar", () => {
     renderApp(<DesktopTitleBar />);
 
     expect(screen.getByText("Vaak")).toBeInTheDocument();
-    expect(screen.getByTestId("desktop-titlebar-brand-mark")).toHaveTextContent(
-      "व",
+    expect(screen.getByTestId("desktop-titlebar-brand-mark")).toHaveAttribute(
+      "src",
+      expect.stringContaining("32x32.png"),
     );
   });
 

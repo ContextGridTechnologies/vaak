@@ -1,20 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
+  ChevronDownIcon,
+  ChevronUpIcon,
   CircleAlertIcon,
   CircleCheckBigIcon,
   CircleSlash2Icon,
   Clock3Icon,
   CopyIcon,
+  CheckIcon,
   LoaderCircleIcon,
   type LucideIcon,
   MessageSquareTextIcon,
   NotebookPenIcon,
+  PauseIcon,
   PlayIcon,
   SquareTerminalIcon,
   StickyNoteIcon,
 } from "lucide-react";
-import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/app";
 import { appScreenContentClassName } from "@/components/app/AppScreen";
@@ -30,9 +32,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { AudioPlayback } from "@/features/dictation/components/AudioPlayback";
 import {
-  exportSavedDictationAudio,
   getRecentDictationRecords,
   isTauriRuntime,
   loadSavedDictationAudio,
@@ -64,6 +64,7 @@ type HomeActivity = {
 const POLL_INTERVAL_MS = 3_000;
 const INITIAL_VISIBLE_COUNT = 15;
 const VISIBLE_INCREMENT = 15;
+const COLLAPSED_TRANSCRIPT_LIMIT = 280;
 
 const statusMeta: Record<
   ActivityStatus,
@@ -222,7 +223,7 @@ export function HomePanel() {
   }, [isLoadingMore, records.length]);
 
   return (
-    <div className="min-h-full bg-background text-foreground">
+    <div className="min-h-full text-foreground">
       <main
         data-testid="app-screen-content"
         className={cn(
@@ -232,7 +233,7 @@ export function HomePanel() {
       >
         <section
           data-testid="voice-activity-shell"
-          className="mx-auto w-full max-w-[52rem]"
+          className="mx-auto mt-12 w-full max-w-[52rem] lg:mt-16"
         >
           <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -317,32 +318,48 @@ type ActivityFeedItemProps = {
 function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
   const RowIcon = activity.icon;
   const ActivityStatusIcon = statusMeta[activity.status].icon;
-  const shouldShowTargetName =
-    activity.targetName.trim().toLocaleLowerCase() !==
-    activity.appName.trim().toLocaleLowerCase();
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const processedAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const [originalAudioUrl, setOriginalAudioUrl] = useState<string | null>(null);
   const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(null);
   const [isOriginalAudioOpen, setIsOriginalAudioOpen] = useState(false);
   const [isProcessedAudioOpen, setIsProcessedAudioOpen] = useState(false);
-  const [loadingAudioKind, setLoadingAudioKind] = useState<
-    "original" | "processed" | null
-  >(null);
+  const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [isLoadingProcessedAudio, setIsLoadingProcessedAudio] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
-  const processedAudio = appEnvironment.exposeProcessedAudioArtifacts
-    ? activity.processedAudio
-    : null;
+  const processedAudio =
+    appEnvironment.enableDebugUi && appEnvironment.exposeProcessedAudioArtifacts
+      ? activity.processedAudio
+      : null;
+  const canExpandTranscript =
+    activity.transcriptPreview.length > COLLAPSED_TRANSCRIPT_LIMIT;
+
+  useEffect(() => {
+    return () => {
+      audioPlayerRef.current?.pause();
+      audioPlayerRef.current = null;
+      processedAudioPlayerRef.current?.pause();
+      processedAudioPlayerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
       if (originalAudioUrl) {
         URL.revokeObjectURL(originalAudioUrl);
       }
+    };
+  }, [originalAudioUrl]);
+
+  useEffect(() => {
+    return () => {
       if (processedAudioUrl) {
         URL.revokeObjectURL(processedAudioUrl);
       }
     };
-  }, [originalAudioUrl, processedAudioUrl]);
+  }, [processedAudioUrl]);
 
   useEffect(() => {
     if (copyState !== "copied") {
@@ -358,51 +375,109 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
     };
   }, [copyState]);
 
-  const handlePlayAudio = async (kind: "original" | "processed") => {
-    const artifact =
-      kind === "original" ? activity.audio : processedAudio;
-    const currentUrl = kind === "original" ? originalAudioUrl : processedAudioUrl;
-    const setUrl = kind === "original" ? setOriginalAudioUrl : setProcessedAudioUrl;
-
-    if (!artifact) {
+  const handlePlayAudio = async () => {
+    if (!activity.audio) {
       return;
     }
 
-    if (currentUrl) {
-      if (kind === "original") {
-        setIsOriginalAudioOpen((current) => !current);
+    const currentPlayer = audioPlayerRef.current;
+    if (currentPlayer) {
+      if (currentPlayer.paused) {
+        try {
+          await currentPlayer.play();
+          setIsOriginalAudioOpen(true);
+        } catch (error) {
+          console.error("Failed to play saved dictation audio", error);
+          setAudioError("Audio unavailable");
+        }
       } else {
-        setIsProcessedAudioOpen((current) => !current);
+        currentPlayer.pause();
+        setIsOriginalAudioOpen(false);
       }
       return;
     }
 
-    setLoadingAudioKind(kind);
+    setIsLoadingAudio(true);
     setAudioError(null);
 
     try {
-      const savedAudio = await loadSavedDictationAudio(artifact.relativePath);
+      const savedAudio = await loadSavedDictationAudio(activity.audio.relativePath);
       const nextAudioUrl = URL.createObjectURL(
         new Blob([savedAudio.audioBytes], {
           type: savedAudio.mimeType,
         }),
       );
-      setUrl((current) => {
+      const nextPlayer = new Audio(nextAudioUrl);
+      nextPlayer.addEventListener("ended", () => {
+        setIsOriginalAudioOpen(false);
+      });
+      setOriginalAudioUrl((current) => {
         if (current) {
           URL.revokeObjectURL(current);
         }
         return nextAudioUrl;
       });
-      if (kind === "original") {
-        setIsOriginalAudioOpen(true);
-      } else {
-        setIsProcessedAudioOpen(true);
-      }
+      audioPlayerRef.current = nextPlayer;
+      await nextPlayer.play();
+      setIsOriginalAudioOpen(true);
     } catch (error) {
       console.error("Failed to load saved dictation audio", error);
       setAudioError("Audio unavailable");
     } finally {
-      setLoadingAudioKind(null);
+      setIsLoadingAudio(false);
+    }
+  };
+
+  const handlePlayProcessedAudio = async () => {
+    if (!processedAudio) {
+      return;
+    }
+
+    const currentPlayer = processedAudioPlayerRef.current;
+    if (currentPlayer) {
+      if (currentPlayer.paused) {
+        try {
+          await currentPlayer.play();
+          setIsProcessedAudioOpen(true);
+        } catch (error) {
+          console.error("Failed to play processed dictation audio", error);
+          setAudioError("Processed audio unavailable");
+        }
+      } else {
+        currentPlayer.pause();
+        setIsProcessedAudioOpen(false);
+      }
+      return;
+    }
+
+    setIsLoadingProcessedAudio(true);
+    setAudioError(null);
+
+    try {
+      const savedAudio = await loadSavedDictationAudio(processedAudio.relativePath);
+      const nextAudioUrl = URL.createObjectURL(
+        new Blob([savedAudio.audioBytes], {
+          type: savedAudio.mimeType,
+        }),
+      );
+      const nextPlayer = new Audio(nextAudioUrl);
+      nextPlayer.addEventListener("ended", () => {
+        setIsProcessedAudioOpen(false);
+      });
+      setProcessedAudioUrl((current) => {
+        if (current) {
+          URL.revokeObjectURL(current);
+        }
+        return nextAudioUrl;
+      });
+      processedAudioPlayerRef.current = nextPlayer;
+      await nextPlayer.play();
+      setIsProcessedAudioOpen(true);
+    } catch (error) {
+      console.error("Failed to load processed dictation audio", error);
+      setAudioError("Processed audio unavailable");
+    } finally {
+      setIsLoadingProcessedAudio(false);
     }
   };
 
@@ -416,35 +491,16 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
     }
   };
 
-  const handleDownloadAudio = async (kind: "original" | "processed") => {
-    const artifact =
-      kind === "original" ? activity.audio : processedAudio;
-    if (!artifact) {
-      return;
-    }
-
-    try {
-      const exported = await exportSavedDictationAudio(artifact.relativePath);
-      toast.success(`Saved ${exported.fileName}`, {
-        description: exported.savedPath,
-      });
-      await revealItemInDir(exported.savedPath);
-    } catch (error) {
-      console.error("Failed to export saved dictation audio", error);
-      toast.error("Unable to download audio");
-    }
-  };
-
   return (
     <article
       className={cn(
-        "flex flex-col gap-3 rounded-xl border border-border/70 bg-card px-4 py-3.5 shadow-sm transition-[border-color,box-shadow,transform] sm:px-5",
+        "group/activity flex flex-col gap-3 overflow-hidden rounded-xl border border-border/70 bg-card px-4 py-3.5 shadow-sm transition-[border-color,box-shadow,transform] sm:px-5",
         activity.isLatest
           ? "border-border shadow-md"
           : "hover:border-border hover:shadow-md",
       )}
     >
-      <div className="flex items-start gap-4">
+      <div className="flex min-w-0 items-start gap-4">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground shadow-xs">
           {activity.iconMark ? (
             <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-foreground/75">
@@ -461,49 +517,144 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
               <div className="text-[1.05rem] font-semibold leading-tight text-foreground">
                 {activity.appName}
               </div>
-              {shouldShowTargetName ? (
-                <div className="mt-0.5 text-sm leading-5 text-muted-foreground">
-                  {activity.targetName}
-                </div>
-              ) : null}
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-sm lg:justify-end">
-              <StatusBadge
-                tone={statusMeta[activity.status].tone}
-                className="normal-case tracking-normal"
-              >
-                <ActivityStatusIcon data-icon="inline-start" />
-                {statusMeta[activity.status].label}
-              </StatusBadge>
+              {activity.status === "inserted" ? null : (
+                <StatusBadge
+                  tone={statusMeta[activity.status].tone}
+                  className="normal-case tracking-normal"
+                >
+                  <ActivityStatusIcon data-icon="inline-start" />
+                  {statusMeta[activity.status].label}
+                </StatusBadge>
+              )}
               <span className="text-sm text-muted-foreground">
                 {formatRelativeTime(activity.capturedAt)}
               </span>
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-start justify-between gap-3">
-              <p className="min-w-0 flex-1 text-sm leading-6 text-foreground/92">
-                {activity.transcriptPreview}
-              </p>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+              <div className="min-w-0 overflow-hidden">
+                <p
+                  data-testid={`activity-transcript-${activity.recordId}`}
+                  className={cn(
+                    "max-w-full whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]",
+                    canExpandTranscript &&
+                      !isTranscriptExpanded &&
+                      "line-clamp-3",
+                  )}
+                >
+                  {activity.transcriptPreview}
+                </p>
+                {canExpandTranscript ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    className="mt-1 h-6 rounded-full px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setIsTranscriptExpanded((current) => !current);
+                    }}
+                    aria-label={`${isTranscriptExpanded ? "Collapse" : "Expand"} transcript for ${activity.appName}`}
+                  >
+                    {isTranscriptExpanded ? (
+                      <ChevronUpIcon data-icon="inline-start" />
+                    ) : (
+                      <ChevronDownIcon data-icon="inline-start" />
+                    )}
+                    {isTranscriptExpanded ? "Show less" : "Show more"}
+                  </Button>
+                ) : null}
+                <div
+                  data-testid={`activity-metadata-${activity.recordId}`}
+                  className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2"
+                >
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">
+                    {activity.providerLabel}
+                  </span>
+                  {activity.audio ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="h-6 rounded-full px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        void handlePlayAudio();
+                      }}
+                      disabled={isLoadingAudio}
+                      aria-label={`Play audio for ${activity.appName}`}
+                    >
+                      {isLoadingAudio ? (
+                        <LoaderCircleIcon
+                          className="animate-spin"
+                          data-icon="inline-start"
+                        />
+                      ) : isOriginalAudioOpen ? (
+                        <PauseIcon data-icon="inline-start" />
+                      ) : (
+                        <PlayIcon data-icon="inline-start" />
+                      )}
+                      {isOriginalAudioOpen ? "Pause" : "Play"}{" "}
+                      {Math.max(1, Math.round(activity.audio.byteLength / 1024))} KB
+                    </Button>
+                  ) : null}
+                  {processedAudio ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="h-6 rounded-full px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        void handlePlayProcessedAudio();
+                      }}
+                      disabled={isLoadingProcessedAudio}
+                      aria-label={`Play processed audio for ${activity.appName}`}
+                    >
+                      {isLoadingProcessedAudio ? (
+                        <LoaderCircleIcon
+                          className="animate-spin"
+                          data-icon="inline-start"
+                        />
+                      ) : isProcessedAudioOpen ? (
+                        <PauseIcon data-icon="inline-start" />
+                      ) : (
+                        <PlayIcon data-icon="inline-start" />
+                      )}
+                      Processed{" "}
+                      {Math.max(1, Math.round(processedAudio.byteLength / 1024))} KB
+                    </Button>
+                  ) : null}
+                </div>
+                {audioError ? (
+                  <div className="mt-1 text-xs text-destructive">{audioError}</div>
+                ) : null}
+              </div>
               <Button
                 type="button"
                 variant="ghost"
                 size="xs"
-                className="shrink-0 rounded-md px-2"
+                className="shrink-0 rounded-md px-2 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/activity:opacity-100"
                 onClick={() => {
                   void handleCopyTranscript();
                 }}
                 aria-label={`Copy transcript for ${activity.appName}`}
                 title={copyState === "copied" ? "Copied" : "Copy transcript"}
               >
-                <CopyIcon data-icon="inline-start" />
-                {copyState === "copied"
-                  ? "Copied"
-                  : copyState === "error"
-                    ? "Retry"
-                    : "Copy"}
+                {copyState === "copied" ? (
+                  <CheckIcon className="text-success" aria-hidden="true" />
+                ) : (
+                  <CopyIcon aria-hidden="true" />
+                )}
+                <span className="sr-only">
+                  {copyState === "copied"
+                    ? "Copied"
+                    : copyState === "error"
+                      ? "Retry copy"
+                      : "Copy transcript"}
+                </span>
               </Button>
             </div>
             {/*
@@ -512,103 +663,9 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
               to surface processing diagnostics in the product later.
             */}
           </div>
-
-          {activity.audio || processedAudio ? (
-            <div className="flex flex-col gap-2 border-t border-border/60 pt-2">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  {activity.audio ? renderAudioControl({
-                    appName: activity.appName,
-                    byteLength: activity.audio.byteLength,
-                    isLoading: loadingAudioKind === "original",
-                    isOpen: isOriginalAudioOpen,
-                    kind: "original",
-                    onClick: () => {
-                      void handlePlayAudio("original");
-                    },
-                  }) : null}
-                  {processedAudio ? renderAudioControl({
-                    appName: activity.appName,
-                    byteLength: processedAudio.byteLength,
-                    isLoading: loadingAudioKind === "processed",
-                    isOpen: isProcessedAudioOpen,
-                    kind: "processed",
-                    onClick: () => {
-                      void handlePlayAudio("processed");
-                    },
-                  }) : null}
-                </div>
-                {/*
-                  Input-kind metadata remains hidden for now.
-                  Keep the provider/model label visible and revisit the rest of
-                  the metadata layout later.
-                */}
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:justify-end">
-                  <span>{activity.providerLabel}</span>
-                </div>
-              </div>
-              {audioError ? (
-                <div className="text-xs text-destructive">{audioError}</div>
-              ) : null}
-              {isOriginalAudioOpen ? (
-                <AudioPlayback
-                  audioUrl={originalAudioUrl}
-                  onDownload={() => handleDownloadAudio("original")}
-                />
-              ) : null}
-              {isProcessedAudioOpen ? (
-                <AudioPlayback
-                  audioUrl={processedAudioUrl}
-                  onDownload={() => handleDownloadAudio("processed")}
-                />
-              ) : null}
-            </div>
-          ) : null}
         </div>
       </div>
     </article>
-  );
-}
-
-function renderAudioControl({
-  appName,
-  byteLength,
-  isLoading,
-  isOpen,
-  kind,
-  onClick,
-}: {
-  appName: string;
-  byteLength: number;
-  isLoading: boolean;
-  isOpen: boolean;
-  kind: "original" | "processed";
-  onClick: () => void;
-}) {
-  const label = kind === "original" ? "Original" : "Processed";
-
-  return (
-    <div className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-muted/15 px-2 py-1">
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        className="h-7 rounded-md px-2.5"
-        onClick={onClick}
-        disabled={isLoading}
-        aria-label={`Play ${kind} audio for ${appName}`}
-      >
-        {isLoading ? (
-          <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-        ) : (
-          <PlayIcon data-icon="inline-start" />
-        )}
-        {isOpen ? `Hide ${label}` : label}
-      </Button>
-      <span className="text-xs text-muted-foreground">
-        {Math.max(1, Math.round(byteLength / 1024))} KB
-      </span>
-    </div>
   );
 }
 
@@ -815,20 +872,26 @@ function formatRelativeTime(value: string) {
     return "Unknown";
   }
 
-  const diffMs = date.getTime() - Date.now();
-  const diffMinutes = Math.round(diffMs / 60_000);
-  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-
-  if (Math.abs(diffMinutes) < 60) {
-    return formatter.format(diffMinutes, "minute");
+  const elapsedSeconds = Math.max(
+    0,
+    Math.round((Date.now() - date.getTime()) / 1_000),
+  );
+  if (elapsedSeconds < 60) {
+    return "Just now";
   }
 
-  const diffHours = Math.round(diffMinutes / 60);
-  if (Math.abs(diffHours) < 24) {
-    return formatter.format(diffHours, "hour");
+  const elapsedMinutes = Math.round(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes} min ago`;
   }
 
-  return formatter.format(Math.round(diffHours / 24), "day");
+  const elapsedHours = Math.round(elapsedMinutes / 60);
+  if (elapsedHours < 24) {
+    return `${elapsedHours} hr${elapsedHours === 1 ? "" : "s"} ago`;
+  }
+
+  const elapsedDays = Math.round(elapsedHours / 24);
+  return `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} ago`;
 }
 
 function capitalize(value: string) {
