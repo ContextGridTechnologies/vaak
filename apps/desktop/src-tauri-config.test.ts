@@ -212,6 +212,20 @@ describe("Desktop release metadata", () => {
   });
 });
 
+describe("Desktop startup behavior", () => {
+  it("registers Vaak to launch when the user signs in", () => {
+    const cargoToml = readFileSync(join(process.cwd(), "src-tauri", "Cargo.toml"), "utf8");
+    const libRs = readFileSync(join(process.cwd(), "src-tauri", "src", "lib.rs"), "utf8");
+
+    expect(cargoToml).toContain("tauri-plugin-autostart");
+    expect(libRs).toContain("tauri_plugin_autostart::init");
+    expect(libRs).toContain("MacosLauncher::LaunchAgent");
+    expect(libRs).toContain("apply_startup_launch_preference");
+    expect(libRs).toContain("commands::get_system_settings");
+    expect(libRs).toContain("commands::save_system_settings");
+  });
+});
+
 function readPngSize(path: string): { width: number; height: number } {
   const file = readFileSync(path);
 

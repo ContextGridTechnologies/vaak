@@ -18,6 +18,8 @@ const providerApi = vi.hoisted(() => ({
   saveMicrophoneSelection: vi.fn(),
   getHotkeyBindings: vi.fn(),
   saveDictationHotkey: vi.fn(),
+  getSystemSettings: vi.fn(),
+  saveSystemSettings: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
@@ -103,6 +105,12 @@ describe("SettingsPanel provider setup", () => {
       dictation: "Ctrl+Shift",
       command: "Ctrl+Shift+Alt",
     });
+    providerApi.getSystemSettings.mockResolvedValue({
+      launchOnStartup: true,
+    });
+    providerApi.saveSystemSettings.mockImplementation((settings) =>
+      Promise.resolve(settings),
+    );
     providerApi.getProviderStatus.mockImplementation((providerId: string) => {
       if (providerId === "azure-openai") {
         return Promise.resolve(azureReadyStatus());
@@ -222,16 +230,17 @@ describe("SettingsPanel provider setup", () => {
     expect(within(shortcutCard!).getByText("Win")).toBeInTheDocument();
   });
 
-  it("lets users disable usage analytics from Settings", async () => {
+  it("keeps usage analytics inside the system setting card", async () => {
     const user = userEvent.setup();
     renderApp(<SettingsPanel />);
 
-    const analyticsCard = (await screen.findByText("Usage analytics")).closest(
+    const systemCard = (await screen.findByText("System setting")).closest(
       '[data-slot="card"]',
     ) as HTMLElement | null;
-    expect(analyticsCard).not.toBeNull();
+    expect(systemCard).not.toBeNull();
+    expect(within(systemCard!).getByText("Usage analytics")).toBeInTheDocument();
 
-    const toggle = within(analyticsCard!).getByRole("switch", {
+    const toggle = within(systemCard!).getByRole("switch", {
       name: "Share privacy-safe usage analytics",
     });
     expect(toggle).toBeChecked();
@@ -239,6 +248,34 @@ describe("SettingsPanel provider setup", () => {
     await user.click(toggle);
 
     expect(toggle).not.toBeChecked();
+    expect(screen.getAllByText("System setting")).toHaveLength(1);
+  });
+
+  it("lets users control whether Vaak starts on startup", async () => {
+    const user = userEvent.setup();
+    renderApp(<SettingsPanel />);
+
+    const systemCard = (await screen.findByText("System setting")).closest(
+      '[data-slot="card"]',
+    ) as HTMLElement | null;
+    expect(systemCard).not.toBeNull();
+    expect(
+      within(systemCard!).getByText("Control how Vaak integrates with your desktop session."),
+    ).toBeInTheDocument();
+
+    const toggle = within(systemCard!).getByRole("switch", {
+      name: "Start Vaak on startup",
+    });
+    expect(toggle).toBeChecked();
+
+    await user.click(toggle);
+
+    expect(toggle).not.toBeChecked();
+    await waitFor(() => {
+      expect(providerApi.saveSystemSettings).toHaveBeenCalledWith({
+        launchOnStartup: false,
+      });
+    });
   });
 
   it("saves a changed dictation shortcut from Settings", async () => {

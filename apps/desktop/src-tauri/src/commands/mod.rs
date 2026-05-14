@@ -11,7 +11,7 @@ use crate::session::{HotkeyBindings, SessionStore};
 use crate::storage::{
     AppShellPreferences, DictationAudioArtifact, DictationRecordDraftV1, DictationRecordV1,
     ExportedDictationAudio, LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection,
-    OnboardingState, SavedDictationAudio, VoiceCapsulePlacement,
+    OnboardingState, SavedDictationAudio, SystemSettings, VoiceCapsulePlacement,
 };
 use crate::windowing;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -284,6 +284,23 @@ pub fn save_app_shell_preferences(
 }
 
 #[tauri::command]
+pub fn get_system_settings(
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<SystemSettings, ProviderError> {
+    settings.system_settings()
+}
+
+#[tauri::command]
+pub fn save_system_settings(
+    app: AppHandle,
+    local_settings: State<'_, LocalSettingsStore>,
+    settings: SystemSettings,
+) -> Result<SystemSettings, ProviderError> {
+    apply_startup_launch_setting(&app, settings.launch_on_startup)?;
+    local_settings.save_system_settings(settings)
+}
+
+#[tauri::command]
 pub fn get_voice_capsule_placement(
     settings: State<'_, LocalSettingsStore>,
 ) -> Result<VoiceCapsulePlacement, ProviderError> {
@@ -398,6 +415,34 @@ fn ensure_provider_ready(status: ProviderStatus) -> Result<ProviderStatus, Provi
         return Err(crate::providers::errors::ProviderFailure::MissingConfiguration.into());
     }
     Ok(status)
+}
+
+fn apply_startup_launch_setting(
+    app: &AppHandle,
+    launch_on_startup: bool,
+) -> Result<(), ProviderError> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+
+        let autostart_manager = app.autolaunch();
+        if launch_on_startup {
+            autostart_manager
+                .enable()
+                .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        } else {
+            autostart_manager
+                .disable()
+                .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        }
+    }
+
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, launch_on_startup);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

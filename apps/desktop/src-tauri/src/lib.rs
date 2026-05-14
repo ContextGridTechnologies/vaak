@@ -22,6 +22,8 @@ pub fn run() {
         .plugin(build_log_plugin(runtime_config))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            initialize_autostart_plugin(app.handle());
+
             if let Some(main_window) = app.get_webview_window("main") {
                 let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
                     .map_err(|err| err.to_string())?;
@@ -37,6 +39,7 @@ pub fn run() {
             let app_shell_preferences = settings_store
                 .app_shell_preferences()
                 .map_err(|err| err.message.clone())?;
+            apply_startup_launch_preference(app.handle(), &settings_store);
             if let Some(voice_capsule) = app.get_webview_window("voice-capsule") {
                 windowing::prepare_voice_capsule_window(
                     &voice_capsule,
@@ -88,6 +91,8 @@ pub fn run() {
             commands::get_onboarding_state,
             commands::get_app_shell_preferences,
             commands::save_app_shell_preferences,
+            commands::get_system_settings,
+            commands::save_system_settings,
             commands::get_voice_capsule_placement,
             commands::save_voice_capsule_placement,
             commands::get_microphone_selection,
@@ -99,6 +104,56 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn initialize_autostart_plugin(app: &tauri::AppHandle) {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::MacosLauncher;
+
+        if let Err(err) = app.plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        )) {
+            log::warn!("failed to initialize autostart plugin: {err}");
+        }
+    }
+
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+    }
+}
+
+fn apply_startup_launch_preference(
+    app: &tauri::AppHandle,
+    settings_store: &storage::LocalSettingsStore,
+) {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+
+        let Ok(system_settings) = settings_store.system_settings() else {
+            log::warn!("failed to load system settings for startup registration");
+            return;
+        };
+
+        let autostart_manager = app.autolaunch();
+        let result = if system_settings.launch_on_startup {
+            autostart_manager.enable()
+        } else {
+            autostart_manager.disable()
+        };
+
+        if let Err(err) = result {
+            log::warn!("failed to apply startup launch preference: {err}");
+        }
+    }
+
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, settings_store);
+    }
 }
 
 fn build_log_plugin(

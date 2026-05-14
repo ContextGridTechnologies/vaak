@@ -43,6 +43,8 @@ struct LocalSettings {
     #[serde(default)]
     app_shell: AppShellPreferences,
     #[serde(default)]
+    system: SystemSettings,
+    #[serde(default)]
     identity: Option<LocalIdentity>,
 }
 
@@ -67,6 +69,13 @@ pub struct AppShellPreferences {
     pub sidebar_collapsed: bool,
     #[serde(default = "default_voice_capsule_placement_option")]
     pub voice_capsule_placement: Option<VoiceCapsulePlacement>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemSettings {
+    #[serde(default = "default_launch_on_startup")]
+    pub launch_on_startup: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -142,6 +151,7 @@ impl Default for LocalSettings {
             hotkeys: HotkeySettings::default(),
             onboarding: OnboardingState::default(),
             app_shell: AppShellPreferences::default(),
+            system: SystemSettings::default(),
             identity: None,
         }
     }
@@ -157,6 +167,14 @@ impl Default for HotkeySettings {
     fn default() -> Self {
         Self {
             dictation: default_dictation_hotkey(),
+        }
+    }
+}
+
+impl Default for SystemSettings {
+    fn default() -> Self {
+        Self {
+            launch_on_startup: default_launch_on_startup(),
         }
     }
 }
@@ -268,6 +286,22 @@ impl LocalSettingsStore {
         settings.app_shell = normalize_app_shell_preferences(preferences);
         self.save_unlocked(&settings)?;
         Ok(settings.app_shell)
+    }
+
+    pub fn system_settings(&self) -> Result<SystemSettings, ProviderError> {
+        let _guard = self.lock()?;
+        Ok(self.load_unlocked()?.system)
+    }
+
+    pub fn save_system_settings(
+        &self,
+        system_settings: SystemSettings,
+    ) -> Result<SystemSettings, ProviderError> {
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        settings.system = system_settings;
+        self.save_unlocked(&settings)?;
+        Ok(settings.system)
     }
 
     pub fn microphone_selection(&self) -> Result<MicrophoneSelection, ProviderError> {
@@ -410,6 +444,10 @@ fn default_dictation_hotkey() -> String {
 
 fn default_voice_capsule_placement_option() -> Option<VoiceCapsulePlacement> {
     Some(VoiceCapsulePlacement::default())
+}
+
+fn default_launch_on_startup() -> bool {
+    true
 }
 
 fn normalize_onboarding_step(step: &str) -> Option<&'static str> {
@@ -805,6 +843,38 @@ mod tests {
             preferences.voice_capsule_placement,
             Some(VoiceCapsulePlacement::default())
         );
+    }
+
+    #[test]
+    fn system_settings_default_to_launch_on_startup() {
+        let dir = temp_config_dir("system-settings-defaults");
+        let store = LocalSettingsStore::new(&dir);
+
+        let settings = store.system_settings().unwrap();
+
+        assert!(settings.launch_on_startup);
+    }
+
+    #[test]
+    fn persists_system_startup_preference() {
+        let dir = temp_config_dir("system-settings-startup");
+        let store = LocalSettingsStore::new(&dir);
+
+        let saved = store
+            .save_system_settings(SystemSettings {
+                launch_on_startup: false,
+            })
+            .unwrap();
+
+        assert!(!saved.launch_on_startup);
+        assert!(!LocalSettingsStore::new(&dir)
+            .system_settings()
+            .unwrap()
+            .launch_on_startup);
+
+        let json = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(json.contains("\"system\""));
+        assert!(json.contains("\"launchOnStartup\": false"));
     }
 
     #[test]
