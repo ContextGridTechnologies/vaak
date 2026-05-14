@@ -1,6 +1,6 @@
 [package]
 name = "vaak-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Open-source, local-first voice input for desktop workflows."
 authors = ["Vaak Contributors"]
 edition = "2021"
