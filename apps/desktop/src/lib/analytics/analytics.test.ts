@@ -144,4 +144,161 @@ describe("analytics", () => {
     });
     expect(posthog.capture).toHaveBeenCalledTimes(3);
   });
+
+  it("applies telemetry preference changes during the current app session", () => {
+    const posthog = {
+      capture: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+    };
+    const storage = storageWith();
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: "phc_public_project_key",
+      },
+      posthog,
+      storage,
+    });
+
+    analytics.capture("app_opened");
+    analytics.setTelemetryEnabled(false);
+    analytics.capture("app_version_seen");
+    analytics.setTelemetryEnabled(true);
+    analytics.capture("app_version_seen");
+
+    expect(analytics.enabled).toBe(true);
+    expect(getTelemetryEnabledPreference(storage)).toBe(true);
+    expect(posthog.opt_out_capturing).toHaveBeenCalledTimes(1);
+    expect(posthog.opt_in_capturing).toHaveBeenCalledTimes(2);
+    expect(posthog.capture).toHaveBeenCalledTimes(2);
+    expect(posthog.capture).toHaveBeenNthCalledWith(1, "app_opened", {
+      app_env: "production",
+      app_version: "0.1.0",
+    });
+    expect(posthog.capture).toHaveBeenNthCalledWith(2, "app_version_seen", {
+      app_env: "production",
+      app_version: "0.1.0",
+    });
+  });
+
+  it("sanitizes event properties before sending them to PostHog", () => {
+    const posthog = {
+      capture: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+    };
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: "phc_public_project_key",
+      },
+      posthog,
+      storage: storageWith(),
+    });
+
+    analytics.capture(
+      "app_opened",
+      {
+        allowedBoolean: true,
+        allowedNumber: 7,
+        allowedString: "provider",
+        allowedNull: null,
+        unsafeArray: ["transcript"],
+        unsafeObject: { transcript: "secret" },
+        unsafeUndefined: undefined,
+      } as unknown as Record<string, unknown>,
+    );
+
+    expect(posthog.capture).toHaveBeenCalledWith("app_opened", {
+      app_env: "production",
+      app_version: "0.1.0",
+      allowedBoolean: true,
+      allowedNumber: 7,
+      allowedString: "provider",
+      allowedNull: null,
+    });
+  });
+
+  it("does not initialize or capture when users toggle telemetry without a public key", () => {
+    const posthog = {
+      capture: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+    };
+    const storage = storageWith();
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: null,
+      },
+      posthog,
+      storage,
+    });
+
+    analytics.setTelemetryEnabled(false);
+    analytics.setTelemetryEnabled(true);
+    analytics.capture("app_opened");
+
+    expect(analytics.enabled).toBe(false);
+    expect(getTelemetryEnabledPreference(storage)).toBe(true);
+    expect(posthog.init).not.toHaveBeenCalled();
+    expect(posthog.capture).not.toHaveBeenCalled();
+    expect(posthog.opt_in_capturing).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when PostHog calls fail", () => {
+    const posthog = {
+      capture: vi.fn(() => {
+        throw new Error("posthog capture failed");
+      }),
+      init: vi.fn(() => {
+        throw new Error("posthog init failed");
+      }),
+      opt_in_capturing: vi.fn(() => {
+        throw new Error("posthog opt in failed");
+      }),
+      opt_out_capturing: vi.fn(() => {
+        throw new Error("posthog opt out failed");
+      }),
+    };
+
+    expect(() => {
+      const analytics = createAnalytics({
+        appVersion: "0.1.0",
+        environment: {
+          appEnv: "production",
+          cloudBaseUrl: null,
+          enableDebugUi: false,
+          exposeProcessedAudioArtifacts: false,
+          posthogHost: "https://us.i.posthog.com",
+          posthogPublicKey: "phc_public_project_key",
+        },
+        posthog,
+        storage: storageWith(),
+      });
+
+      analytics.capture("app_opened");
+      analytics.setTelemetryEnabled(false);
+      analytics.setTelemetryEnabled(true);
+    }).not.toThrow();
+  });
 });

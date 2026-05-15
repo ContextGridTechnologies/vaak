@@ -11,8 +11,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import {
   getTelemetryEnabledPreference,
-  setTelemetryEnabledPreference,
 } from "@/lib/analytics";
+import { analytics } from "@/lib/analytics/browser";
 
 export function UsageAnalyticsSettingsCard() {
   const [enabled, setEnabled] = useState(() =>
@@ -20,8 +20,22 @@ export function UsageAnalyticsSettingsCard() {
   );
 
   function handleEnabledChange(nextEnabled: boolean) {
-    setTelemetryEnabledPreference(window.localStorage, nextEnabled);
+    if (!nextEnabled) {
+      analytics.capture("setting_changed", {
+        enabled: false,
+        setting_id: "usage_analytics",
+      });
+      analytics.setTelemetryEnabled(false);
+      setEnabled(false);
+      return;
+    }
+
+    analytics.setTelemetryEnabled(true);
     setEnabled(nextEnabled);
+    analytics.capture("setting_changed", {
+      enabled: true,
+      setting_id: "usage_analytics",
+    });
   }
 
   return (

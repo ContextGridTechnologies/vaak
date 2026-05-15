@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/app";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
+import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
 import {
   getProviderConfig,
@@ -276,6 +277,7 @@ export function SpeechProviderSettings({
       setProviderStatuses((current) => ({ ...current, openai: status }));
       setApiKey("");
       setSelectedProviderId("openai");
+      captureProviderConfigured("openai", variant);
       if (isOnboarding) {
         await verifySavedProvider("openai");
       } else {
@@ -327,6 +329,7 @@ export function SpeechProviderSettings({
       }));
       setSelectedProviderId("azure-openai");
       setAzureApiKey("");
+      captureProviderConfigured("azure-openai", variant);
       if (isOnboarding) {
         await verifySavedProvider("azure-openai");
       } else {
@@ -364,6 +367,7 @@ export function SpeechProviderSettings({
       setProviderStatuses((current) => ({ ...current, assemblyai: status }));
       setAssemblyAiApiKey("");
       setSelectedProviderId("assemblyai");
+      captureProviderConfigured("assemblyai", variant);
       if (isOnboarding) {
         await verifySavedProvider("assemblyai");
       } else {
@@ -401,6 +405,7 @@ export function SpeechProviderSettings({
       setProviderStatuses((current) => ({ ...current, elevenlabs: status }));
       setElevenLabsApiKey("");
       setSelectedProviderId("elevenlabs");
+      captureProviderConfigured("elevenlabs", variant);
       if (isOnboarding) {
         await verifySavedProvider("elevenlabs");
       } else {
@@ -438,6 +443,7 @@ export function SpeechProviderSettings({
       setProviderStatuses((current) => ({ ...current, smallest: status }));
       setSmallestApiKey("");
       setSelectedProviderId("smallest");
+      captureProviderConfigured("smallest", variant);
       if (isOnboarding) {
         await verifySavedProvider("smallest");
       } else {
@@ -455,6 +461,11 @@ export function SpeechProviderSettings({
 
   const testSelectedProvider = async () => {
     const providerId = selectedProviderId;
+    const startedAt = now();
+    analytics.capture("provider_test_started", {
+      provider_id: providerId,
+      source: variant,
+    });
     setProviderErrors((current) => ({ ...current, [providerId]: undefined }));
     setProviderTestResults((current) => ({
       ...current,
@@ -469,11 +480,23 @@ export function SpeechProviderSettings({
         ...current,
         [providerId]: `${providerLabels[providerId]} provider is ready.`,
       }));
+      analytics.capture("provider_test_completed", {
+        duration_bucket: durationBucket(elapsedMs(startedAt)),
+        error_code: null,
+        provider_id: providerId,
+        status: "success",
+      });
     } catch (err) {
       setProviderErrors((current) => ({
         ...current,
         [providerId]: normalizeProviderError(providerId, err),
       }));
+      analytics.capture("provider_test_completed", {
+        duration_bucket: durationBucket(elapsedMs(startedAt)),
+        error_code: errorCodeFromUnknown(err),
+        provider_id: providerId,
+        status: "failed",
+      });
     } finally {
       setTestingProviderId(null);
     }
@@ -624,4 +647,66 @@ export function SpeechProviderSettings({
       </Card>
     </div>
   );
+}
+
+function captureProviderConfigured(
+  providerId: SpeechProviderId,
+  source: "settings" | "onboarding",
+): void {
+  analytics.capture("provider_configured", {
+    provider_family: providerFamily(providerId),
+    provider_id: providerId,
+    source,
+  });
+}
+
+function providerFamily(providerId: SpeechProviderId): string {
+  if (providerId === "azure-openai") {
+    return "azure";
+  }
+
+  return providerId;
+}
+
+function errorCodeFromUnknown(err: unknown): string {
+  if (err && typeof err === "object") {
+    const maybeCode = (err as { code?: unknown }).code;
+    if (typeof maybeCode === "string" && maybeCode.trim().length > 0) {
+      return maybeCode;
+    }
+  }
+
+  return "unknown_error";
+}
+
+function now() {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+function elapsedMs(startedAt: number) {
+  return Math.max(0, Math.round(now() - startedAt));
+}
+
+function durationBucket(valueMs: number) {
+  if (valueMs < 250) {
+    return "lt_250ms";
+  }
+
+  if (valueMs < 1_000) {
+    return "250ms_1s";
+  }
+
+  if (valueMs < 3_000) {
+    return "1s_3s";
+  }
+
+  if (valueMs < 10_000) {
+    return "3s_10s";
+  }
+
+  if (valueMs < 30_000) {
+    return "10s_30s";
+  }
+
+  return "gte_30s";
 }

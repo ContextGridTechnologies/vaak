@@ -4,8 +4,8 @@ import { PermissionCallout, SectionPanel } from "@/components/app";
 import { Switch } from "@/components/ui/switch";
 import {
   getTelemetryEnabledPreference,
-  setTelemetryEnabledPreference,
 } from "@/lib/analytics";
+import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
 import {
   getSystemSettings,
@@ -56,6 +56,10 @@ export function SystemSettingsCard() {
         launchOnStartup: nextValue,
       });
       setLaunchOnStartup(savedSettings.launchOnStartup);
+      analytics.capture("setting_changed", {
+        enabled: savedSettings.launchOnStartup,
+        setting_id: "launch_on_startup",
+      });
     } catch (err) {
       setLaunchOnStartup(previousValue);
       setError(normalizeError(err));
@@ -65,8 +69,22 @@ export function SystemSettingsCard() {
   }
 
   function handleAnalyticsChange(nextValue: boolean) {
-    setTelemetryEnabledPreference(window.localStorage, nextValue);
+    if (!nextValue) {
+      analytics.capture("setting_changed", {
+        enabled: false,
+        setting_id: "usage_analytics",
+      });
+      analytics.setTelemetryEnabled(false);
+      setAnalyticsEnabled(false);
+      return;
+    }
+
+    analytics.setTelemetryEnabled(true);
     setAnalyticsEnabled(nextValue);
+    analytics.capture("setting_changed", {
+      enabled: true,
+      setting_id: "usage_analytics",
+    });
   }
 
   return (

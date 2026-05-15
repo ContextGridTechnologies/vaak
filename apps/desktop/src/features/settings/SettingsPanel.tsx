@@ -1,4 +1,7 @@
+import { useEffect } from "react";
+
 import { appScreenContentClassName } from "@/components/app";
+import { analytics } from "@/lib/analytics/browser";
 import { cn } from "@/lib/utils";
 
 import { KeyboardShortcutSettingsCard } from "./KeyboardShortcutSettingsCard";
@@ -7,6 +10,12 @@ import { SpeechProviderSettings } from "./speech-provider";
 import { SystemSettingsCard } from "./SystemSettingsCard";
 
 export function SettingsPanel() {
+  useEffect(() => {
+    analytics.capture("settings_opened", {
+      section: "settings",
+    });
+  }, []);
+
   return (
     <div className="min-h-full bg-background text-foreground">
       <main

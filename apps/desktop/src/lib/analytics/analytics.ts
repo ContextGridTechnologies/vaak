@@ -6,16 +6,16 @@ export type AnalyticsEventName =
   | "onboarding_started"
   | "onboarding_completed"
   | "provider_configured"
+  | "provider_test_started"
+  | "provider_test_completed"
   | "dictation_started"
   | "dictation_completed"
   | "dictation_failed"
   | "settings_opened"
+  | "setting_changed"
   | "app_version_seen";
 
-export type AnalyticsProperties = Record<
-  string,
-  boolean | number | string | null
->;
+export type AnalyticsProperties = Record<string, unknown>;
 
 type PostHogClient = {
   capture: (eventName: string, properties?: AnalyticsProperties) => void;
@@ -45,6 +45,7 @@ export type Analytics = {
   ) => void;
   captureAppOpened: () => void;
   enabled: boolean;
+  setTelemetryEnabled: (enabled: boolean) => void;
 };
 
 type CreateAnalyticsOptions = {
@@ -74,28 +75,46 @@ export function createAnalytics({
   posthog,
   storage,
 }: CreateAnalyticsOptions): Analytics {
-  const enabled =
+  let enabled =
     environment.posthogPublicKey !== null &&
     getTelemetryEnabledPreference(storage);
+  let initialized = false;
   const baseProperties = {
     app_env: environment.appEnv,
     app_version: appVersion,
   };
 
-  if (enabled && environment.posthogPublicKey !== null) {
-    posthog.init(environment.posthogPublicKey, {
-      api_host: environment.posthogHost,
-      autocapture: false,
-      capture_pageview: false,
-      disable_session_recording: true,
-      loaded: (client) => {
-        client.opt_in_capturing();
-      },
-      persistence: "localStorage",
+  function initializePostHog(): void {
+    if (initialized || environment.posthogPublicKey === null) {
+      return;
+    }
+
+    tryPostHogCall(() => {
+      posthog.init(environment.posthogPublicKey!, {
+        api_host: environment.posthogHost,
+        autocapture: false,
+        capture_pageview: false,
+        disable_session_recording: true,
+        loaded: (client) => {
+          tryPostHogCall(() => {
+            client.opt_in_capturing();
+          });
+        },
+        persistence: "localStorage",
+      });
+      initialized = true;
     });
-    posthog.opt_in_capturing();
+  }
+
+  if (enabled) {
+    initializePostHog();
+    tryPostHogCall(() => {
+      posthog.opt_in_capturing();
+    });
   } else {
-    posthog.opt_out_capturing();
+    tryPostHogCall(() => {
+      posthog.opt_out_capturing();
+    });
   }
 
   function capture(
@@ -106,9 +125,11 @@ export function createAnalytics({
       return;
     }
 
-    posthog.capture(eventName, {
-      ...baseProperties,
-      ...properties,
+    tryPostHogCall(() => {
+      posthog.capture(eventName, {
+        ...sanitizeAnalyticsProperties(baseProperties),
+        ...sanitizeAnalyticsProperties(properties),
+      });
     });
   }
 
@@ -125,9 +146,58 @@ export function createAnalytics({
     capture("app_opened");
   }
 
+  function setTelemetryEnabled(enabledPreference: boolean): void {
+    setTelemetryEnabledPreference(storage, enabledPreference);
+    enabled =
+      environment.posthogPublicKey !== null &&
+      getTelemetryEnabledPreference(storage);
+
+    if (enabled) {
+      initializePostHog();
+      tryPostHogCall(() => {
+        posthog.opt_in_capturing();
+      });
+      return;
+    }
+
+    tryPostHogCall(() => {
+      posthog.opt_out_capturing();
+    });
+  }
+
   return {
     capture,
     captureAppOpened,
-    enabled,
+    get enabled() {
+      return enabled;
+    },
+    setTelemetryEnabled,
   };
+}
+
+function tryPostHogCall(call: () => void): void {
+  try {
+    call();
+  } catch {
+    // Telemetry must never affect local app behavior.
+  }
+}
+
+function sanitizeAnalyticsProperties(
+  properties: AnalyticsProperties,
+): Record<string, boolean | number | string | null> {
+  const sanitized: Record<string, boolean | number | string | null> = {};
+
+  for (const [key, value] of Object.entries(properties)) {
+    if (
+      typeof value === "boolean" ||
+      typeof value === "number" ||
+      typeof value === "string" ||
+      value === null
+    ) {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
 }

@@ -21,10 +21,17 @@ const providerApi = vi.hoisted(() => ({
   getSystemSettings: vi.fn(),
   saveSystemSettings: vi.fn(),
 }));
+const analyticsApi = vi.hoisted(() => ({
+  analytics: {
+    capture: vi.fn(),
+    setTelemetryEnabled: vi.fn(),
+  },
+}));
 
 vi.mock("@/lib/tauri", () => ({
   ...providerApi,
 }));
+vi.mock("@/lib/analytics/browser", () => analyticsApi);
 
 type MockMediaDevice = {
   kind: MediaDeviceKind;
@@ -178,6 +185,10 @@ describe("SettingsPanel provider setup", () => {
     expect(screen.getByLabelText("API version")).toHaveValue(
       "2025-04-01-preview",
     );
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "settings_opened",
+      { section: "settings" },
+    );
   });
 
   it("shows microphone and shortcut settings as separate cards after provider setup", async () => {
@@ -248,6 +259,19 @@ describe("SettingsPanel provider setup", () => {
     await user.click(toggle);
 
     expect(toggle).not.toBeChecked();
+    expect(analyticsApi.analytics.setTelemetryEnabled).toHaveBeenCalledWith(false);
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "setting_changed",
+      {
+        enabled: false,
+        setting_id: "usage_analytics",
+      },
+    );
+    const captureCallOrder =
+      analyticsApi.analytics.capture.mock.invocationCallOrder;
+    expect(captureCallOrder[captureCallOrder.length - 1]).toBeLessThan(
+      analyticsApi.analytics.setTelemetryEnabled.mock.invocationCallOrder[0],
+    );
     expect(screen.getAllByText("System setting")).toHaveLength(1);
   });
 
@@ -276,6 +300,13 @@ describe("SettingsPanel provider setup", () => {
         launchOnStartup: false,
       });
     });
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "setting_changed",
+      {
+        enabled: false,
+        setting_id: "launch_on_startup",
+      },
+    );
   });
 
   it("saves a changed dictation shortcut from Settings", async () => {
@@ -351,6 +382,14 @@ describe("SettingsPanel provider setup", () => {
         activate: true,
       });
     });
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "provider_configured",
+      {
+        provider_family: "azure",
+        provider_id: "azure-openai",
+        source: "settings",
+      },
+    );
   });
 
   it("tests only the selected Azure provider and shows a scoped success", async () => {
@@ -365,6 +404,22 @@ describe("SettingsPanel provider setup", () => {
         "azure-openai",
       );
     });
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "provider_test_started",
+      {
+        provider_id: "azure-openai",
+        source: "settings",
+      },
+    );
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "provider_test_completed",
+      {
+        duration_bucket: expect.any(String),
+        error_code: null,
+        provider_id: "azure-openai",
+        status: "success",
+      },
+    );
     expect(screen.getByText("Azure OpenAI provider is ready.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "OpenAI" })).not.toBeInTheDocument();
   });
@@ -384,5 +439,14 @@ describe("SettingsPanel provider setup", () => {
       await screen.findByText("Azure OpenAI configuration is incomplete."),
     ).toBeInTheDocument();
     expect(providerApi.testSpeechProvider).toHaveBeenCalledWith("azure-openai");
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "provider_test_completed",
+      {
+        duration_bucket: expect.any(String),
+        error_code: "missing_provider_config",
+        provider_id: "azure-openai",
+        status: "failed",
+      },
+    );
   });
 });
