@@ -8,6 +8,6 @@ pub use dictation_records::{
     ExportedDictationAudio, LocalDictationRecordStore, LocalIdentity, SavedDictationAudio,
 };
 pub use local_settings::{
-    AppShellPreferences, LocalSettingsStore, MicrophoneSelection, OnboardingState,
-    SystemSettings, VoiceCapsuleAnchor, VoiceCapsulePlacement,
+    AppShellPreferences, LocalSettingsStore, MicrophoneSelection, OnboardingState, SystemSettings,
+    VoiceCapsuleAnchor, VoiceCapsulePlacement,
 };

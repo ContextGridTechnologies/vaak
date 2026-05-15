@@ -867,10 +867,12 @@ mod tests {
             .unwrap();
 
         assert!(!saved.launch_on_startup);
-        assert!(!LocalSettingsStore::new(&dir)
-            .system_settings()
-            .unwrap()
-            .launch_on_startup);
+        assert!(
+            !LocalSettingsStore::new(&dir)
+                .system_settings()
+                .unwrap()
+                .launch_on_startup
+        );
 
         let json = fs::read_to_string(dir.join("settings.json")).unwrap();
         assert!(json.contains("\"system\""));
@@ -1003,7 +1005,9 @@ mod tests {
 
         for marker in secret_field_markers {
             assert!(
-                !json.to_ascii_lowercase().contains(&marker.to_ascii_lowercase()),
+                !json
+                    .to_ascii_lowercase()
+                    .contains(&marker.to_ascii_lowercase()),
                 "settings.json must not contain secret-like field marker `{marker}`"
             );
         }

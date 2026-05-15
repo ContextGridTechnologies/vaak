@@ -138,6 +138,16 @@ export function useDictationSession({
         return;
       }
 
+      if (!processingEnabled) {
+        setFocusedField(knownField ?? null);
+        try {
+          await start();
+        } catch (err) {
+          setFocusedFieldError(`Recording failed: ${normalizeError(err)}`);
+        }
+        return;
+      }
+
       if (knownField) {
         setFocusedField(knownField);
         try {
@@ -174,6 +184,7 @@ export function useDictationSession({
       enabled,
       isManualUnavailable,
       manualUnavailableMessage,
+      processingEnabled,
       start,
     ],
   );
@@ -296,13 +307,15 @@ export function useDictationSession({
           const payload = event.payload;
 
           if (payload.mode === "dictation") {
-            if (payload.phase === "start") {
-              setActiveMode("dictation");
-              if (payload.field) {
-                await startWithFocusCapture(payload.field, "hotkey");
-              } else {
-                setFocusedField(null);
-                setFocusedFieldError(
+              if (payload.phase === "start") {
+                setActiveMode("dictation");
+                if (payload.field) {
+                  await startWithFocusCapture(payload.field, "hotkey");
+                } else if (!processingEnabled) {
+                  await startWithFocusCapture(null, "hotkey");
+                } else {
+                  setFocusedField(null);
+                  setFocusedFieldError(
                   payload.error || "No writable text field found for dictation.",
                 );
               }
@@ -357,6 +370,7 @@ export function useDictationSession({
     startWithFocusCapture,
     clearPendingHotkeyStop,
     enabled,
+    processingEnabled,
     stopHotkeyRecording,
     tauriAvailable,
   ]);

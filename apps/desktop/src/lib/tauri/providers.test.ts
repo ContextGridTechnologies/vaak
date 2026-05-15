@@ -28,6 +28,12 @@ describe("provider Tauri API", () => {
     expect(providerId).toBe("smallest");
   });
 
+  it("supports Deepgram in typed speech provider flows", () => {
+    const providerId: SpeechProviderId = "deepgram";
+
+    expect(providerId).toBe("deepgram");
+  });
+
   it("maps provider setup to the atomic backend command", async () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("save_speech_provider_setup", {

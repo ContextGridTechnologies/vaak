@@ -16,11 +16,29 @@ pub fn run() {
         std::process::exit(1);
     });
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .manage(session::SessionStore::default())
-        .manage(runtime_config)
+        .manage(runtime_config);
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(main_window) = app.get_webview_window("main") {
+                show_unminimize_focus_window(&main_window);
+            } else {
+                log::warn!("single-instance reopen requested but main window was not found");
+            }
+        }));
+    }
+
+    builder
         .plugin(build_log_plugin(runtime_config))
         .plugin(tauri_plugin_opener::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                hide_main_window_instead_of_closing(window.label(), window, api);
+            }
+        })
         .setup(|app| {
             initialize_autostart_plugin(app.handle());
 
@@ -106,6 +124,73 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+trait ReopenWindow {
+    fn show_window(&self) -> Result<(), String>;
+    fn unminimize_window(&self) -> Result<(), String>;
+    fn focus_window(&self) -> Result<(), String>;
+}
+
+impl<R: tauri::Runtime> ReopenWindow for tauri::WebviewWindow<R> {
+    fn show_window(&self) -> Result<(), String> {
+        self.show().map_err(|err| err.to_string())
+    }
+
+    fn unminimize_window(&self) -> Result<(), String> {
+        self.unminimize().map_err(|err| err.to_string())
+    }
+
+    fn focus_window(&self) -> Result<(), String> {
+        self.set_focus().map_err(|err| err.to_string())
+    }
+}
+
+trait BackgroundWindow {
+    fn hide_window(&self) -> Result<(), String>;
+}
+
+impl<R: tauri::Runtime> BackgroundWindow for tauri::Window<R> {
+    fn hide_window(&self) -> Result<(), String> {
+        self.hide().map_err(|err| err.to_string())
+    }
+}
+
+trait CloseRequest {
+    fn prevent_close(&self);
+}
+
+impl CloseRequest for tauri::CloseRequestApi {
+    fn prevent_close(&self) {
+        tauri::CloseRequestApi::prevent_close(self);
+    }
+}
+
+fn show_unminimize_focus_window(window: &impl ReopenWindow) {
+    if let Err(err) = window.show_window() {
+        log::warn!("failed to show main window on single-instance reopen: {err}");
+    }
+    if let Err(err) = window.unminimize_window() {
+        log::warn!("failed to unminimize main window on single-instance reopen: {err}");
+    }
+    if let Err(err) = window.focus_window() {
+        log::warn!("failed to focus main window on single-instance reopen: {err}");
+    }
+}
+
+fn hide_main_window_instead_of_closing(
+    window_label: &str,
+    window: &impl BackgroundWindow,
+    close_request: &impl CloseRequest,
+) {
+    if window_label != "main" {
+        return;
+    }
+
+    close_request.prevent_close();
+    if let Err(err) = window.hide_window() {
+        log::warn!("failed to hide main window on close request: {err}");
+    }
+}
+
 fn initialize_autostart_plugin(app: &tauri::AppHandle) {
     #[cfg(desktop)]
     {
@@ -122,6 +207,80 @@ fn initialize_autostart_plugin(app: &tauri::AppHandle) {
     #[cfg(not(desktop))]
     {
         let _ = app;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct MockReopenWindow {
+        calls: Mutex<Vec<&'static str>>,
+    }
+
+    impl ReopenWindow for MockReopenWindow {
+        fn show_window(&self) -> Result<(), String> {
+            self.calls.lock().unwrap().push("show");
+            Ok(())
+        }
+
+        fn unminimize_window(&self) -> Result<(), String> {
+            self.calls.lock().unwrap().push("unminimize");
+            Ok(())
+        }
+
+        fn focus_window(&self) -> Result<(), String> {
+            self.calls.lock().unwrap().push("focus");
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn single_instance_reopen_shows_unminimizes_and_focuses_main_window() {
+        let window = MockReopenWindow::default();
+
+        show_unminimize_focus_window(&window);
+
+        assert_eq!(
+            *window.calls.lock().unwrap(),
+            vec!["show", "unminimize", "focus"]
+        );
+    }
+
+    #[derive(Default)]
+    struct MockBackgroundWindow {
+        calls: Mutex<Vec<&'static str>>,
+    }
+
+    impl BackgroundWindow for MockBackgroundWindow {
+        fn hide_window(&self) -> Result<(), String> {
+            self.calls.lock().unwrap().push("hide");
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct MockCloseRequest {
+        prevented: Mutex<bool>,
+    }
+
+    impl CloseRequest for MockCloseRequest {
+        fn prevent_close(&self) {
+            *self.prevented.lock().unwrap() = true;
+        }
+    }
+
+    #[test]
+    fn main_window_close_request_hides_window_instead_of_closing_app() {
+        let window = MockBackgroundWindow::default();
+        let close_request = MockCloseRequest::default();
+
+        hide_main_window_instead_of_closing("main", &window, &close_request);
+
+        assert!(*close_request.prevented.lock().unwrap());
+        assert_eq!(*window.calls.lock().unwrap(), vec!["hide"]);
     }
 }
 

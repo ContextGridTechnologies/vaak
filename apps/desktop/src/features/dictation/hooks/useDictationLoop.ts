@@ -85,6 +85,7 @@ const providerLabels: Partial<Record<SpeechProviderId, string>> = {
   openai: "OpenAI",
   "azure-openai": "Azure OpenAI",
   assemblyai: "AssemblyAI",
+  deepgram: "Deepgram",
   elevenlabs: "ElevenLabs",
   smallest: "Smallest AI",
 };

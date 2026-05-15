@@ -683,6 +683,22 @@ describe("useDictationLoop", () => {
     expect(insertIntoActiveTarget).not.toHaveBeenCalled();
   });
 
+  it("uses the Deepgram display label in transcription errors", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("deepgram");
+    transcribeRecording.mockRejectedValue(new Error("provider unavailable"));
+
+    const { result } = renderHook(() =>
+      useDictationLoop(session({ audioBlob })),
+    );
+
+    await waitFor(() => {
+      expect(result.current.error?.kind).toBe("transcription");
+    });
+
+    expect(result.current.message).toBe("Deepgram: provider unavailable");
+  });
+
   it("surfaces guarded insertion errors without alternate insertion", async () => {
     const audioBlob = recordingBlob();
     insertIntoActiveTarget.mockRejectedValue(new Error("target changed"));

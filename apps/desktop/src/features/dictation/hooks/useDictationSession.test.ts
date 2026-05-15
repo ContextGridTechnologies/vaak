@@ -114,6 +114,11 @@ describe("useDictationSession", () => {
       selectSystem: vi.fn(),
       selection: { mode: "manual", deviceId: "usb-mic" },
     });
+    captureDictationTarget.mockReset();
+    getFocusedField.mockReset();
+    getHotkeyBindings.mockReset();
+    isTauriRuntime.mockReset();
+    listenToTauriEvent.mockReset();
     captureDictationTarget.mockResolvedValue(field);
     getFocusedField.mockResolvedValue(field);
     getHotkeyBindings.mockResolvedValue({
@@ -346,5 +351,40 @@ describe("useDictationSession", () => {
     expect(result.current.focusedFieldError).toBe(
       "No writable text field found for dictation.",
     );
+  });
+
+  it("starts verification recording without a writable target when processing is disabled", async () => {
+    setWindowsPlatform();
+    useAvailableMicrophone();
+    isTauriRuntime.mockReturnValue(true);
+    let handler:
+      | ((event: { payload: SessionHotkeyEvent }) => void | Promise<void>)
+      | null = null;
+    listenToTauriEvent.mockImplementation(async (_event, nextHandler) => {
+      handler = nextHandler;
+      return () => {};
+    });
+
+    const { result } = renderHook(() =>
+      useDictationSession({ processingEnabled: false }),
+    );
+
+    await vi.waitFor(() => expect(listenToTauriEvent).toHaveBeenCalled());
+    await act(async () => {
+      await handler?.({
+        payload: {
+          error: "No writable text field found for dictation.",
+          field: null,
+          mode: "dictation",
+          phase: "start",
+          shortcut: "Ctrl+Win",
+        },
+      });
+    });
+
+    expect(captureDictationTarget).not.toHaveBeenCalled();
+    expect(startRecording).toHaveBeenCalledTimes(1);
+    expect(result.current.activeMode).toBe("dictation");
+    expect(result.current.focusedFieldError).toBeNull();
   });
 });

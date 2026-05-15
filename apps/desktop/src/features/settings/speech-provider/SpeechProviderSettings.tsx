@@ -18,6 +18,7 @@ import {
 
 import { AssemblyAiProviderPanel } from "./AssemblyAiProviderPanel";
 import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
+import { DeepgramProviderPanel } from "./DeepgramProviderPanel";
 import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
 import { ProviderSelector } from "./ProviderSelector";
@@ -31,6 +32,7 @@ import {
 import {
   AZURE_OPENAI_API_VERSION,
   DEFAULT_ASSEMBLYAI_MODEL,
+  DEFAULT_DEEPGRAM_MODEL,
   DEFAULT_ELEVENLABS_MODEL,
   DEFAULT_OPENAI_MODEL,
   DEFAULT_SMALLEST_MODEL,
@@ -55,6 +57,7 @@ export function SpeechProviderSettings({
   const [apiKey, setApiKey] = useState("");
   const [azureApiKey, setAzureApiKey] = useState("");
   const [assemblyAiApiKey, setAssemblyAiApiKey] = useState("");
+  const [deepgramApiKey, setDeepgramApiKey] = useState("");
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
   const [smallestApiKey, setSmallestApiKey] = useState("");
   const [openAiModel, setOpenAiModel] = useState<string>(DEFAULT_OPENAI_MODEL);
@@ -99,6 +102,7 @@ export function SpeechProviderSettings({
           openAiStatus,
           azureStatus,
           assemblyAiStatus,
+          deepgramStatus,
           elevenLabsStatus,
           smallestStatus,
           openAiConfig,
@@ -111,6 +115,7 @@ export function SpeechProviderSettings({
             getProviderStatus("openai"),
             getProviderStatus("azure-openai"),
             getProviderStatus("assemblyai"),
+            getProviderStatus("deepgram"),
             getProviderStatus("elevenlabs"),
             getProviderStatus("smallest"),
             getProviderConfig("openai"),
@@ -124,6 +129,7 @@ export function SpeechProviderSettings({
             openai: openAiStatus,
             "azure-openai": azureStatus,
             assemblyai: assemblyAiStatus,
+            deepgram: deepgramStatus,
             elevenlabs: elevenLabsStatus,
             smallest: smallestStatus,
           });
@@ -203,6 +209,11 @@ export function SpeechProviderSettings({
   const handleAssemblyAiModelChange = (value: string) => {
     clearOnboardingVerification("assemblyai");
     setAssemblyAiModel(value);
+  };
+
+  const handleDeepgramApiKeyChange = (value: string) => {
+    clearOnboardingVerification("deepgram");
+    setDeepgramApiKey(value);
   };
 
   const handleAzureEndpointChange = (value: string) => {
@@ -377,6 +388,44 @@ export function SpeechProviderSettings({
       setProviderErrors((current) => ({
         ...current,
         assemblyai: normalizeProviderError("assemblyai", err),
+      }));
+    } finally {
+      setSavingProviderId(null);
+    }
+  };
+
+  const saveDeepgramKey = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    clearOnboardingVerification("deepgram");
+    setProviderErrors((current) => ({ ...current, deepgram: undefined }));
+    setProviderTestResults((current) => ({
+      ...current,
+      deepgram: undefined,
+    }));
+    setSavingProviderId("deepgram");
+
+    try {
+      const status = await saveSpeechProviderSetup({
+        providerId: "deepgram",
+        apiKey: deepgramApiKey,
+        config: {
+          model: DEFAULT_DEEPGRAM_MODEL,
+        },
+        activate: true,
+      });
+      setProviderStatuses((current) => ({ ...current, deepgram: status }));
+      setDeepgramApiKey("");
+      setSelectedProviderId("deepgram");
+      captureProviderConfigured("deepgram", variant);
+      if (isOnboarding) {
+        await verifySavedProvider("deepgram");
+      } else {
+        toast.success("Deepgram key saved");
+      }
+    } catch (err) {
+      setProviderErrors((current) => ({
+        ...current,
+        deepgram: normalizeProviderError("deepgram", err),
       }));
     } finally {
       setSavingProviderId(null);
@@ -575,6 +624,20 @@ export function SpeechProviderSettings({
           onApiKeyChange={handleAssemblyAiApiKeyChange}
           onModelChange={handleAssemblyAiModelChange}
           onSubmit={saveAssemblyAiKey}
+          onTest={testSelectedProvider}
+        />
+      ) : selectedProviderId === "deepgram" ? (
+        <DeepgramProviderPanel
+          apiKey={deepgramApiKey}
+          error={providerErrors.deepgram}
+          isLoading={isLoading}
+          isSaving={savingProviderId === "deepgram"}
+          isTesting={testingProviderId === "deepgram"}
+          showTestButton={!isOnboarding}
+          testResult={providerTestResults.deepgram}
+          status={providerStatuses.deepgram}
+          onApiKeyChange={handleDeepgramApiKeyChange}
+          onSubmit={saveDeepgramKey}
           onTest={testSelectedProvider}
         />
       ) : selectedProviderId === "elevenlabs" ? (

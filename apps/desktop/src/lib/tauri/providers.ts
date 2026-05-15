@@ -24,6 +24,7 @@ export type SpeechProviderId =
   | "openai"
   | "azure-openai"
   | "assemblyai"
+  | "deepgram"
   | "elevenlabs"
   | "smallest";
 

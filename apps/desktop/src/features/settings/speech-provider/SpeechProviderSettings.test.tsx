@@ -62,6 +62,14 @@ describe("SpeechProviderSettings", () => {
         });
       }
 
+      if (providerId === "deepgram") {
+        return Promise.resolve({
+          providerId: "deepgram",
+          configured: false,
+          configComplete: true,
+        });
+      }
+
       if (providerId === "smallest") {
         return Promise.resolve({
           providerId: "smallest",
@@ -106,6 +114,7 @@ describe("SpeechProviderSettings", () => {
     expect(
       screen.getByRole("button", { name: "ElevenLabs" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deepgram" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Smallest AI" }),
     ).toBeInTheDocument();
@@ -349,5 +358,46 @@ describe("SpeechProviderSettings", () => {
       await screen.findByText("Smallest AI returned 401: invalid key"),
     ).toBeInTheDocument();
     expect(screen.queryByText("OpenAI returned 401: invalid key")).not.toBeInTheDocument();
+  });
+
+  it("saves and verifies Deepgram with Nova-3", async () => {
+    const user = userEvent.setup();
+    const verifyOnboardingProvider = vi.fn().mockResolvedValue({
+      providerId: "deepgram",
+      model: "nova-3",
+      text: "He began a confused complaint against the wizard who had vanished behind the curtain on the left.",
+      durationMs: 1800,
+    });
+    providerApi.saveSpeechProviderSetup.mockResolvedValue({
+      providerId: "deepgram",
+      configured: true,
+      configComplete: true,
+    });
+
+    renderApp(
+      <SpeechProviderSettings
+        variant="onboarding"
+        verifyOnboardingProvider={verifyOnboardingProvider}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Deepgram" }));
+    expect(screen.getByText("Nova-3")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Deepgram API key"), "dg-test");
+    await user.click(screen.getByRole("button", { name: "Save and use Deepgram" }));
+
+    await waitFor(() => {
+      expect(providerApi.saveSpeechProviderSetup).toHaveBeenCalledWith({
+        providerId: "deepgram",
+        apiKey: "dg-test",
+        config: { model: "nova-3" },
+        activate: true,
+      });
+      expect(verifyOnboardingProvider).toHaveBeenCalledWith("deepgram");
+    });
+    expect(
+      await screen.findByText("Provider test passed."),
+    ).toBeInTheDocument();
   });
 });

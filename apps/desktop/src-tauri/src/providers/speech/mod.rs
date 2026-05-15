@@ -10,6 +10,7 @@ use crate::storage::LocalSettingsStore;
 
 mod assemblyai;
 mod azure;
+mod deepgram;
 mod elevenlabs;
 mod gemini;
 mod openai;
@@ -68,6 +69,11 @@ pub async fn transcribe(
                 .transcribe(api_key, input)
                 .await
         }
+        deepgram::PROVIDER_ID => {
+            deepgram::DeepgramSpeechProvider::default()
+                .transcribe(api_key, input)
+                .await
+        }
         elevenlabs::PROVIDER_ID => {
             elevenlabs::ElevenLabsSpeechProvider::default()
                 .transcribe(api_key, input)
@@ -88,6 +94,7 @@ pub fn validate_provider_id(provider_id: &str) -> Result<(), ProviderError> {
         openai::PROVIDER_ID
         | azure::PROVIDER_ID
         | assemblyai::PROVIDER_ID
+        | deepgram::PROVIDER_ID
         | gemini::PROVIDER_ID
         | elevenlabs::PROVIDER_ID
         | smallest::PROVIDER_ID => Ok(()),
@@ -116,6 +123,10 @@ fn is_config_complete(
         return Ok(true);
     }
 
+    if provider_id == deepgram::PROVIDER_ID {
+        return Ok(true);
+    }
+
     if provider_id == elevenlabs::PROVIDER_ID {
         return Ok(true);
     }
@@ -140,6 +151,7 @@ fn resolve_transcription_input(
 
     let supports_saved_model = provider_id == openai::PROVIDER_ID
         || provider_id == assemblyai::PROVIDER_ID
+        || provider_id == deepgram::PROVIDER_ID
         || provider_id == elevenlabs::PROVIDER_ID
         || provider_id == smallest::PROVIDER_ID;
     if !has_explicit_model && supports_saved_model {
@@ -295,6 +307,42 @@ mod tests {
         let settings = LocalSettingsStore::new(&temp_config_dir("smallest"));
 
         assert!(is_config_complete("smallest", &settings).unwrap());
+    }
+
+    #[test]
+    fn deepgram_is_a_supported_provider_id() {
+        assert!(validate_provider_id("deepgram").is_ok());
+    }
+
+    #[test]
+    fn deepgram_config_is_complete_without_local_provider_settings() {
+        let settings = LocalSettingsStore::new(&temp_config_dir("deepgram"));
+
+        assert!(is_config_complete("deepgram", &settings).unwrap());
+    }
+
+    #[test]
+    fn applies_saved_deepgram_model_when_transcription_input_omits_one() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/webm".to_string(),
+            language: None,
+            prompt: None,
+            model: None,
+        };
+
+        let resolved = resolve_transcription_input(
+            "deepgram",
+            input,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some(deepgram::DEFAULT_MODEL.to_string()),
+            }),
+        );
+
+        assert_eq!(resolved.model.as_deref(), Some("nova-3"));
     }
 
     #[test]

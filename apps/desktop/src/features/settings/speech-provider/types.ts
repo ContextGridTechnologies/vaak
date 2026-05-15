@@ -43,12 +43,14 @@ export const ELEVENLABS_MODELS = [
 export const DEFAULT_OPENAI_MODEL = OPENAI_MODELS[0].value;
 export const DEFAULT_ASSEMBLYAI_MODEL = ASSEMBLYAI_MODELS[0].value;
 export const DEFAULT_ELEVENLABS_MODEL = ELEVENLABS_MODELS[0].value;
+export const DEFAULT_DEEPGRAM_MODEL = "nova-3";
 export const DEFAULT_SMALLEST_MODEL = "pulse";
 
 export const providerLabels: Record<SpeechProviderId, string> = {
   openai: "OpenAI",
   "azure-openai": "Azure OpenAI",
   assemblyai: "AssemblyAI",
+  deepgram: "Deepgram",
   elevenlabs: "ElevenLabs",
   smallest: "Smallest AI",
 };
