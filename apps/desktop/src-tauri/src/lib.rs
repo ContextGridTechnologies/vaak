@@ -6,8 +6,13 @@ mod session;
 mod storage;
 mod windowing;
 
+use tauri::menu::MenuBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
+
+const TRAY_OPEN_MENU_ID: &str = "tray-open";
+const TRAY_QUIT_MENU_ID: &str = "tray-quit";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -41,6 +46,7 @@ pub fn run() {
         })
         .setup(|app| {
             initialize_autostart_plugin(app.handle());
+            initialize_tray(app.handle())?;
 
             if let Some(main_window) = app.get_webview_window("main") {
                 let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
@@ -191,6 +197,75 @@ fn hide_main_window_instead_of_closing(
     }
 }
 
+trait TrayAppControl {
+    fn show_main_window(&self);
+    fn quit_app(&self);
+}
+
+impl<R: tauri::Runtime> TrayAppControl for tauri::AppHandle<R> {
+    fn show_main_window(&self) {
+        if let Some(main_window) = self.get_webview_window("main") {
+            show_unminimize_focus_window(&main_window);
+        } else {
+            log::warn!("tray open requested but main window was not found");
+        }
+    }
+
+    fn quit_app(&self) {
+        self.exit(0);
+    }
+}
+
+fn handle_tray_menu_event(menu_id: &str, app: &impl TrayAppControl) {
+    match menu_id {
+        TRAY_OPEN_MENU_ID => app.show_main_window(),
+        TRAY_QUIT_MENU_ID => app.quit_app(),
+        _ => {}
+    }
+}
+
+fn handle_tray_icon_activation(app: &impl TrayAppControl) {
+    app.show_main_window();
+}
+
+fn initialize_tray(app: &tauri::AppHandle) -> Result<(), String> {
+    let menu = MenuBuilder::new(app)
+        .text(TRAY_OPEN_MENU_ID, "Open Vaak")
+        .separator()
+        .text(TRAY_QUIT_MENU_ID, "Quit")
+        .build()
+        .map_err(|err| err.to_string())?;
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
+        .map_err(|err| err.to_string())?;
+
+    TrayIconBuilder::with_id("vaak-tray")
+        .icon(icon)
+        .tooltip("Vaak")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| {
+            handle_tray_menu_event(event.id().as_ref(), app);
+        })
+        .on_tray_icon_event(|tray, event| match event {
+            TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            }
+            | TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } => {
+                handle_tray_icon_activation(tray.app_handle());
+            }
+            _ => {}
+        })
+        .build(app)
+        .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
 fn initialize_autostart_plugin(app: &tauri::AppHandle) {
     #[cfg(desktop)]
     {
@@ -281,6 +356,57 @@ mod tests {
 
         assert!(*close_request.prevented.lock().unwrap());
         assert_eq!(*window.calls.lock().unwrap(), vec!["hide"]);
+    }
+
+    #[derive(Default)]
+    struct MockTrayApp {
+        calls: Mutex<Vec<&'static str>>,
+    }
+
+    impl TrayAppControl for MockTrayApp {
+        fn show_main_window(&self) {
+            self.calls.lock().unwrap().push("show-main-window");
+        }
+
+        fn quit_app(&self) {
+            self.calls.lock().unwrap().push("quit-app");
+        }
+    }
+
+    #[test]
+    fn tray_open_menu_event_reopens_the_main_window() {
+        let app = MockTrayApp::default();
+
+        handle_tray_menu_event(TRAY_OPEN_MENU_ID, &app);
+
+        assert_eq!(*app.calls.lock().unwrap(), vec!["show-main-window"]);
+    }
+
+    #[test]
+    fn tray_quit_menu_event_exits_the_app() {
+        let app = MockTrayApp::default();
+
+        handle_tray_menu_event(TRAY_QUIT_MENU_ID, &app);
+
+        assert_eq!(*app.calls.lock().unwrap(), vec!["quit-app"]);
+    }
+
+    #[test]
+    fn unknown_tray_menu_events_are_ignored() {
+        let app = MockTrayApp::default();
+
+        handle_tray_menu_event("other-menu-item", &app);
+
+        assert!(app.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn tray_icon_activation_reopens_the_main_window() {
+        let app = MockTrayApp::default();
+
+        handle_tray_icon_activation(&app);
+
+        assert_eq!(*app.calls.lock().unwrap(), vec!["show-main-window"]);
     }
 }
 
