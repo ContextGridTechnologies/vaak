@@ -151,7 +151,13 @@ describe("useAudioRecorder", () => {
       label: "USB microphone",
     });
     expect(getUserMedia).toHaveBeenCalledWith({
-      audio: { deviceId: { exact: "usb-mic" } },
+      audio: expect.objectContaining({
+        autoGainControl: true,
+        channelCount: 1,
+        deviceId: { exact: "usb-mic" },
+        echoCancellation: true,
+        noiseSuppression: true,
+      }),
     });
 
     vi.setSystemTime(new Date("2026-05-01T00:00:02.000Z"));
@@ -193,7 +199,14 @@ describe("useAudioRecorder", () => {
       await result.current.start();
     });
 
-    expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: expect.objectContaining({
+        autoGainControl: true,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+      }),
+    });
     expect(result.current.activeMicrophone?.label).toBe(
       "System selected microphone",
     );

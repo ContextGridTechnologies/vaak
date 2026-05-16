@@ -80,6 +80,40 @@ describe("analyzeAudioCapture", () => {
     expect(analysis.reason).toBe("low_volume");
   });
 
+  it("normalizes quiet speech into a ready transcription segment", async () => {
+    const samples = createSamples([
+      silenceMs(250),
+      toneMs(800, 0.04),
+      silenceMs(200),
+    ]);
+
+    const analysis = analyzeAudioCapture(samples, sampleRate);
+    const segmentPeakDbfs = await wavPeakDbfs(analysis.transcriptionSegments[0]);
+
+    expect(analysis.disposition).toBe("ready");
+    expect(analysis.reason).toBeNull();
+    expect(analysis.transcriptionSegments).toHaveLength(1);
+    expect(segmentPeakDbfs).toBeGreaterThan(-10);
+    expect(segmentPeakDbfs).toBeLessThanOrEqual(-1);
+  });
+
+  it("caps very long pauses instead of collapsing them to a short separator", async () => {
+    const samples = createSamples([
+      silenceMs(100),
+      toneMs(700, 0.3),
+      silenceMs(8000),
+      toneMs(650, 0.26),
+    ]);
+
+    const analysis = analyzeAudioCapture(samples, sampleRate);
+    const processedDurationMs = await wavDurationMs(analysis.processedAudio);
+
+    expect(analysis.disposition).toBe("ready");
+    expect(analysis.transcriptionSegments).toHaveLength(2);
+    expect(processedDurationMs).toBeGreaterThanOrEqual(4300);
+    expect(processedDurationMs).toBeLessThan(7000);
+  });
+
   it("pads the final transcription segment with at least one second of trailing silence", async () => {
     const samples = createSamples([
       silenceMs(120),
@@ -132,13 +166,26 @@ function toneMs(durationMs: number, amplitude: number) {
   return samples;
 }
 
-async function wavDurationMs(blob: Blob | undefined) {
+async function wavDurationMs(blob: Blob | null | undefined) {
   if (!blob) {
     throw new Error("Expected a wav blob.");
   }
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const sampleCount = (bytes.length - 44) / 2;
   return (sampleCount / sampleRate) * 1000;
+}
+
+async function wavPeakDbfs(blob: Blob | undefined) {
+  if (!blob) {
+    throw new Error("Expected a wav blob.");
+  }
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const view = new DataView(bytes.buffer);
+  let peak = 0;
+  for (let offset = 44; offset < bytes.length; offset += 2) {
+    peak = Math.max(peak, Math.abs(view.getInt16(offset, true)) / 0x8000);
+  }
+  return 20 * Math.log10(Math.max(peak, 1e-5));
 }
 
 describe("defaultCaptureThresholds", () => {

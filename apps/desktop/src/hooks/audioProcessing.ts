@@ -35,9 +35,12 @@ export type CaptureThresholds = {
   segmentationSilenceMs: number;
   lowSnrDb: number;
   minimumVoiceDbfs: number;
-  lowVolumeAverageDbfs: number;
-  lowVolumePeakDbfs: number;
   lowLevelPeakDbfs: number;
+  normalizationTargetRmsDbfs: number;
+  normalizationMaxGainDb: number;
+  normalizationPeakCeilingDbfs: number;
+  pauseCompressionTriggerMs: number;
+  pauseCompressionRetainedMs: number;
 };
 
 export const defaultCaptureThresholds: CaptureThresholds = {
@@ -51,9 +54,12 @@ export const defaultCaptureThresholds: CaptureThresholds = {
   segmentationSilenceMs: 800,
   lowSnrDb: 8,
   minimumVoiceDbfs: -35,
-  lowVolumeAverageDbfs: -35,
-  lowVolumePeakDbfs: -24,
   lowLevelPeakDbfs: -45,
+  normalizationTargetRmsDbfs: -12,
+  normalizationMaxGainDb: 20,
+  normalizationPeakCeilingDbfs: -1,
+  pauseCompressionTriggerMs: 5000,
+  pauseCompressionRetainedMs: 3000,
 };
 
 type SegmentWindow = {
@@ -149,19 +155,6 @@ export function analyzeAudioCapture(
 
   const averageDbfs = average(voicedFrames.map((frame) => frame.rmsDbfs));
   const estimatedSnrDb = averageDbfs - noiseFloorDb;
-  if (
-    averageDbfs < thresholds.lowVolumeAverageDbfs ||
-    peakDbfs < thresholds.lowVolumePeakDbfs
-  ) {
-    return unclearAnalysis("low_volume", {
-      voicedMs,
-      peakDbfs,
-      averageDbfs,
-      estimatedSnrDb,
-      longestPauseMs,
-    });
-  }
-
   if (estimatedSnrDb < thresholds.lowSnrDb) {
     return unclearAnalysis("low_snr", {
       voicedMs,
@@ -198,13 +191,32 @@ export function analyzeAudioCapture(
         capturedTrailingSamples,
       );
     })
+    .map((segmentSample) => normalizeSpeechSamples(segmentSample, thresholds))
     .filter((segmentSample) => segmentSample.length > 0);
+  const separatorDurationsMs = segmentWindows.slice(1).map((window, index) => {
+    const previousWindow = segmentWindows[index];
+    const gapMs = Math.max(
+      0,
+      (window.startFrame - previousWindow.endFrame - 1) * thresholds.frameMs,
+    );
+    const retainedGapMs =
+      gapMs > thresholds.pauseCompressionTriggerMs
+        ? thresholds.pauseCompressionRetainedMs
+        : gapMs;
+    return Math.max(
+      0,
+      retainedGapMs - thresholds.suffixPaddingMs - thresholds.prefixPaddingMs,
+    );
+  });
   const transcriptionSegments = segmentSamples.map((segmentSample) =>
     createWavBlob(segmentSample, sampleRate),
   );
   const processedAudio =
     segmentSamples.length > 0
-      ? createWavBlob(joinSegmentSamples(segmentSamples, sampleRate), sampleRate)
+      ? createWavBlob(
+          joinSegmentSamples(segmentSamples, sampleRate, separatorDurationsMs),
+          sampleRate,
+        )
       : null;
 
   const firstVoicedSample = voicedFrames[0].index * frameSize;
@@ -335,15 +347,21 @@ function unclearAnalysis(
   };
 }
 
-function joinSegmentSamples(segments: Float32Array[], sampleRate: number) {
+function joinSegmentSamples(
+  segments: Float32Array[],
+  sampleRate: number,
+  separatorDurationsMs: number[],
+) {
   if (segments.length === 1) {
     return segments[0];
   }
 
-  const separatorSamples = Math.max(1, Math.round(sampleRate * 0.12));
   const totalLength =
     segments.reduce((sum, segment) => sum + segment.length, 0) +
-    separatorSamples * (segments.length - 1);
+    separatorDurationsMs.reduce(
+      (sum, durationMs) => sum + separatorSampleCount(durationMs, sampleRate),
+      0,
+    );
   const combined = new Float32Array(totalLength);
   let offset = 0;
 
@@ -353,11 +371,15 @@ function joinSegmentSamples(segments: Float32Array[], sampleRate: number) {
     offset += segment.length;
 
     if (index < segments.length - 1) {
-      offset += separatorSamples;
+      offset += separatorSampleCount(separatorDurationsMs[index] ?? 0, sampleRate);
     }
   }
 
   return combined;
+}
+
+function separatorSampleCount(durationMs: number, sampleRate: number) {
+  return Math.max(0, Math.round((durationMs / 1000) * sampleRate));
 }
 
 function ensureTrailingSilence(
@@ -378,8 +400,44 @@ function ensureTrailingSilence(
   return padded;
 }
 
+function normalizeSpeechSamples(
+  samples: Float32Array,
+  thresholds: CaptureThresholds,
+) {
+  if (samples.length === 0) {
+    return samples;
+  }
+
+  const currentRms = rms(samples);
+  const currentPeak = maxAbs(samples);
+  if (currentRms <= 0 || currentPeak <= 0) {
+    return samples;
+  }
+
+  const targetRms = amplitudeFromDbfs(thresholds.normalizationTargetRmsDbfs);
+  const peakCeiling = amplitudeFromDbfs(thresholds.normalizationPeakCeilingDbfs);
+  const rmsGain = targetRms / currentRms;
+  const maxGain = Math.pow(10, thresholds.normalizationMaxGainDb / 20);
+  const peakSafeGain = peakCeiling / currentPeak;
+  const gain = Math.min(rmsGain, maxGain, peakSafeGain);
+
+  if (gain <= 1) {
+    return samples;
+  }
+
+  const normalized = new Float32Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
+    normalized[index] = samples[index] * gain;
+  }
+  return normalized;
+}
+
 function dbfsFromAmplitude(value: number) {
   return roundMetric(20 * Math.log10(Math.max(value, 1e-5)));
+}
+
+function amplitudeFromDbfs(value: number) {
+  return Math.pow(10, value / 20);
 }
 
 function rms(samples: Float32Array) {

@@ -42,15 +42,26 @@ type UseMicrophoneSelectionActions = {
 const DEFAULT_SELECTION: MicrophoneSelection = { mode: "system" };
 const MANUAL_UNAVAILABLE_MESSAGE =
   "Selected microphone is unavailable. Choose another device or switch to automatic mode.";
+const baselineAudioConstraints: MediaTrackConstraints = {
+  autoGainControl: true,
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+};
 
 export function microphoneConstraints(
   selection: MicrophoneSelection,
 ): MediaStreamConstraints {
   if (selection.mode === "manual") {
-    return { audio: { deviceId: { exact: selection.deviceId } } };
+    return {
+      audio: {
+        ...baselineAudioConstraints,
+        deviceId: { exact: selection.deviceId },
+      },
+    };
   }
 
-  return { audio: true };
+  return { audio: baselineAudioConstraints };
 }
 
 export function activeMicrophoneFromStream(

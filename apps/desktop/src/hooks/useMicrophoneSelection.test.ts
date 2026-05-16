@@ -90,7 +90,14 @@ describe("microphone selection", () => {
 
     const active = await resolveActiveMicrophone({ mode: "system" });
 
-    expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: expect.objectContaining({
+        autoGainControl: true,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+      }),
+    });
     expect(active).toEqual({
       deviceId: "studio-usb",
       label: "Studio USB microphone",
@@ -105,7 +112,13 @@ describe("microphone selection", () => {
     };
 
     expect(microphoneConstraints(selection)).toEqual({
-      audio: { deviceId: { exact: "usb-mic" } },
+      audio: expect.objectContaining({
+        autoGainControl: true,
+        channelCount: 1,
+        deviceId: { exact: "usb-mic" },
+        echoCancellation: true,
+        noiseSuppression: true,
+      }),
     });
   });
 
