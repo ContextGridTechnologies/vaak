@@ -49,6 +49,17 @@ describe("globals.css", () => {
     expect(readToken(".dark", "--primary")).toBe("#DD6040");
   });
 
+  it("defines a dark branded content surface instead of reusing the light shell gradient", () => {
+    const lightSurface = readCssBlock(".vaak-content-surface");
+    const darkSurface = readCssBlock(".dark .vaak-content-surface");
+
+    expect(darkSurface).toContain("linear-gradient(135deg");
+    expect(darkSurface).not.toBe(lightSurface);
+    expect(darkSurface).not.toContain("#fffaf7");
+    expect(darkSurface).not.toContain("#f8fbfd");
+    expect(darkSurface).not.toContain("#f3f7f6");
+  });
+
   it("defines the shared branded scrollbar rules with stable idle visibility", () => {
     expect(globalsCss).toContain("--scrollbar-size: 0.7rem;");
     expect(globalsCss).toContain("--scrollbar-thumb: color-mix(in oklch, var(--foreground) 24%, transparent);");
