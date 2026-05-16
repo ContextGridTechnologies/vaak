@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { SystemThemeSync } from "./SystemThemeSync";
 import { TelemetryStartup } from "./TelemetryStartup";
+import { ReleaseUpdateNotifier } from "./ReleaseUpdateNotifier";
 
 type AppProvidersProps = {
   children: ReactNode;
@@ -15,6 +16,7 @@ export function AppProviders({ children }: AppProvidersProps) {
     <TooltipProvider>
       <SystemThemeSync />
       <TelemetryStartup />
+      <ReleaseUpdateNotifier />
       {children}
       <Toaster position="bottom-right" richColors />
     </TooltipProvider>
