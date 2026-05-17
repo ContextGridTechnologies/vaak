@@ -206,7 +206,7 @@ fn ensure_captured_target(
     captured: &crate::platform::common::FocusedFieldInfo,
     target: &ResolvedFocusTarget,
 ) -> Result<(), PlatformError> {
-    if target.diagnostics.snapshot.stable_id == captured.stable_id {
+    if captured_target_matches(captured, &target.diagnostics.snapshot) {
         return Ok(());
     }
 
@@ -226,6 +226,70 @@ fn ensure_captured_target(
         "target_changed",
         "Focused field changed before insertion",
     ))
+}
+
+fn captured_target_matches(
+    captured: &crate::platform::common::FocusedFieldInfo,
+    current: &crate::platform::common::FocusedFieldInfo,
+) -> bool {
+    if current.stable_id == captured.stable_id {
+        return true;
+    }
+
+    if captured.native_window_handle != 0
+        && current.native_window_handle == captured.native_window_handle
+        && current.control_type_id == captured.control_type_id
+        && !captured.automation_id.is_empty()
+        && current.automation_id == captured.automation_id
+    {
+        return true;
+    }
+
+    if !looks_like_same_terminal_target(captured, current) {
+        return false;
+    }
+
+    if !captured.window_title.is_empty() && captured.window_title == current.window_title {
+        return true;
+    }
+
+    captured.native_window_handle != 0
+        && captured.native_window_handle == current.native_window_handle
+}
+
+fn looks_like_same_terminal_target(
+    captured: &crate::platform::common::FocusedFieldInfo,
+    current: &crate::platform::common::FocusedFieldInfo,
+) -> bool {
+    captured.control_type_id == current.control_type_id
+        && captured.control_name == current.control_name
+        && has_terminal_hint(captured)
+        && has_terminal_hint(current)
+}
+
+fn has_terminal_hint(field: &crate::platform::common::FocusedFieldInfo) -> bool {
+    let haystack = [
+        field.window_title.as_str(),
+        field.control_name.as_str(),
+        field.automation_id.as_str(),
+        field.framework_id.as_str(),
+        field.class_name.as_str(),
+    ]
+    .join(" ")
+    .to_ascii_lowercase();
+
+    [
+        "termcontrol",
+        "powershell",
+        "pwsh",
+        "command prompt",
+        "cmd.exe",
+        "xterm",
+        "terminal",
+        "cascadia",
+    ]
+    .iter()
+    .any(|hint| haystack.contains(hint))
 }
 
 fn with_strategy(
@@ -547,6 +611,22 @@ fn set_clipboard_text(text: &str) -> Result<(), PlatformError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::common::FocusedFieldInfo;
+
+    fn focused_field(stable_id: &str) -> FocusedFieldInfo {
+        FocusedFieldInfo {
+            window_title: String::new(),
+            control_name: String::new(),
+            control_type: "Edit".to_string(),
+            control_type_id: 50004,
+            automation_id: String::new(),
+            framework_id: String::new(),
+            class_name: String::new(),
+            current_value: String::new(),
+            native_window_handle: 0,
+            stable_id: stable_id.to_string(),
+        }
+    }
 
     #[test]
     fn strategy_selection_prefers_clipboard_then_send_input_for_active_caret_targets() {
@@ -652,6 +732,66 @@ mod tests {
         assert_eq!(json["capturedStableId"], "captured");
         assert_eq!(json["stableId"], "current");
         assert_eq!(json["windowTitle"], "Visual Studio Code");
+    }
+
+    #[test]
+    fn captured_target_match_accepts_exact_stable_id() {
+        let captured = focused_field("window:42/control:message-input");
+        let current = focused_field("window:42/control:message-input");
+
+        assert!(captured_target_matches(&captured, &current));
+    }
+
+    #[test]
+    fn captured_target_match_accepts_same_automation_target() {
+        let mut captured = focused_field("42:message-input");
+        captured.native_window_handle = 42;
+        captured.automation_id = "message-input".to_string();
+
+        let mut current = focused_field("42:renamed-wrapper:50004");
+        current.native_window_handle = 42;
+        current.automation_id = "message-input".to_string();
+
+        assert!(captured_target_matches(&captured, &current));
+    }
+
+    #[test]
+    fn captured_target_match_accepts_terminal_when_uia_handle_identity_drifts() {
+        let mut captured = focused_field("328920:Windows.UI.Input.InputSite.WindowClass:50020");
+        captured.window_title = "youtube_cooking".to_string();
+        captured.control_name = "PowerShell".to_string();
+        captured.control_type = "Text".to_string();
+        captured.control_type_id = 50020;
+        captured.framework_id = "XAML".to_string();
+        captured.class_name = "Windows.UI.Input.InputSite.WindowClass".to_string();
+        captured.native_window_handle = 328920;
+
+        let mut current = focused_field("0:TermControl:50020");
+        current.window_title = "youtube_cooking".to_string();
+        current.control_name = "PowerShell".to_string();
+        current.control_type = "Text".to_string();
+        current.control_type_id = 50020;
+        current.framework_id = "XAML".to_string();
+        current.class_name = "TermControl".to_string();
+
+        assert!(captured_target_matches(&captured, &current));
+    }
+
+    #[test]
+    fn captured_target_match_rejects_different_terminal_window() {
+        let mut captured = focused_field("328920:Windows.UI.Input.InputSite.WindowClass:50020");
+        captured.window_title = "youtube_cooking".to_string();
+        captured.control_name = "PowerShell".to_string();
+        captured.control_type_id = 50020;
+        captured.class_name = "TermControl".to_string();
+
+        let mut current = focused_field("99100:Windows.UI.Input.InputSite.WindowClass:50020");
+        current.window_title = "admin_shell".to_string();
+        current.control_name = "PowerShell".to_string();
+        current.control_type_id = 50020;
+        current.class_name = "TermControl".to_string();
+
+        assert!(!captured_target_matches(&captured, &current));
     }
 
     #[test]
