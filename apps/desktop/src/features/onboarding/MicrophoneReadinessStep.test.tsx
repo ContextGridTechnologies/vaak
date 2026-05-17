@@ -185,45 +185,43 @@ describe("MicrophoneReadinessStep", () => {
       screen.getByRole("button", { name: "Allow microphone access" }),
     );
 
+    expect(await screen.findByText("Microphone ready")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Studio USB microphone (system default)"),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("button", { name: "Test microphone" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Test microphone" }),
+    ).toHaveAttribute("data-size", "sm");
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveAttribute("data-size", "sm");
+    expect(screen.getByRole("combobox")).toHaveClass("whitespace-nowrap");
+    expect(
+      screen.getByText(
+        "Vaak verified the selected input and can continue to provider setup.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Access allowed")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Active input detected"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Microphone readiness" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toHaveAttribute(
+      "data-size",
+      "sm",
+    );
+    expect(continueButton).toHaveAttribute("data-size", "sm");
+    expect(screen.getByRole("button", { name: "Back" })).toHaveAttribute(
+      "data-size",
+      "sm",
+    );
     await waitFor(() => {
-      expect(
-        screen.getByText("Microphone ready"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: "Test microphone" }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: "Test microphone" }),
-      ).toHaveAttribute("data-size", "sm");
-      expect(screen.getByRole("combobox")).toBeInTheDocument();
-      expect(screen.getByRole("combobox")).toHaveAttribute("data-size", "sm");
-      expect(screen.getByRole("combobox")).toHaveClass("whitespace-nowrap");
-      expect(
-        screen.getByText("Studio USB microphone (system default)"),
-      ).toBeInTheDocument();
-      expect(screen.getByText("Microphone ready")).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          "Vaak verified the selected input and can continue to provider setup.",
-        ),
-      ).toBeInTheDocument();
-      expect(screen.queryByText("Access allowed")).not.toBeInTheDocument();
-      expect(
-        screen.queryByText("Active input detected"),
-      ).not.toBeInTheDocument();
-      expect(
-        screen.queryByRole("heading", { name: "Microphone readiness" }),
-      ).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Refresh" })).toHaveAttribute(
-        "data-size",
-        "sm",
-      );
-      expect(continueButton).toHaveAttribute("data-size", "sm");
-      expect(screen.getByRole("button", { name: "Back" })).toHaveAttribute(
-        "data-size",
-        "sm",
-      );
       expect(continueButton).toBeEnabled();
     });
 
