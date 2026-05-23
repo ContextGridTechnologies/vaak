@@ -4,7 +4,9 @@ use serde::Deserialize;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
-use crate::providers::{build_http_client, request_failure, TranscriptResult, TranscriptionInput};
+use crate::providers::{
+    build_http_client, send_provider_request_with_retry, TranscriptResult, TranscriptionInput,
+};
 
 pub const PROVIDER_ID: &str = "deepgram";
 pub const DEFAULT_MODEL: &str = "nova-3";
@@ -50,21 +52,17 @@ impl SpeechProvider for DeepgramSpeechProvider {
 
         let model = resolve_model(input.model.as_deref()).to_string();
         let client = build_http_client()?;
-        let response = client
-            .execute(build_listen_request(
+        let response = send_provider_request_with_retry(&client, "Deepgram", || {
+            build_listen_request(
                 &client,
                 &api_key,
                 &input.audio,
                 &input.mime_type,
                 &model,
                 input.language.as_deref(),
-            )?)
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            return Err(request_failure("Deepgram", status));
-        }
+            )
+        })
+        .await?;
 
         let payload = response.json::<DeepgramListenResponse>().await?;
         resolve_listen_response(payload, &model)

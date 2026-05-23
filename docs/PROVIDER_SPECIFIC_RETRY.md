@@ -1,0 +1,186 @@
+# Provider Specific Retry Notes
+
+This document records provider-specific model-calling behavior. It depends on the base contract in [MODEL_CALLING_RETRY_BASE.md](MODEL_CALLING_RETRY_BASE.md).
+
+Provider notes should describe only behavior that differs from, or concretely implements, the base contract. Do not let provider-specific details leak into the dictation pipeline.
+
+## Current Providers
+
+### OpenAI
+
+Provider id: `openai`
+
+Speech endpoint:
+
+- `POST https://api.openai.com/v1/audio/transcriptions`
+- multipart upload with `file`, `model`, and `response_format=json`
+- optional `language`
+- optional `prompt` for supported transcription models
+
+Defaults and limits:
+
+- default model: `gpt-4o-mini-transcribe`
+- max audio: 25 MB
+- empty audio is an invalid local request
+- blank response text is `invalid_provider_response`
+
+Retry notes:
+
+- OpenAI uses the shared transport retry helper with a fresh multipart request per attempt.
+- It retries `429` and `5xx` according to the base policy.
+- Do not retry `400`, `401`, `403`, empty transcript, or malformed response.
+
+### Azure OpenAI
+
+Provider id: `azure-openai`
+
+Speech endpoint:
+
+- `POST {endpoint}/openai/deployments/{deploymentId}/audio/transcriptions?api-version={apiVersion}`
+- multipart upload with `file` and `response_format=json`
+- optional `language`
+- optional `prompt` for supported transcription deployments
+
+Configuration:
+
+- endpoint must be a bare origin
+- deployment id is required
+- API version defaults to `2025-04-01-preview`
+- deployment id is treated as the model identifier returned to the app
+
+Defaults and limits:
+
+- max audio: 25 MB
+- empty audio is an invalid local request
+- blank response text is `invalid_provider_response`
+
+Retry notes:
+
+- Azure OpenAI uses the shared transport retry helper with a fresh multipart request per attempt.
+- It retries `429` and `5xx` according to the base policy.
+- Preserve Azure endpoint normalization and deployment-id validation before any request is built.
+
+### AssemblyAI
+
+Provider id: `assemblyai`
+
+Speech flow:
+
+1. `POST https://api.assemblyai.com/v2/upload`
+2. `POST https://api.assemblyai.com/v2/transcript`
+3. Poll `GET https://api.assemblyai.com/v2/transcript/{id}`
+
+Defaults and limits:
+
+- default model: `universal-3-pro`
+- max audio: 2.2 GB
+- poll interval: 3 seconds
+- max poll attempts: 40
+- blank completed transcript is `invalid_provider_response`
+- provider `error` status maps to `provider_request_failed`
+
+Retry notes:
+
+- AssemblyAI is multi-step, so transport retry must be applied per step, not around the whole flow.
+- Upload, transcript creation, and each individual poll request use the shared base retry policy for transient HTTP failures.
+- Upload retry must not create duplicate transcript jobs after a successful upload.
+- Transcript creation retry must be safe only until a transcript id has been accepted.
+- Polling already repeats while status is `queued` or `processing`; that progress polling is separate from per-request HTTP retry.
+- Activity retry uses the original saved audio for AssemblyAI instead of locally reprocessed retry segments.
+
+### Deepgram
+
+Provider id: `deepgram`
+
+Speech endpoint:
+
+- `POST https://api.deepgram.com/v1/listen`
+- raw audio body
+- `Authorization: Token {apiKey}`
+- `Content-Type` from the normalized audio MIME type
+- query parameters include `model`, `smart_format=true`, and optional `language`
+
+Defaults and limits:
+
+- default model: `nova-3`
+- empty audio is an invalid local request
+- missing channel alternatives or blank transcript is `invalid_provider_response`
+- duration is normalized from seconds to milliseconds when present
+
+Retry notes:
+
+- Deepgram uses the shared transport retry helper with a fresh raw-audio request per attempt.
+- It retries `429` and `5xx` according to the base policy.
+- Do not retry empty or malformed normalized transcript responses.
+
+### ElevenLabs
+
+Provider id: `elevenlabs`
+
+Speech endpoint:
+
+- `POST https://api.elevenlabs.io/v1/speech-to-text`
+- multipart upload with `file` and `model_id`
+- optional `language_code`
+- `xi-api-key` header
+
+Defaults and limits:
+
+- default model: `scribe_v2`
+- max audio: 3 GB
+- empty audio is an invalid local request
+- blank response text is `invalid_provider_response`
+
+Retry notes:
+
+- ElevenLabs uses the shared transport retry helper with a fresh multipart request per attempt.
+- It retries `429` and `5xx` according to the base policy.
+- Do not retry empty transcript or malformed response.
+
+### Smallest AI
+
+Provider id: `smallest`
+
+Speech endpoint:
+
+- `POST https://api.smallest.ai/waves/v1/pulse/get_text`
+- bearer auth
+- raw audio body
+- `Content-Type: application/octet-stream`
+- query parameters include `language`, `word_timestamps=false`, `format=true`, `punctuate=true`, and `capitalize=true`
+
+Defaults and limits:
+
+- default model: `pulse`
+- default language: `en`
+- empty audio is an invalid local request
+- blank `transcription` is `invalid_provider_response`
+- `audio_length` is normalized from seconds to milliseconds when present
+
+Retry notes:
+
+- Smallest AI uses the shared `send_provider_request_with_retry` helper with a fresh raw-audio request per attempt.
+- It retries `429` and `5xx` according to the base policy.
+- It preserves `retryAfterMs` for rate-limit responses when available.
+- Invalid JSON is `provider_request_failed` with a sanitized unreadable-response message.
+- Response logging reports JSON keys or a bounded body summary, not full provider payloads.
+
+## Future Providers
+
+New providers should get a section here before or alongside implementation.
+
+For each provider, document:
+
+- provider id
+- endpoint shape
+- auth header shape
+- request body shape
+- default model
+- max audio limit
+- supported language and prompt fields
+- empty transcript behavior
+- malformed response behavior
+- transport retry behavior
+- activity retry exceptions, if any
+
+If a provider has asynchronous jobs, webhooks, uploaded audio URLs, or non-idempotent creation calls, document exactly which steps are safe to retry and which are only safe to poll.

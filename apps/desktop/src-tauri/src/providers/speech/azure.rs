@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
 use crate::providers::{
-    build_http_client, normalize_provider_config, request_failure, ProviderConfig,
+    build_http_client, normalize_provider_config, send_provider_request_with_retry, ProviderConfig,
     TranscriptResult, TranscriptionInput,
 };
 
@@ -79,32 +79,20 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
             return Err(ProviderFailure::AudioTooLarge.into());
         }
 
-        let file = Part::bytes(input.audio)
-            .file_name(file_name_for_mime(&input.mime_type))
-            .mime_str(&input.mime_type)
-            .map_err(|err| ProviderFailure::InvalidRequest(err.to_string()))?;
-        let mut form = Form::new()
-            .part("file", file)
-            .text("response_format", "json");
-
-        if let Some(language) = input.language.filter(|value| !value.trim().is_empty()) {
-            form = form.text("language", language);
-        }
-        if let Some(prompt) = input.prompt.filter(|value| !value.trim().is_empty()) {
-            form = form.text("prompt", prompt);
-        }
-
-        let response = build_http_client()?
-            .post(self.transcription_url())
-            .header("api-key", api_key)
-            .multipart(form)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            return Err(request_failure("Azure OpenAI", status));
-        }
+        let client = build_http_client()?;
+        let url = self.transcription_url();
+        let response = send_provider_request_with_retry(&client, "Azure OpenAI", || {
+            build_transcription_request(
+                &client,
+                &url,
+                &api_key,
+                &input.audio,
+                &input.mime_type,
+                input.language.as_deref(),
+                input.prompt.as_deref(),
+            )
+        })
+        .await?;
 
         let body = response.text().await?;
         let payload = parse_transcription_response(&body)?;
@@ -119,6 +107,38 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
             duration_ms: None,
         })
     }
+}
+
+fn build_transcription_request(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+    audio: &[u8],
+    mime_type: &str,
+    language: Option<&str>,
+    prompt: Option<&str>,
+) -> Result<reqwest::Request, ProviderError> {
+    let file = Part::bytes(audio.to_vec())
+        .file_name(file_name_for_mime(mime_type))
+        .mime_str(mime_type)
+        .map_err(|err| ProviderFailure::InvalidRequest(err.to_string()))?;
+    let mut form = Form::new()
+        .part("file", file)
+        .text("response_format", "json");
+
+    if let Some(language) = language.map(str::trim).filter(|value| !value.is_empty()) {
+        form = form.text("language", language.to_string());
+    }
+    if let Some(prompt) = prompt.map(str::trim).filter(|value| !value.is_empty()) {
+        form = form.text("prompt", prompt.to_string());
+    }
+
+    client
+        .post(url)
+        .header("api-key", api_key)
+        .multipart(form)
+        .build()
+        .map_err(ProviderError::from)
 }
 
 fn parse_transcription_response(body: &str) -> Result<AzureTranscriptionResponse, ProviderError> {
@@ -141,6 +161,7 @@ fn file_name_for_mime(mime_type: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reqwest::header::CONTENT_TYPE;
 
     #[test]
     fn builds_transcription_url() {
@@ -201,5 +222,38 @@ mod tests {
             parsed.text,
             "When we play an audio, there is a three dots on which we can download the audio, but I'm not able to download it. Can you please help me download?"
         );
+    }
+
+    #[test]
+    fn request_uses_azure_url_api_key_and_multipart_body() {
+        let client = reqwest::Client::new();
+        let request = build_transcription_request(
+            &client,
+            "https://example.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2025-04-01-preview",
+            "azure-test",
+            &[1, 2, 3],
+            "audio/webm",
+            Some("en"),
+            Some("domain terms"),
+        )
+        .expect("request to build");
+
+        assert_eq!(
+            request.url().as_str(),
+            "https://example.openai.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2025-04-01-preview"
+        );
+        assert_eq!(
+            request
+                .headers()
+                .get("api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("azure-test")
+        );
+        assert!(request
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .starts_with("multipart/form-data; boundary="));
     }
 }

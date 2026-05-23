@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
-use crate::providers::{build_http_client, request_failure, TranscriptResult, TranscriptionInput};
+use crate::providers::{
+    build_http_client, send_provider_request_with_retry, TranscriptResult, TranscriptionInput,
+};
 
 pub const PROVIDER_ID: &str = "assemblyai";
 pub const DEFAULT_MODEL: &str = "universal-3-pro";
@@ -58,19 +60,10 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
         let client = build_http_client()?;
         let model = resolve_model(input.model.as_deref()).to_string();
 
-        let upload_response = client
-            .execute(build_upload_request(
-                &client,
-                &api_key,
-                &input.audio,
-                &input.mime_type,
-            )?)
-            .await?;
-
-        if !upload_response.status().is_success() {
-            let status = upload_response.status();
-            return Err(request_failure("AssemblyAI", status));
-        }
+        let upload_response = send_provider_request_with_retry(&client, "AssemblyAI", || {
+            build_upload_request(&client, &api_key, &input.audio, &input.mime_type)
+        })
+        .await?;
 
         let upload_payload = upload_response.json::<UploadResponse>().await?;
         let audio_url = upload_payload.upload_url.trim();
@@ -78,20 +71,16 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
             return Err(ProviderFailure::InvalidResponse.into());
         }
 
-        let create_response = client
-            .execute(build_transcript_request(
+        let create_response = send_provider_request_with_retry(&client, "AssemblyAI", || {
+            build_transcript_request(
                 &client,
                 &api_key,
                 audio_url,
                 &model,
                 input.language.as_deref(),
-            )?)
-            .await?;
-
-        if !create_response.status().is_success() {
-            let status = create_response.status();
-            return Err(request_failure("AssemblyAI", status));
-        }
+            )
+        })
+        .await?;
 
         let create_payload = create_response.json::<CreateTranscriptResponse>().await?;
         let transcript_id = create_payload.id.trim();
@@ -104,14 +93,10 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
                 tokio::time::sleep(POLL_INTERVAL).await;
             }
 
-            let poll_response = client
-                .execute(build_poll_request(&client, &api_key, transcript_id)?)
-                .await?;
-
-            if !poll_response.status().is_success() {
-                let status = poll_response.status();
-                return Err(request_failure("AssemblyAI", status));
-            }
+            let poll_response = send_provider_request_with_retry(&client, "AssemblyAI", || {
+                build_poll_request(&client, &api_key, transcript_id)
+            })
+            .await?;
 
             let payload = poll_response.json::<TranscriptStatusResponse>().await?;
             if let Some(result) = resolve_poll_response(payload, &model)? {

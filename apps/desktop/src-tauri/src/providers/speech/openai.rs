@@ -4,7 +4,9 @@ use serde::Deserialize;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
-use crate::providers::{build_http_client, request_failure, TranscriptResult, TranscriptionInput};
+use crate::providers::{
+    build_http_client, send_provider_request_with_retry, TranscriptResult, TranscriptionInput,
+};
 
 pub const PROVIDER_ID: &str = "openai";
 const DEFAULT_MODEL: &str = "gpt-4o-mini-transcribe";
@@ -37,33 +39,19 @@ impl SpeechProvider for OpenAiSpeechProvider {
             .model
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_MODEL.to_string());
-        let file = Part::bytes(input.audio)
-            .file_name(file_name_for_mime(&input.mime_type))
-            .mime_str(&input.mime_type)
-            .map_err(|err| ProviderFailure::InvalidRequest(err.to_string()))?;
-        let mut form = Form::new()
-            .part("file", file)
-            .text("model", model.clone())
-            .text("response_format", "json");
-
-        if let Some(language) = input.language.filter(|value| !value.trim().is_empty()) {
-            form = form.text("language", language);
-        }
-        if let Some(prompt) = input.prompt.filter(|value| !value.trim().is_empty()) {
-            form = form.text("prompt", prompt);
-        }
-
-        let response = build_http_client()?
-            .post(TRANSCRIPTIONS_URL)
-            .bearer_auth(api_key)
-            .multipart(form)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            return Err(request_failure("OpenAI", status));
-        }
+        let client = build_http_client()?;
+        let response = send_provider_request_with_retry(&client, "OpenAI", || {
+            build_transcription_request(
+                &client,
+                &api_key,
+                &input.audio,
+                &input.mime_type,
+                &model,
+                input.language.as_deref(),
+                input.prompt.as_deref(),
+            )
+        })
+        .await?;
 
         let payload = response.json::<OpenAiTranscriptionResponse>().await?;
         if payload.text.trim().is_empty() {
@@ -77,6 +65,39 @@ impl SpeechProvider for OpenAiSpeechProvider {
             duration_ms: None,
         })
     }
+}
+
+fn build_transcription_request(
+    client: &reqwest::Client,
+    api_key: &str,
+    audio: &[u8],
+    mime_type: &str,
+    model: &str,
+    language: Option<&str>,
+    prompt: Option<&str>,
+) -> Result<reqwest::Request, ProviderError> {
+    let file = Part::bytes(audio.to_vec())
+        .file_name(file_name_for_mime(mime_type))
+        .mime_str(mime_type)
+        .map_err(|err| ProviderFailure::InvalidRequest(err.to_string()))?;
+    let mut form = Form::new()
+        .part("file", file)
+        .text("model", model.to_string())
+        .text("response_format", "json");
+
+    if let Some(language) = language.map(str::trim).filter(|value| !value.is_empty()) {
+        form = form.text("language", language.to_string());
+    }
+    if let Some(prompt) = prompt.map(str::trim).filter(|value| !value.is_empty()) {
+        form = form.text("prompt", prompt.to_string());
+    }
+
+    client
+        .post(TRANSCRIPTIONS_URL)
+        .bearer_auth(api_key)
+        .multipart(form)
+        .build()
+        .map_err(ProviderError::from)
 }
 
 fn file_name_for_mime(mime_type: &str) -> &'static str {
@@ -94,6 +115,7 @@ fn file_name_for_mime(mime_type: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
     #[test]
     fn selects_extension_from_mime_type() {
@@ -104,5 +126,35 @@ mod tests {
             file_name_for_mime("application/octet-stream"),
             "recording.webm"
         );
+    }
+
+    #[test]
+    fn request_uses_transcription_endpoint_auth_and_multipart_body() {
+        let client = reqwest::Client::new();
+        let request = build_transcription_request(
+            &client,
+            "openai-test",
+            &[1, 2, 3],
+            "audio/webm",
+            "gpt-4o-mini-transcribe",
+            Some("en"),
+            Some("domain terms"),
+        )
+        .expect("request to build");
+
+        assert_eq!(request.url().as_str(), TRANSCRIPTIONS_URL);
+        assert_eq!(
+            request
+                .headers()
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer openai-test")
+        );
+        assert!(request
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .starts_with("multipart/form-data; boundary="));
     }
 }

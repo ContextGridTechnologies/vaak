@@ -3,9 +3,11 @@ pub mod errors;
 pub mod speech;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::time::Duration;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
+use reqwest::header::{HeaderMap, RETRY_AFTER};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,11 +46,16 @@ pub struct ProviderConfig {
 }
 
 const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_RATE_LIMIT_RETRY_DELAY: Duration = Duration::from_secs(5);
+const DEFAULT_UPSTREAM_RETRY_DELAY: Duration = Duration::from_millis(500);
+const MAX_PROVIDER_HTTP_ATTEMPTS: usize = 2;
 const DEFAULT_AZURE_API_VERSION: &str = "2025-04-01-preview";
 const MAX_LANGUAGE_FIELD_LEN: usize = 32;
 const MAX_PROVIDER_FIELD_LEN: usize = 256;
 const MAX_TRANSCRIPTION_PROMPT_LEN: usize = 4_096;
 const MAX_AUDIO_MIME_TYPE_LEN: usize = 64;
+const PROVIDER_RESPONSE_LOG_LIMIT: usize = 240;
+const SAFE_PROVIDER_ERROR_FIELDS: &[&str] = &["code", "detail", "error", "message"];
 const AZURE_PROVIDER_ID: &str = "azure-openai";
 const ALLOWED_AUDIO_MIME_TYPES: &[&str] = &[
     "audio/aac",
@@ -155,8 +162,174 @@ fn normalize_optional_field(
     Ok(Some(trimmed.to_string()))
 }
 
+#[cfg(test)]
 pub fn request_failure(provider_name: &str, status: reqwest::StatusCode) -> ProviderError {
-    ProviderFailure::Request(format!("{provider_name} returned {status}")).into()
+    request_failure_with_context(provider_name, status, None, None)
+}
+
+pub async fn send_provider_request_with_retry(
+    client: &reqwest::Client,
+    provider_name: &str,
+    mut build_request: impl FnMut() -> Result<reqwest::Request, ProviderError>,
+) -> Result<reqwest::Response, ProviderError> {
+    for attempt in 0..MAX_PROVIDER_HTTP_ATTEMPTS {
+        let request = build_request()?;
+        let response = client.execute(request).await?;
+        if response.status().is_success() {
+            return Ok(response);
+        }
+
+        if attempt + 1 >= MAX_PROVIDER_HTTP_ATTEMPTS || !is_retryable_status(response.status()) {
+            return Err(request_failure_from_response(provider_name, response).await);
+        }
+
+        let delay = retry_delay(response.headers(), response.status());
+        tokio::time::sleep(delay).await;
+    }
+
+    Err(ProviderFailure::Request(format!("{provider_name} request failed")).into())
+}
+
+pub async fn request_failure_from_response(
+    provider_name: &str,
+    response: reqwest::Response,
+) -> ProviderError {
+    let status = response.status();
+    let retry_after_ms = retry_after_ms(response.headers());
+    let body = response.text().await.ok();
+    log::warn!(
+        target: "vaak::providers",
+        "provider_request_failed provider={} status={} retry_after_ms={:?} body={}",
+        provider_name,
+        status.as_u16(),
+        retry_after_ms,
+        body.as_deref()
+            .map(summarize_provider_response_body)
+            .unwrap_or_else(|| "<unavailable>".to_string())
+    );
+
+    request_failure_with_context(provider_name, status, retry_after_ms, body.as_deref())
+}
+
+fn request_failure_with_context(
+    provider_name: &str,
+    status: reqwest::StatusCode,
+    retry_after_ms: Option<u64>,
+    body: Option<&str>,
+) -> ProviderError {
+    let body = body.unwrap_or_default();
+    let message = format!("{provider_name} returned {status}");
+    let error = if status == reqwest::StatusCode::UNAUTHORIZED {
+        if looks_like_quota_error(body) {
+            ProviderError::new("provider_quota_exhausted", message)
+        } else {
+            ProviderError::new("provider_auth_failed", message)
+        }
+    } else if status == reqwest::StatusCode::PAYMENT_REQUIRED {
+        ProviderError::new("provider_quota_exhausted", message)
+    } else if status == reqwest::StatusCode::FORBIDDEN {
+        if looks_like_quota_error(body) {
+            ProviderError::new("provider_quota_exhausted", message)
+        } else {
+            ProviderError::new("provider_permission_failed", message)
+        }
+    } else if status == reqwest::StatusCode::BAD_REQUEST {
+        ProviderError::new(
+            "provider_bad_request",
+            format!("{provider_name} rejected the audio request"),
+        )
+    } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        ProviderError::new("provider_rate_limited", message)
+    } else if status.is_server_error() {
+        ProviderError::new("provider_upstream_failed", message)
+    } else {
+        ProviderFailure::Request(message).into()
+    };
+
+    error.with_retry_after_ms(retry_after_ms)
+}
+
+fn retry_after_ms(headers: &HeaderMap) -> Option<u64> {
+    let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
+    let seconds = value.parse::<u64>().ok()?;
+
+    seconds.checked_mul(1000)
+}
+
+fn retry_delay(headers: &HeaderMap, status: reqwest::StatusCode) -> Duration {
+    retry_after_ms(headers)
+        .map(Duration::from_millis)
+        .unwrap_or_else(|| {
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                DEFAULT_RATE_LIMIT_RETRY_DELAY
+            } else {
+                DEFAULT_UPSTREAM_RETRY_DELAY
+            }
+        })
+}
+
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+fn looks_like_quota_error(body: &str) -> bool {
+    let normalized = body.to_ascii_lowercase();
+    [
+        "insufficient balance",
+        "insufficient credit",
+        "insufficient quota",
+        "no credits",
+        "out of credits",
+        "quota exceeded",
+        "usage limit",
+        "limit reached",
+        "billing",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+}
+
+fn summarize_provider_response_body(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return "<empty>".to_string();
+    }
+
+    if let Ok(json) = serde_json::from_str::<Value>(trimmed) {
+        return match json {
+            Value::Object(map) => {
+                let mut keys = map.keys().map(String::as_str).collect::<Vec<_>>();
+                keys.sort_unstable();
+
+                let mut fields = Vec::new();
+                for field in SAFE_PROVIDER_ERROR_FIELDS {
+                    if let Some(Value::String(value)) = map.get(*field) {
+                        fields.push(format!(
+                            "{}=\"{}\"",
+                            field,
+                            truncate_for_provider_log(value, 120)
+                        ));
+                    }
+                }
+                fields.push(format!("keys={}", keys.join(",")));
+                format!("json_object {}", fields.join(" "))
+            }
+            Value::Array(values) => format!("json_array_len={}", values.len()),
+            other => truncate_for_provider_log(&other.to_string(), PROVIDER_RESPONSE_LOG_LIMIT),
+        };
+    }
+
+    truncate_for_provider_log(trimmed, PROVIDER_RESPONSE_LOG_LIMIT)
+}
+
+fn truncate_for_provider_log(text: &str, limit: usize) -> String {
+    let mut chars = text.chars();
+    let truncated = chars.by_ref().take(limit).collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
 }
 
 fn normalize_azure_endpoint(endpoint: Option<String>) -> Result<String, ProviderError> {
@@ -232,6 +405,14 @@ fn normalize_required_provider_field(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reqwest::header::HeaderName;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use std::thread;
 
     #[test]
     fn strips_audio_mime_parameters_before_validation() {
@@ -353,11 +534,307 @@ mod tests {
     }
 
     #[test]
-    fn keeps_provider_request_failures_status_only() {
+    fn classifies_bad_requests_as_provider_audio_request_failures() {
         let err = request_failure("OpenAI", reqwest::StatusCode::BAD_REQUEST);
 
-        assert_eq!(err.code, "provider_request_failed");
-        assert_eq!(err.message, "OpenAI returned 400 Bad Request");
+        assert_eq!(err.code, "provider_bad_request");
+        assert_eq!(err.message, "OpenAI rejected the audio request");
         assert!(!err.message.contains("invalid_request_error"));
+    }
+
+    #[test]
+    fn classifies_auth_failures_without_exposing_provider_body() {
+        let err = request_failure_with_context(
+            "AssemblyAI",
+            reqwest::StatusCode::UNAUTHORIZED,
+            None,
+            Some(r#"{"error":"Authentication error, API token missing/invalid"}"#),
+        );
+
+        assert_eq!(err.code, "provider_auth_failed");
+        assert_eq!(err.message, "AssemblyAI returned 401 Unauthorized");
+    }
+
+    #[test]
+    fn classifies_balance_failures_separately_from_auth() {
+        let err = request_failure_with_context(
+            "AssemblyAI",
+            reqwest::StatusCode::UNAUTHORIZED,
+            None,
+            Some(r#"{"error":"insufficient balance"}"#),
+        );
+
+        assert_eq!(err.code, "provider_quota_exhausted");
+        assert_eq!(err.message, "AssemblyAI returned 401 Unauthorized");
+    }
+
+    #[test]
+    fn classifies_rate_limits_and_preserves_retry_after() {
+        let err = request_failure_with_context(
+            "Smallest AI",
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            Some(5_000),
+            None,
+        );
+
+        assert_eq!(err.code, "provider_rate_limited");
+        assert_eq!(err.message, "Smallest AI returned 429 Too Many Requests");
+        assert_eq!(err.retry_after_ms, Some(5_000));
+    }
+
+    #[test]
+    fn only_rate_limits_and_server_errors_are_retryable() {
+        assert!(is_retryable_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR
+        ));
+        assert!(!is_retryable_status(reqwest::StatusCode::UNAUTHORIZED));
+        assert!(!is_retryable_status(reqwest::StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn retry_delay_prefers_retry_after_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, "7".parse().unwrap());
+
+        assert_eq!(
+            retry_delay(&headers, reqwest::StatusCode::TOO_MANY_REQUESTS),
+            Duration::from_secs(7)
+        );
+    }
+
+    #[test]
+    fn classifies_upstream_failures() {
+        let err = request_failure("Smallest AI", reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+
+        assert_eq!(err.code, "provider_upstream_failed");
+        assert_eq!(
+            err.message,
+            "Smallest AI returned 500 Internal Server Error"
+        );
+    }
+
+    #[test]
+    fn retry_helper_rebuilds_request_for_retryable_rate_limit() {
+        let server = SequenceServer::spawn(vec![
+            TestResponse::new(429).with_header("Retry-After", "0"),
+            TestResponse::new(200).with_body("ok"),
+        ]);
+
+        let client = reqwest::Client::new();
+        let request_builds = Arc::new(AtomicUsize::new(0));
+        let builds = Arc::clone(&request_builds);
+
+        let response = runtime().block_on(send_provider_request_with_retry(
+            &client,
+            "Test Provider",
+            || {
+                builds.fetch_add(1, Ordering::SeqCst);
+                client
+                    .get(server.url())
+                    .build()
+                    .map_err(ProviderError::from)
+            },
+        ));
+
+        assert_eq!(
+            response.expect("retry succeeds").status(),
+            reqwest::StatusCode::OK
+        );
+        assert_eq!(request_builds.load(Ordering::SeqCst), 2);
+        assert_eq!(server.requests(), 2);
+    }
+
+    #[test]
+    fn retry_helper_retries_server_errors_once() {
+        let server = SequenceServer::spawn(vec![TestResponse::new(500), TestResponse::new(200)]);
+        let client = reqwest::Client::new();
+
+        let response = runtime().block_on(send_provider_request_with_retry(
+            &client,
+            "Test Provider",
+            || {
+                client
+                    .get(server.url())
+                    .build()
+                    .map_err(ProviderError::from)
+            },
+        ));
+
+        assert_eq!(
+            response.expect("retry succeeds").status(),
+            reqwest::StatusCode::OK
+        );
+        assert_eq!(server.requests(), 2);
+    }
+
+    #[test]
+    fn retry_helper_does_not_retry_auth_or_permission_failures() {
+        for status in [401, 403] {
+            let server = SequenceServer::spawn(vec![TestResponse::new(status)]);
+            let client = reqwest::Client::new();
+
+            let err = runtime()
+                .block_on(send_provider_request_with_retry(
+                    &client,
+                    "Test Provider",
+                    || {
+                        client
+                            .get(server.url())
+                            .build()
+                            .map_err(ProviderError::from)
+                    },
+                ))
+                .expect_err("non-retryable status should fail");
+
+            assert_eq!(
+                err.message,
+                format!("Test Provider returned {status} {}", status_text(status))
+            );
+            assert_eq!(server.requests(), 1);
+        }
+    }
+
+    #[test]
+    fn retry_helper_preserves_retry_after_on_final_rate_limit_failure() {
+        let server = SequenceServer::spawn(vec![
+            TestResponse::new(429).with_header("Retry-After", "0"),
+            TestResponse::new(429).with_header("Retry-After", "7"),
+        ]);
+        let client = reqwest::Client::new();
+
+        let err = runtime()
+            .block_on(send_provider_request_with_retry(
+                &client,
+                "Test Provider",
+                || {
+                    client
+                        .get(server.url())
+                        .build()
+                        .map_err(ProviderError::from)
+                },
+            ))
+            .expect_err("final rate limit should fail");
+
+        assert_eq!(err.code, "provider_rate_limited");
+        assert_eq!(err.message, "Test Provider returned 429 Too Many Requests");
+        assert_eq!(err.retry_after_ms, Some(7_000));
+        assert_eq!(server.requests(), 2);
+    }
+
+    #[test]
+    fn provider_response_summary_keeps_safe_error_fields() {
+        let summary = summarize_provider_response_body(
+            r#"{"request_id":"internal-123","message":"Unsupported audio format","code":"bad_audio","error":"Invalid audio"}"#,
+        );
+
+        assert_eq!(
+            summary,
+            r#"json_object code="bad_audio" error="Invalid audio" message="Unsupported audio format" keys=code,error,message,request_id"#
+        );
+        assert!(!summary.contains("internal-123"));
+    }
+
+    #[test]
+    fn provider_response_summary_truncates_plain_text() {
+        let summary = summarize_provider_response_body(&"a".repeat(260));
+
+        assert_eq!(summary.len(), 243);
+        assert!(summary.ends_with("..."));
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime")
+    }
+
+    fn status_text(status: u16) -> &'static str {
+        match status {
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            _ => "",
+        }
+    }
+
+    struct TestResponse {
+        status: u16,
+        headers: Vec<(&'static str, &'static str)>,
+        body: &'static str,
+    }
+
+    impl TestResponse {
+        fn new(status: u16) -> Self {
+            Self {
+                status,
+                headers: Vec::new(),
+                body: "",
+            }
+        }
+
+        fn with_header(mut self, name: &'static str, value: &'static str) -> Self {
+            self.headers.push((name, value));
+            self
+        }
+
+        fn with_body(mut self, body: &'static str) -> Self {
+            self.body = body;
+            self
+        }
+    }
+
+    struct SequenceServer {
+        url: String,
+        requests: Arc<AtomicUsize>,
+    }
+
+    impl SequenceServer {
+        fn spawn(responses: Vec<TestResponse>) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
+            let url = format!("http://{}", listener.local_addr().expect("local addr"));
+            let requests = Arc::new(AtomicUsize::new(0));
+            let request_count = Arc::clone(&requests);
+
+            thread::spawn(move || {
+                for response in responses {
+                    let (mut stream, _) = listener.accept().expect("test connection");
+                    request_count.fetch_add(1, Ordering::SeqCst);
+
+                    let mut buffer = [0_u8; 1024];
+                    let _ = stream.read(&mut buffer);
+
+                    let reason = status_text(response.status);
+                    let mut raw_response = format!(
+                        "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+                        response.status,
+                        reason,
+                        response.body.len()
+                    );
+                    for (name, value) in response.headers {
+                        HeaderName::from_bytes(name.as_bytes()).expect("valid test header");
+                        raw_response.push_str(name);
+                        raw_response.push_str(": ");
+                        raw_response.push_str(value);
+                        raw_response.push_str("\r\n");
+                    }
+                    raw_response.push_str("\r\n");
+                    raw_response.push_str(response.body);
+                    stream
+                        .write_all(raw_response.as_bytes())
+                        .expect("test response writes");
+                }
+            });
+
+            Self { url, requests }
+        }
+
+        fn url(&self) -> &str {
+            &self.url
+        }
+
+        fn requests(&self) -> usize {
+            self.requests.load(Ordering::SeqCst)
+        }
     }
 }

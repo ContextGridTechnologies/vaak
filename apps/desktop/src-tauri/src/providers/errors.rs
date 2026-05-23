@@ -28,6 +28,8 @@ pub enum ProviderFailure {
 pub struct ProviderError {
     pub code: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_ms: Option<u64>,
 }
 
 impl ProviderError {
@@ -35,7 +37,13 @@ impl ProviderError {
         Self {
             code: code.into(),
             message: message.into(),
+            retry_after_ms: None,
         }
+    }
+
+    pub fn with_retry_after_ms(mut self, retry_after_ms: Option<u64>) -> Self {
+        self.retry_after_ms = retry_after_ms;
+        self
     }
 }
 

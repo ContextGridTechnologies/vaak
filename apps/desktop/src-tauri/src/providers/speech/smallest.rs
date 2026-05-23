@@ -5,14 +5,17 @@ use serde_json::Value;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
-use crate::providers::{build_http_client, request_failure, TranscriptResult, TranscriptionInput};
+use crate::providers::{
+    build_http_client, send_provider_request_with_retry, TranscriptResult, TranscriptionInput,
+};
 
 pub const PROVIDER_ID: &str = "smallest";
 pub const DEFAULT_MODEL: &str = "pulse";
 const LOG_TARGET: &str = "vaak::providers::speech::smallest";
 
 const TRANSCRIPTIONS_URL: &str = "https://api.smallest.ai/waves/v1/pulse/get_text";
-const DEFAULT_LANGUAGE: &str = "multi";
+const DEFAULT_LANGUAGE: &str = "en";
+const RAW_AUDIO_CONTENT_TYPE: &str = "application/octet-stream";
 
 #[derive(Default)]
 pub struct SmallestSpeechProvider;
@@ -33,21 +36,26 @@ impl SpeechProvider for SmallestSpeechProvider {
         validate_input(&input)?;
 
         let model = resolve_model(input.model.as_deref()).to_string();
+        log::info!(
+            target: LOG_TARGET,
+            "smallest_transcription_request bytes={} mime_type={} language={} model={} signature={}",
+            input.audio.len(),
+            input.mime_type,
+            resolve_language(input.language.as_deref()),
+            model,
+            audio_signature(&input.audio)
+        );
         let client = build_http_client()?;
-        let response = client
-            .execute(build_transcription_request(
+        let response = send_provider_request_with_retry(&client, "Smallest AI", || {
+            build_transcription_request(
                 &client,
                 &api_key,
                 &input.audio,
                 &input.mime_type,
                 input.language.as_deref(),
-            )?)
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            return Err(request_failure("Smallest AI", status));
-        }
+            )
+        })
+        .await?;
 
         let body = response.text().await?;
         let payload = parse_transcription_response(&body)?;
@@ -81,13 +89,13 @@ fn build_transcription_request(
     client: &reqwest::Client,
     api_key: &str,
     audio: &[u8],
-    mime_type: &str,
+    _mime_type: &str,
     language: Option<&str>,
 ) -> Result<reqwest::Request, ProviderError> {
     client
         .post(TRANSCRIPTIONS_URL)
         .bearer_auth(api_key)
-        .header(CONTENT_TYPE, mime_type)
+        .header(CONTENT_TYPE, RAW_AUDIO_CONTENT_TYPE)
         .query(&[
             ("language", resolve_language(language)),
             ("word_timestamps", "false"),
@@ -147,6 +155,30 @@ fn seconds_to_millis(seconds: f64) -> Option<u64> {
     }
 
     Some((seconds * 1000.0).round() as u64)
+}
+
+fn audio_signature(audio: &[u8]) -> &'static str {
+    if audio.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]) {
+        return "webm/ebml";
+    }
+
+    if audio.len() >= 12 && audio.starts_with(b"RIFF") && &audio[8..12] == b"WAVE" {
+        return "wav/riff";
+    }
+
+    if audio.starts_with(b"fLaC") {
+        return "flac";
+    }
+
+    if audio.starts_with(b"ID3") {
+        return "mp3/id3";
+    }
+
+    if audio.first().copied() == Some(0xff) {
+        return "mp3/frame";
+    }
+
+    "unknown"
 }
 
 fn summarize_response_body(body: &str) -> String {
@@ -213,7 +245,7 @@ mod tests {
                 .headers()
                 .get(CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok()),
-            Some("audio/flac")
+            Some("application/octet-stream")
         );
         assert_eq!(
             request.body().and_then(reqwest::Body::as_bytes),
@@ -222,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn request_defaults_missing_language_to_multi() {
+    fn request_defaults_missing_language_to_english() {
         let client = reqwest::Client::new();
         let request =
             build_transcription_request(&client, "smallest-test", &[1], "audio/webm", None)
@@ -230,7 +262,7 @@ mod tests {
 
         assert_eq!(
             request.url().query(),
-            Some("language=multi&word_timestamps=false&format=true&punctuate=true&capitalize=true")
+            Some("language=en&word_timestamps=false&format=true&punctuate=true&capitalize=true")
         );
     }
 
@@ -283,10 +315,20 @@ mod tests {
 
     #[test]
     fn non_success_response_surfaces_status() {
-        let err = request_failure("Smallest AI", reqwest::StatusCode::UNAUTHORIZED);
+        let err = request_failure_from_status(reqwest::StatusCode::UNAUTHORIZED);
 
-        assert_eq!(err.code, "provider_request_failed");
+        assert_eq!(err.code, "provider_auth_failed");
         assert_eq!(err.message, "Smallest AI returned 401 Unauthorized");
+    }
+
+    #[test]
+    fn rate_limit_response_is_retryable() {
+        let err = request_failure_from_status(reqwest::StatusCode::TOO_MANY_REQUESTS)
+            .with_retry_after_ms(Some(5_000));
+
+        assert_eq!(err.code, "provider_rate_limited");
+        assert_eq!(err.message, "Smallest AI returned 429 Too Many Requests");
+        assert_eq!(err.retry_after_ms, Some(5_000));
     }
 
     #[test]
@@ -316,5 +358,17 @@ mod tests {
             summarize_response_body(r#"{"foo":1,"bar":"x"}"#),
             "json_object_keys=bar,foo"
         );
+    }
+
+    #[test]
+    fn audio_signature_identifies_common_containers() {
+        assert_eq!(audio_signature(&[0x1a, 0x45, 0xdf, 0xa3]), "webm/ebml");
+        assert_eq!(audio_signature(b"RIFF\x01\x02\x03\x04WAVE"), "wav/riff");
+        assert_eq!(audio_signature(b"fLaC\x00\x00"), "flac");
+        assert_eq!(audio_signature(b"ID3\x04\x00"), "mp3/id3");
+    }
+
+    fn request_failure_from_status(status: reqwest::StatusCode) -> ProviderError {
+        crate::providers::request_failure("Smallest AI", status)
     }
 }

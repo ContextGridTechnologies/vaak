@@ -4,7 +4,9 @@ use serde::Deserialize;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
-use crate::providers::{build_http_client, request_failure, TranscriptResult, TranscriptionInput};
+use crate::providers::{
+    build_http_client, send_provider_request_with_retry, TranscriptResult, TranscriptionInput,
+};
 
 pub const PROVIDER_ID: &str = "elevenlabs";
 const DEFAULT_MODEL: &str = "scribe_v2";
@@ -58,29 +60,11 @@ impl SpeechProvider for ElevenLabsSpeechProvider {
         input: TranscriptionInput,
     ) -> Result<TranscriptResult, ProviderError> {
         let request = ElevenLabsRequest::from_input(input.clone())?;
-        let file = Part::bytes(input.audio)
-            .file_name(request.file_name)
-            .mime_str(&input.mime_type)
-            .map_err(|err| ProviderFailure::InvalidRequest(err.to_string()))?;
-        let mut form = Form::new()
-            .part("file", file)
-            .text("model_id", request.model_id.clone());
-
-        if let Some(language_code) = request.language_code.clone() {
-            form = form.text("language_code", language_code);
-        }
-
-        let response = build_http_client()?
-            .post(request.url)
-            .header("xi-api-key", api_key)
-            .multipart(form)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            return Err(request_failure("ElevenLabs", status));
-        }
+        let client = build_http_client()?;
+        let response = send_provider_request_with_retry(&client, "ElevenLabs", || {
+            build_transcription_request(&client, &api_key, &input.audio, &input.mime_type, &request)
+        })
+        .await?;
 
         let payload = response.json::<ElevenLabsTranscriptionResponse>().await?;
         if payload.text.trim().is_empty() {
@@ -94,6 +78,33 @@ impl SpeechProvider for ElevenLabsSpeechProvider {
             duration_ms: None,
         })
     }
+}
+
+fn build_transcription_request(
+    client: &reqwest::Client,
+    api_key: &str,
+    audio: &[u8],
+    mime_type: &str,
+    request: &ElevenLabsRequest,
+) -> Result<reqwest::Request, ProviderError> {
+    let file = Part::bytes(audio.to_vec())
+        .file_name(request.file_name)
+        .mime_str(mime_type)
+        .map_err(|err| ProviderFailure::InvalidRequest(err.to_string()))?;
+    let mut form = Form::new()
+        .part("file", file)
+        .text("model_id", request.model_id.clone());
+
+    if let Some(language_code) = request.language_code.clone() {
+        form = form.text("language_code", language_code);
+    }
+
+    client
+        .post(request.url)
+        .header("xi-api-key", api_key)
+        .multipart(form)
+        .build()
+        .map_err(ProviderError::from)
 }
 
 fn file_name_for_mime(mime_type: &str) -> &'static str {
@@ -112,6 +123,7 @@ fn file_name_for_mime(mime_type: &str) -> &'static str {
 mod tests {
     use super::*;
     use crate::providers::TranscriptionInput;
+    use reqwest::header::CONTENT_TYPE;
 
     #[test]
     fn defaults_to_scribe_v2_request_values() {
@@ -144,5 +156,41 @@ mod tests {
         assert_eq!(request.model_id, "scribe_v1");
         assert_eq!(request.language_code, None);
         assert_eq!(request.file_name, "recording.m4a");
+    }
+
+    #[test]
+    fn request_uses_speech_to_text_endpoint_api_key_and_multipart_body() {
+        let client = reqwest::Client::new();
+        let request_metadata = ElevenLabsRequest::from_input(TranscriptionInput {
+            audio: vec![1, 2, 3],
+            mime_type: "audio/webm".to_string(),
+            language: Some("en".to_string()),
+            prompt: None,
+            model: None,
+        })
+        .expect("valid request metadata");
+        let request = build_transcription_request(
+            &client,
+            "eleven-test",
+            &[1, 2, 3],
+            "audio/webm",
+            &request_metadata,
+        )
+        .expect("request to build");
+
+        assert_eq!(request.url().as_str(), TRANSCRIPTIONS_URL);
+        assert_eq!(
+            request
+                .headers()
+                .get("xi-api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("eleven-test")
+        );
+        assert!(request
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .starts_with("multipart/form-data; boundary="));
     }
 }
