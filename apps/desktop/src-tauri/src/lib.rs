@@ -100,6 +100,7 @@ pub fn run() {
             commands::get_hotkey_bindings,
             commands::save_dictation_hotkey,
             commands::save_dictation_record,
+            commands::update_dictation_record,
             commands::get_recent_dictation_records,
             commands::persist_dictation_audio,
             commands::load_saved_dictation_audio,

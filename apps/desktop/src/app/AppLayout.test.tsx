@@ -37,6 +37,7 @@ describe("AppLayout", () => {
       <AppLayout>
         <TabsContent value="home">Home content</TabsContent>
         <TabsContent value="settings">Settings content</TabsContent>
+        <TabsContent value="info">Info content</TabsContent>
         <TabsContent value="account">Account content</TabsContent>
       </AppLayout>,
     );
@@ -54,6 +55,9 @@ describe("AppLayout", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Settings" })).toHaveClass(
+      "cursor-pointer",
+    );
+    expect(screen.getByRole("button", { name: "Info" })).toHaveClass(
       "cursor-pointer",
     );
     expect(screen.queryByTestId("app-sidebar-utility")).not.toBeInTheDocument();
@@ -91,6 +95,9 @@ describe("AppLayout", () => {
     );
     expect(screen.getByTestId("app-sidebar-nav-icon-settings")).toHaveClass(
       "lucide-sliders-horizontal",
+    );
+    expect(screen.getByTestId("app-sidebar-nav-icon-info")).toHaveClass(
+      "lucide-info",
     );
     expect(screen.getByTestId("app-sidebar-dock-toggle")).toHaveClass(
       "right-0",

@@ -7,6 +7,7 @@ import { AppProviders } from "./AppProviders";
 import { isTauriRuntime } from "../lib/tauri";
 import { AccountPanel } from "../features/account";
 import { HomePanel } from "../features/home";
+import { InfoPanel } from "../features/info";
 import { OnboardingGate } from "../features/onboarding";
 import { SettingsPanel } from "../features/settings";
 import "../styles/globals.css";
@@ -42,6 +43,10 @@ function App() {
 
               <TabsContent value="settings" className="flex flex-col gap-4">
                 <SettingsPanel />
+              </TabsContent>
+
+              <TabsContent value="info" className="flex flex-col gap-4">
+                <InfoPanel />
               </TabsContent>
 
               <TabsContent value="account" className="flex flex-col gap-4">

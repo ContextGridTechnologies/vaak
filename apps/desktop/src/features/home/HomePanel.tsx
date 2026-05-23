@@ -9,6 +9,7 @@ import {
   CopyIcon,
   CheckIcon,
   LoaderCircleIcon,
+  RotateCcwIcon,
   type LucideIcon,
   MessageSquareTextIcon,
   NotebookPenIcon,
@@ -25,6 +26,7 @@ import {
   Card,
 } from "@/components/ui/card";
 import { appEnvironment } from "@/config/app-env";
+import { normalizeError } from "@/lib/errors";
 import {
   Empty,
   EmptyDescription,
@@ -36,10 +38,15 @@ import {
   getRecentDictationRecords,
   isTauriRuntime,
   loadSavedDictationAudio,
+  persistDictationAudio,
   sanitizeTargetControlName,
+  transcribeRecording,
+  updateDictationRecord,
   type DictationRecord,
 } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+
+import { analyzeAudioForRetry } from "./retryAudioProcessing";
 
 type ActivityStatus = DictationRecord["insertion"]["status"];
 type StatusTone = "success" | "warning" | "error";
@@ -59,6 +66,7 @@ type HomeActivity = {
   audio: DictationRecord["audio"] | null | undefined;
   processedAudio: DictationRecord["processedAudio"] | null | undefined;
   processingSummary: string | null;
+  sourceRecord: DictationRecord;
 };
 
 const POLL_INTERVAL_MS = 3_000;
@@ -80,6 +88,11 @@ const statusMeta: Record<
     label: "Skipped",
     tone: "warning",
   },
+  recovered: {
+    icon: CircleCheckBigIcon,
+    label: "Recovered",
+    tone: "success",
+  },
   failed: {
     icon: CircleAlertIcon,
     label: "Failed",
@@ -99,6 +112,10 @@ export function HomePanel() {
   const [records, setRecords] = useState<DictationRecord[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasLoadedAllRecords, setHasLoadedAllRecords] = useState(false);
+  const [retryingRecordIds, setRetryingRecordIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -222,6 +239,77 @@ export function HomePanel() {
     };
   }, [isLoadingMore, records.length]);
 
+  const retryActivityTranscription = async (activity: HomeActivity) => {
+    if (!activity.audio || !activity.sourceRecord.provider) {
+      return;
+    }
+
+    setRetryErrors((current) => ({ ...current, [activity.recordId]: "" }));
+    setRetryingRecordIds((current) => new Set(current).add(activity.recordId));
+
+    try {
+      const retryCapturedAt = new Date().toISOString();
+      const savedAudio = await loadSavedDictationAudio(activity.audio.relativePath);
+      const originalAudioBlob = new Blob([savedAudio.audioBytes], {
+        type: savedAudio.mimeType,
+      });
+      const providerId = normalizeProviderId(
+        activity.sourceRecord.provider.providerId,
+      );
+      const reprocessedAudio = await analyzeAudioForRetry(originalAudioBlob).catch(
+        (error) => {
+          console.error("Failed to reprocess retry audio", error);
+          return null;
+        },
+      );
+      const transcription = await transcribeRetryAudio({
+        model: activity.sourceRecord.provider.modelId ?? undefined,
+        providerId,
+        reprocessedAudio,
+        fallbackAudioBlob: originalAudioBlob,
+      });
+      const retryProcessedAudio = await persistRetryProcessedAudio({
+        audioBlob: reprocessedAudio?.processedAudio ?? null,
+        capturedAt: retryCapturedAt,
+        fallback: activity.sourceRecord.processedAudio ?? null,
+      });
+      const retryRecord = await updateDictationRecord(activity.recordId, {
+        recording: activity.sourceRecord.recording ?? null,
+        processedAudio: retryProcessedAudio,
+        provider: {
+          providerId: transcription.providerId ?? providerId,
+          modelId: transcription.model ?? activity.sourceRecord.provider.modelId,
+        },
+        transcript: {
+          rawText: transcription.text,
+          finalText: transcription.text,
+          characterCount: transcription.text.length,
+        },
+        insertion: {
+          errorCode: transcription.text.length > 0 ? null : "empty_retry_transcript",
+          errorMessage:
+            transcription.text.length > 0 ? null : "Retry returned an empty transcript.",
+          method: null,
+          status: transcription.text.length > 0 ? "recovered" : "skipped",
+        },
+      });
+
+      setRecords((current) => replaceRecord(current, retryRecord));
+      setRetryErrors((current) => ({ ...current, [activity.recordId]: "" }));
+    } catch (error) {
+      setRetryErrors((current) => ({
+        ...current,
+        [activity.recordId]: normalizeError(error),
+      }));
+    } finally {
+      setRetryingRecordIds((current) => {
+        const next = new Set(current);
+        next.delete(activity.recordId);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="min-h-full text-foreground">
       <main
@@ -267,6 +355,9 @@ export function HomePanel() {
                 <ActivityFeedItem
                   key={activity.recordId}
                   activity={activity}
+                  isRetrying={retryingRecordIds.has(activity.recordId)}
+                  retryError={retryErrors[activity.recordId]}
+                  onRetryTranscription={retryActivityTranscription}
                 />
               ))}
               {hasMoreActivities ? (
@@ -313,9 +404,17 @@ export function HomePanel() {
 
 type ActivityFeedItemProps = {
   activity: HomeActivity;
+  isRetrying?: boolean;
+  retryError?: string;
+  onRetryTranscription: (activity: HomeActivity) => void;
 };
 
-function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
+function ActivityFeedItem({
+  activity,
+  isRetrying = false,
+  retryError,
+  onRetryTranscription,
+}: ActivityFeedItemProps) {
   const RowIcon = activity.icon;
   const ActivityStatusIcon = statusMeta[activity.status].icon;
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -335,6 +434,9 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
       : null;
   const canExpandTranscript =
     activity.transcriptPreview.length > COLLAPSED_TRANSCRIPT_LIMIT;
+  const canRetryTranscription =
+    activity.status === "failed" &&
+    Boolean((activity.processedAudio ?? activity.audio) && activity.sourceRecord.provider);
 
   useEffect(() => {
     return () => {
@@ -627,9 +729,37 @@ function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
                       {Math.max(1, Math.round(processedAudio.byteLength / 1024))} KB
                     </Button>
                   ) : null}
+                  {canRetryTranscription ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="h-6 rounded-full px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        onRetryTranscription(activity);
+                      }}
+                      disabled={isRetrying}
+                      aria-label={`Retry transcription for ${activity.appName}`}
+                    >
+                      {isRetrying ? (
+                        <LoaderCircleIcon
+                          className="animate-spin"
+                          data-icon="inline-start"
+                        />
+                      ) : (
+                        <RotateCcwIcon data-icon="inline-start" />
+                      )}
+                      {isRetrying ? "Retrying" : "Retry"}
+                    </Button>
+                  ) : null}
                 </div>
                 {audioError ? (
                   <div className="mt-1 text-xs text-destructive">{audioError}</div>
+                ) : null}
+                {retryError ? (
+                  <div className="mt-1 text-xs text-destructive" role="alert">
+                    Retry failed: {retryError}
+                  </div>
                 ) : null}
               </div>
               <Button
@@ -695,12 +825,35 @@ function mergeRecentRecords(
     return latestRecords;
   }
 
-  const seenRecordIds = new Set(latestRecords.map((record) => record.recordId));
-  const olderRecords = currentRecords.filter(
-    (record) => !seenRecordIds.has(record.recordId),
+  const latestRecordsById = new Map(
+    latestRecords.map((record) => [record.recordId, record]),
+  );
+  const currentRecordIds = new Set(currentRecords.map((record) => record.recordId));
+  const newLatestRecords = latestRecords.filter(
+    (record) => !currentRecordIds.has(record.recordId),
+  );
+  const updatedCurrentRecords = currentRecords.map(
+    (record) => latestRecordsById.get(record.recordId) ?? record,
   );
 
-  return [...latestRecords, ...olderRecords];
+  return [...newLatestRecords, ...updatedCurrentRecords];
+}
+
+function replaceRecord(
+  currentRecords: DictationRecord[],
+  updatedRecord: DictationRecord,
+) {
+  let replaced = false;
+  const nextRecords = currentRecords.map((record) => {
+    if (record.recordId !== updatedRecord.recordId) {
+      return record;
+    }
+
+    replaced = true;
+    return updatedRecord;
+  });
+
+  return replaced ? nextRecords : [updatedRecord, ...currentRecords];
 }
 
 function mapRecordToActivity(
@@ -731,7 +884,140 @@ function mapRecordToActivity(
     audio: record.audio,
     processedAudio: record.processedAudio,
     processingSummary: formatProcessingSummary(record),
+    sourceRecord: record,
   };
+}
+
+function normalizeProviderId(providerId: string) {
+  return providerId === "azure_openai" ? "azure-openai" : providerId;
+}
+
+function resolveRetryTranscriptionBlobs(input: {
+  providerId: string;
+  reprocessedAudio: Awaited<ReturnType<typeof analyzeAudioForRetry>> | null;
+  fallbackAudioBlob: Blob;
+}) {
+  if (input.providerId === "assemblyai") {
+    return [input.fallbackAudioBlob];
+  }
+
+  const segments = input.reprocessedAudio?.transcriptionSegments ?? [];
+  return segments.length > 0 ? segments : [input.fallbackAudioBlob];
+}
+
+async function transcribeRetryAudio(input: {
+  providerId: string;
+  model?: string;
+  reprocessedAudio: Awaited<ReturnType<typeof analyzeAudioForRetry>> | null;
+  fallbackAudioBlob: Blob;
+}) {
+  const primaryBlobs = resolveRetryTranscriptionBlobs(input);
+  const primary = await transcribeRetryBlobs({
+    audioBlobs: primaryBlobs,
+    model: input.model,
+    providerId: input.providerId,
+  });
+
+  if (primary.text.length > 0 || input.providerId === "assemblyai") {
+    return primary;
+  }
+
+  if (input.reprocessedAudio?.processedAudio) {
+    const fullProcessed = await transcribeRetryBlobs({
+      audioBlobs: [input.reprocessedAudio.processedAudio],
+      model: input.model,
+      providerId: input.providerId,
+    });
+    if (fullProcessed.text.length > 0) {
+      return fullProcessed;
+    }
+  }
+
+  if (primaryBlobs.length > 1) {
+    return transcribeRetryBlobs({
+      audioBlobs: [input.fallbackAudioBlob],
+      model: input.model,
+      providerId: input.providerId,
+    });
+  }
+
+  return primary;
+}
+
+async function transcribeRetryBlobs(input: {
+  providerId: string;
+  model?: string;
+  audioBlobs: Blob[];
+}) {
+  let providerId: string | null = null;
+  let model: string | null = null;
+  const texts: string[] = [];
+  let lastEmptyResponseError: unknown = null;
+
+  for (const audioBlob of input.audioBlobs) {
+    try {
+      const result = await transcribeRecording({
+        providerId: input.providerId,
+        audioBlob,
+        language: "en",
+        model: input.model,
+      });
+      providerId = providerId ?? result.providerId;
+      model = model ?? result.model;
+      const text = result.text.trim();
+      if (text.length > 0) {
+        texts.push(text);
+      }
+    } catch (error) {
+      if (isEmptyProviderTranscriptError(error)) {
+        lastEmptyResponseError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (texts.length === 0 && input.audioBlobs.length === 1 && lastEmptyResponseError) {
+    return {
+      model,
+      providerId,
+      text: "",
+    };
+  }
+
+  return {
+    model,
+    providerId,
+    text: texts.join(" "),
+  };
+}
+
+function isEmptyProviderTranscriptError(error: unknown) {
+  return (
+    Boolean(error) &&
+    typeof error === "object" &&
+    (error as { code?: string }).code === "invalid_provider_response"
+  );
+}
+
+async function persistRetryProcessedAudio(input: {
+  audioBlob: Blob | null;
+  capturedAt: string;
+  fallback: DictationRecord["processedAudio"] | null | undefined;
+}) {
+  if (!input.audioBlob) {
+    return input.fallback ?? null;
+  }
+
+  try {
+    return await persistDictationAudio({
+      audioBlob: input.audioBlob,
+      capturedAt: input.capturedAt,
+    });
+  } catch (error) {
+    console.error("Failed to persist retry processed audio", error);
+    return input.fallback ?? null;
+  }
 }
 
 function deriveAppName(record: DictationRecord) {

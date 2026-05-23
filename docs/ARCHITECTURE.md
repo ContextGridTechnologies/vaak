@@ -78,6 +78,8 @@ The backend owns only optional functionality:
 ## Provider Interfaces
 
 Detailed provider planning lives in `docs/PROVIDER_STRATEGY.md`.
+Model-call retry and provider-specific retry behavior live in
+`docs/MODEL_CALLING_RETRY_BASE.md` and `docs/PROVIDER_SPECIFIC_RETRY.md`.
 
 Initial conceptual interfaces:
 

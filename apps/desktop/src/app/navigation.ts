@@ -1,11 +1,12 @@
 import {
   AudioLinesIcon,
+  InfoIcon,
   SlidersHorizontalIcon,
   type LucideIcon,
 } from "lucide-react";
 
 type AppSectionConfig = {
-  value: "home" | "settings";
+  value: "home" | "settings" | "info";
   label: string;
   icon: LucideIcon;
 };
@@ -23,6 +24,11 @@ export const utilitySections: readonly AppSectionConfig[] = [
     value: "settings",
     label: "Settings",
     icon: SlidersHorizontalIcon,
+  },
+  {
+    value: "info",
+    label: "Info",
+    icon: InfoIcon,
   },
 ] as const;
 

@@ -68,6 +68,18 @@ pub struct DictationRecordDraftV1 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DictationRecordUpdateV1 {
+    #[serde(default)]
+    pub recording: Option<DictationRecordingDiagnostics>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processed_audio: Option<DictationAudioArtifact>,
+    pub provider: Option<DictationProviderContext>,
+    pub transcript: DictationTranscript,
+    pub insertion: DictationInsertionOutcome,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DictationRecordingDiagnostics {
     pub startup_ms: usize,
     pub stream_acquisition_ms: usize,
@@ -207,6 +219,70 @@ impl LocalDictationRecordStore {
             .lock()
             .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
         self.load_recent_records(limit, offset)
+    }
+
+    pub fn update(
+        &self,
+        record_id: &str,
+        patch: DictationRecordUpdateV1,
+    ) -> Result<DictationRecordV1, ProviderError> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        validate_update_audio_artifact_paths(&patch)?;
+
+        if !self.records_path.exists() {
+            return Err(
+                ProviderFailure::InvalidRequest("dictation record not found".to_string()).into(),
+            );
+        }
+
+        let raw = fs::read_to_string(&self.records_path)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        let mut updated_record = None;
+        let mut next_lines = Vec::new();
+
+        for line in raw.lines() {
+            if line.trim().is_empty() {
+                next_lines.push(line.to_string());
+                continue;
+            }
+
+            let Ok(mut record) = serde_json::from_str::<DictationRecordV1>(line) else {
+                next_lines.push(line.to_string());
+                continue;
+            };
+
+            if updated_record.is_none() && record.record_id == record_id {
+                record.recording = patch.recording.clone();
+                record.processed_audio = patch.processed_audio.clone();
+                record.provider = patch.provider.clone();
+                record.transcript = patch.transcript.clone();
+                record.insertion = patch.insertion.clone();
+                let serialized = serde_json::to_string(&record)
+                    .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+                next_lines.push(serialized);
+                updated_record = Some(record);
+            } else {
+                next_lines.push(line.to_string());
+            }
+        }
+
+        let Some(updated_record) = updated_record else {
+            return Err(
+                ProviderFailure::InvalidRequest("dictation record not found".to_string()).into(),
+            );
+        };
+
+        let mut next_raw = next_lines.join("\n");
+        if raw.ends_with('\n') {
+            next_raw.push('\n');
+        }
+        fs::write(&self.records_path, next_raw)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+
+        Ok(updated_record)
     }
 
     pub fn persist_audio(
@@ -509,6 +585,18 @@ fn is_safe_relative_audio_path(path: &Path) -> bool {
 
 fn validate_audio_artifact_paths(draft: &DictationRecordDraftV1) -> Result<(), ProviderError> {
     for artifact in [&draft.audio, &draft.processed_audio].into_iter().flatten() {
+        if !is_safe_relative_audio_path(Path::new(&artifact.relative_path)) {
+            return Err(ProviderFailure::InvalidRequest("invalid audio path".to_string()).into());
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_update_audio_artifact_paths(
+    patch: &DictationRecordUpdateV1,
+) -> Result<(), ProviderError> {
+    if let Some(artifact) = &patch.processed_audio {
         if !is_safe_relative_audio_path(Path::new(&artifact.relative_path)) {
             return Err(ProviderFailure::InvalidRequest("invalid audio path".to_string()).into());
         }
@@ -1087,6 +1175,151 @@ mod tests {
         assert_eq!(err.code, "invalid_provider_request");
     }
 
+    #[test]
+    fn updates_existing_record_in_place_and_preserves_original_identity_fields() {
+        let dir = temp_config_dir("dictation-record-update");
+        let settings = crate::storage::LocalSettingsStore::new(&dir);
+        let store = LocalDictationRecordStore::new(&dir);
+        let original = store
+            .save(
+                &settings,
+                failed_record_draft("session-update", "original raw"),
+            )
+            .unwrap();
+        let other = store
+            .save(&settings, failed_record_draft("session-other", "other raw"))
+            .unwrap();
+
+        let updated = store
+            .update(
+                &original.record_id,
+                DictationRecordUpdateV1 {
+                    recording: Some(DictationRecordingDiagnostics {
+                        startup_ms: 42,
+                        stream_acquisition_ms: 18,
+                        reused_warm_stream: false,
+                        analysis_ms: None,
+                        transcription_ms: Some(900),
+                        insertion_ms: None,
+                        post_processing_ms: Some(940),
+                    }),
+                    processed_audio: Some(DictationAudioArtifact {
+                        relative_path: "recordings/2026/05/02/retry.wav".to_string(),
+                        mime_type: "audio/wav".to_string(),
+                        byte_length: 4096,
+                    }),
+                    provider: Some(DictationProviderContext {
+                        provider_id: "smallest".to_string(),
+                        model_id: Some("pulse".to_string()),
+                    }),
+                    transcript: DictationTranscript {
+                        raw_text: "recovered text".to_string(),
+                        final_text: "recovered text".to_string(),
+                        character_count: 14,
+                    },
+                    insertion: DictationInsertionOutcome {
+                        status: "recovered".to_string(),
+                        method: None,
+                        error_code: None,
+                        error_message: None,
+                    },
+                },
+            )
+            .unwrap();
+
+        assert_eq!(updated.record_id, original.record_id);
+        assert_eq!(updated.session_id, original.session_id);
+        assert_eq!(updated.captured_at, original.captured_at);
+        assert_eq!(updated.mode, original.mode);
+        assert_eq!(updated.trigger, original.trigger);
+        assert_eq!(updated.audio, original.audio);
+        assert_eq!(updated.target, original.target);
+        assert_eq!(updated.transcript.final_text, "recovered text");
+        assert_eq!(updated.insertion.status, "recovered");
+
+        let raw = fs::read_to_string(dir.join("dictation-records.jsonl")).unwrap();
+        let lines: Vec<&str> = raw.lines().collect();
+        assert_eq!(lines.len(), 2);
+
+        let recent = store.list_recent(10, 0).unwrap();
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].record_id, other.record_id);
+        assert_eq!(recent[1].record_id, original.record_id);
+        assert_eq!(recent[1].transcript.final_text, "recovered text");
+    }
+
+    #[test]
+    fn updating_missing_record_returns_invalid_request() {
+        let dir = temp_config_dir("dictation-record-update-missing");
+        let store = LocalDictationRecordStore::new(&dir);
+
+        let err = store
+            .update(
+                "missing-record",
+                DictationRecordUpdateV1 {
+                    recording: None,
+                    processed_audio: None,
+                    provider: None,
+                    transcript: DictationTranscript {
+                        raw_text: "recovered".to_string(),
+                        final_text: "recovered".to_string(),
+                        character_count: 9,
+                    },
+                    insertion: DictationInsertionOutcome {
+                        status: "recovered".to_string(),
+                        method: None,
+                        error_code: None,
+                        error_message: None,
+                    },
+                },
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code, "invalid_provider_request");
+        assert!(err.message.contains("dictation record not found"));
+    }
+
+    #[test]
+    fn rejects_updated_processed_audio_paths_outside_recordings_scope() {
+        let dir = temp_config_dir("dictation-record-update-unsafe-audio");
+        let settings = crate::storage::LocalSettingsStore::new(&dir);
+        let store = LocalDictationRecordStore::new(&dir);
+        let original = store
+            .save(
+                &settings,
+                failed_record_draft("session-unsafe-update", "raw"),
+            )
+            .unwrap();
+
+        let err = store
+            .update(
+                &original.record_id,
+                DictationRecordUpdateV1 {
+                    recording: None,
+                    processed_audio: Some(DictationAudioArtifact {
+                        relative_path: "../outside.wav".to_string(),
+                        mime_type: "audio/wav".to_string(),
+                        byte_length: 4096,
+                    }),
+                    provider: None,
+                    transcript: DictationTranscript {
+                        raw_text: "recovered".to_string(),
+                        final_text: "recovered".to_string(),
+                        character_count: 9,
+                    },
+                    insertion: DictationInsertionOutcome {
+                        status: "recovered".to_string(),
+                        method: None,
+                        error_code: None,
+                        error_message: None,
+                    },
+                },
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code, "invalid_provider_request");
+    }
+
     fn temp_config_dir(name: &str) -> PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1098,6 +1331,60 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&dir);
         dir
+    }
+
+    fn failed_record_draft(session_id: &str, raw_text: &str) -> DictationRecordDraftV1 {
+        DictationRecordDraftV1 {
+            session_id: Some(session_id.to_string()),
+            mode: "dictation".to_string(),
+            trigger: "hotkey".to_string(),
+            captured_at: "2026-05-02T08:30:00Z".to_string(),
+            started_at: Some("2026-05-02T08:30:01Z".to_string()),
+            ended_at: Some("2026-05-02T08:30:04Z".to_string()),
+            recording: Some(DictationRecordingDiagnostics {
+                startup_ms: 42,
+                stream_acquisition_ms: 18,
+                reused_warm_stream: false,
+                analysis_ms: None,
+                transcription_ms: None,
+                insertion_ms: None,
+                post_processing_ms: None,
+            }),
+            audio: Some(DictationAudioArtifact {
+                relative_path: "recordings/2026/05/02/original.webm".to_string(),
+                mime_type: "audio/webm".to_string(),
+                byte_length: 2048,
+            }),
+            processed_audio: None,
+            target: DictationTargetSnapshot {
+                stable_id: "window:42/control:message-input".to_string(),
+                window_title: "Discord".to_string(),
+                control_name: "Message".to_string(),
+                control_type: "Edit".to_string(),
+                control_type_id: 50004,
+                automation_id: "message-input".to_string(),
+                framework_id: "Win32".to_string(),
+                class_name: "Chrome_WidgetWin_1".to_string(),
+                native_window_handle: 42,
+                input_kind: "text".to_string(),
+                current_value: None,
+            },
+            provider: Some(DictationProviderContext {
+                provider_id: "openai".to_string(),
+                model_id: Some("gpt-4o-mini-transcribe".to_string()),
+            }),
+            transcript: DictationTranscript {
+                raw_text: raw_text.to_string(),
+                final_text: String::new(),
+                character_count: 0,
+            },
+            insertion: DictationInsertionOutcome {
+                status: "failed".to_string(),
+                method: None,
+                error_code: Some("invalid_provider_response".to_string()),
+                error_message: Some("provider returned an empty transcript".to_string()),
+            },
+        }
     }
 
     #[test]

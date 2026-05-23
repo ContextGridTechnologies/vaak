@@ -360,6 +360,45 @@ describe("SpeechProviderSettings", () => {
     expect(screen.queryByText("OpenAI returned 401: invalid key")).not.toBeInTheDocument();
   });
 
+  it("shows a retry action only after a provider test failure", async () => {
+    const user = userEvent.setup();
+    providerApi.testSpeechProvider
+      .mockRejectedValueOnce({
+        code: "provider_rate_limited",
+        message: "Smallest AI returned 429 Too Many Requests",
+        retryAfterMs: 5000,
+      })
+      .mockResolvedValueOnce({
+        providerId: "smallest",
+        configured: true,
+        configComplete: true,
+      });
+
+    renderApp(<SpeechProviderSettings variant="settings" />);
+
+    await user.click(await screen.findByRole("button", { name: "Smallest AI" }));
+    expect(
+      screen.queryByRole("button", { name: "Retry provider test" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Test provider" }));
+
+    expect(
+      await screen.findByText("Smallest AI is rate-limiting requests. Try again in 5 seconds."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry provider test" }));
+
+    await waitFor(() => {
+      expect(providerApi.testSpeechProvider).toHaveBeenCalledTimes(2);
+    });
+    expect(
+      await screen.findByText("Smallest AI provider is ready."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry provider test" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("saves and verifies Deepgram with Nova-3", async () => {
     const user = userEvent.setup();
     const verifyOnboardingProvider = vi.fn().mockResolvedValue({

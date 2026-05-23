@@ -221,7 +221,7 @@
       "properties": {
         "status": {
           "type": "string",
-          "enum": ["inserted", "skipped", "failed"]
+          "enum": ["inserted", "recovered", "skipped", "failed"]
         },
         "method": {
           "type": ["string", "null"]

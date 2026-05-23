@@ -9,9 +9,10 @@ use crate::providers::{
 };
 use crate::session::{HotkeyBindings, SessionStore};
 use crate::storage::{
-    AppShellPreferences, DictationAudioArtifact, DictationRecordDraftV1, DictationRecordV1,
-    ExportedDictationAudio, LocalDictationRecordStore, LocalSettingsStore, MicrophoneSelection,
-    OnboardingState, SavedDictationAudio, SystemSettings, VoiceCapsulePlacement,
+    AppShellPreferences, DictationAudioArtifact, DictationRecordDraftV1, DictationRecordUpdateV1,
+    DictationRecordV1, ExportedDictationAudio, LocalDictationRecordStore, LocalSettingsStore,
+    MicrophoneSelection, OnboardingState, SavedDictationAudio, SystemSettings,
+    VoiceCapsulePlacement,
 };
 use crate::windowing;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -82,6 +83,15 @@ pub fn save_dictation_record(
     records: State<'_, LocalDictationRecordStore>,
 ) -> Result<DictationRecordV1, ProviderError> {
     records.save(&settings, draft)
+}
+
+#[tauri::command]
+pub fn update_dictation_record(
+    record_id: String,
+    patch: DictationRecordUpdateV1,
+    records: State<'_, LocalDictationRecordStore>,
+) -> Result<DictationRecordV1, ProviderError> {
+    records.update(&record_id, patch)
 }
 
 #[tauri::command]

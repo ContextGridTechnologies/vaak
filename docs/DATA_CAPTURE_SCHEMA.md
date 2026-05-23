@@ -60,8 +60,11 @@ Core sections:
 Capture-analysis outcomes are reflected through the insertion result:
 
 - `status: "skipped"` with `errorCode: "speech_unclear"` means the attempt was intentionally not inserted.
+- `status: "recovered"` means activity retry recovered transcript text but did not automatically insert it into the original target.
 - `errorMessage: "No speech detected."` is used for true silence/no-speech skips.
 - Low-confidence captures with a meaningful signal peak can still be sent to the provider as the original raw audio. If that provider call succeeds, the final record is an inserted or empty-transcript record rather than a local capture skip.
+
+Activity retry updates the original `DictationRecordV1` in place through `update_dictation_record`. It should not create a second record for the retry. The update preserves the original identity, timing, trigger, mode, target, and original audio fields while replacing retry-owned transcript, provider, processed-audio, recording diagnostics, and insertion outcome fields.
 
 Recommended privacy default:
 
@@ -122,7 +125,7 @@ create table dictation_records (
   transcript_raw_text text not null,
   transcript_final_text text not null,
   transcript_character_count integer not null check (transcript_character_count >= 0),
-  insertion_status text not null check (insertion_status in ('inserted', 'skipped', 'failed')),
+  insertion_status text not null check (insertion_status in ('inserted', 'recovered', 'skipped', 'failed')),
   insertion_method text,
   error_code text,
   error_message text,

@@ -136,6 +136,21 @@ Provider adapters should be tested with:
 
 The dictation pipeline should only test against normalized provider results.
 
+## Model Calling And Retry
+
+The base retry and error-normalization contract lives in:
+
+- [MODEL_CALLING_RETRY_BASE.md](MODEL_CALLING_RETRY_BASE.md)
+
+Provider-specific call shapes, limits, retry exceptions, and polling behavior
+live in:
+
+- [PROVIDER_SPECIFIC_RETRY.md](PROVIDER_SPECIFIC_RETRY.md)
+
+Use those documents as the starting point before adding or changing a provider
+adapter. Keep transport retry inside provider/model call boundaries and keep
+activity retry as a separate UI/storage concern.
+
 ## Future
 
 Later providers should be straightforward additions:

@@ -52,6 +52,8 @@ This prevents the calibration/cleanup heuristic from dropping real speech while 
 
 The Milestone 1 dictation loop inserts the provider's raw transcript. Rewrite, cleanup, command mode, and hosted Vaak transcription credits are out of scope for this slice.
 
+Transport retry for provider calls follows [MODEL_CALLING_RETRY_BASE.md](MODEL_CALLING_RETRY_BASE.md). Provider-specific endpoint, polling, and retry exceptions live in [PROVIDER_SPECIFIC_RETRY.md](PROVIDER_SPECIFIC_RETRY.md).
+
 ## Insertion Policy
 
 Insertion uses the guarded backend command path:
@@ -79,6 +81,20 @@ The UI should distinguish these error classes enough for users to recover:
 - Insertion failure, including target changed.
 
 Errors are visible in the floating voice window through accessible status text. The app should not hide recoverable failures silently.
+
+## Activity Retry
+
+Activity retry is a user action after a failed activity record exists. It is not the same as transport retry inside a provider request.
+
+Retrying a failed transcription should update the original record in place. It must not append a duplicate retry record.
+
+Retry outcomes:
+
+- `recovered`: retry produced non-empty transcript text, but Vaak did not automatically insert it into the original target.
+- `skipped`: retry completed without transcript text and no insertion was attempted.
+- `failed`: hard retry failure; keep the original failed record unchanged and show an inline retry error.
+
+The saved record update must preserve the original `recordId`, `sessionId`, original audio artifact, original capture time, target snapshot, trigger, and mode. Only retry-owned transcript, provider, processed-audio, recording diagnostics, and insertion outcome fields should change.
 
 ## Known Limitations
 

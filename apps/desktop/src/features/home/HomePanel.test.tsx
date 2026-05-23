@@ -6,14 +6,30 @@ import { renderApp } from "@/test/render";
 
 import { HomePanel } from "./HomePanel";
 
+const { analyzeAudioForRetry } = vi.hoisted(() => ({
+  analyzeAudioForRetry: vi.fn(),
+}));
+
+vi.mock("./retryAudioProcessing", () => ({
+  analyzeAudioForRetry,
+}));
+
 const {
   getRecentDictationRecords,
+  persistDictationAudio,
+  saveDictationRecord,
+  updateDictationRecord,
+  transcribeRecording,
   exportSavedDictationAudio,
   isTauriRuntime,
   loadSavedDictationAudio,
   sanitizeTargetControlName,
 } = vi.hoisted(() => ({
   getRecentDictationRecords: vi.fn(),
+  persistDictationAudio: vi.fn(),
+  saveDictationRecord: vi.fn(),
+  updateDictationRecord: vi.fn(),
+  transcribeRecording: vi.fn(),
   exportSavedDictationAudio: vi.fn(),
   isTauriRuntime: vi.fn(),
   loadSavedDictationAudio: vi.fn(),
@@ -23,6 +39,10 @@ const {
 vi.mock("@/lib/tauri", () => ({
   exportSavedDictationAudio,
   getRecentDictationRecords,
+  persistDictationAudio,
+  saveDictationRecord,
+  updateDictationRecord,
+  transcribeRecording,
   isTauriRuntime,
   loadSavedDictationAudio,
   sanitizeTargetControlName,
@@ -91,6 +111,48 @@ describe("HomePanel", () => {
       audioBytes: new Uint8Array([1, 2, 3]),
       mimeType: "audio/webm",
     });
+    analyzeAudioForRetry.mockResolvedValue({
+      processedAudio: null,
+      transcriptionSegments: [],
+    });
+    transcribeRecording.mockResolvedValue({
+      providerId: "smallest",
+      model: "pulse",
+      text: "Recovered transcript",
+      durationMs: 900,
+    });
+    persistDictationAudio.mockResolvedValue({
+      relativePath: "recordings/2025/05/19/retry-processed.wav",
+      mimeType: "audio/wav",
+      byteLength: 4096,
+    });
+    saveDictationRecord.mockImplementation((draft) =>
+      Promise.resolve({
+        ...draft,
+        schemaVersion: 1,
+        recordId: "retry-record",
+        userId: "user-1",
+        installationId: "install-1",
+        deviceId: "device-1",
+        sessionId: "session-1",
+        platform: "windows",
+      }),
+    );
+    updateDictationRecord.mockImplementation((recordId, patch) =>
+      Promise.resolve({
+        ...makeRecord({
+          recordId,
+          capturedAt: "2025-05-19T10:23:31Z",
+          finalText: patch.transcript.finalText,
+          insertionStatus: patch.insertion.status,
+          processedAudio: patch.processedAudio ?? null,
+        }),
+        provider: patch.provider,
+        recording: patch.recording,
+        transcript: patch.transcript,
+        insertion: patch.insertion,
+      }),
+    );
     exportSavedDictationAudio.mockResolvedValue({
       savedPath: "C:\\Users\\nikhi\\Downloads\\Vaak\\discord-1.webm",
       fileName: "discord-1.webm",
@@ -256,6 +318,285 @@ describe("HomePanel", () => {
 
     expect(screen.getByText(/^Skipped$/)).toBeInTheDocument();
     expect(screen.getByText(/^Failed$/)).toBeInTheDocument();
+  });
+
+  it("updates the failed activity row when retry recovers transcript text", async () => {
+    const user = userEvent.setup();
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "failed-record",
+        capturedAt: "2025-05-19T10:23:31Z",
+        finalText: "",
+        insertionStatus: "failed",
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Retry transcription for Windows Terminal",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(loadSavedDictationAudio).toHaveBeenCalledWith(
+        "recordings/2025/05/19/failed-record.webm",
+      );
+      expect(transcribeRecording).toHaveBeenCalledWith({
+        providerId: "azure-openai",
+        audioBlob: expect.any(Blob),
+        language: "en",
+        model: "gpt-4o-transcribe",
+      });
+      expect(updateDictationRecord).toHaveBeenCalledWith("failed-record", {
+        recording: expect.any(Object),
+        processedAudio: null,
+        insertion: {
+          errorCode: null,
+          errorMessage: null,
+          method: null,
+          status: "recovered",
+        },
+        provider: {
+          providerId: "smallest",
+          modelId: "pulse",
+        },
+        transcript: {
+          rawText: "Recovered transcript",
+          finalText: "Recovered transcript",
+          characterCount: 20,
+        },
+      });
+    });
+    expect(saveDictationRecord).not.toHaveBeenCalled();
+    expect(await screen.findByText("Recovered transcript")).toBeInTheDocument();
+    expect(screen.getByText(/^Recovered$/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Skipped$/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "Retry transcription for Windows Terminal",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the failed row and shows an inline error when retry provider fails", async () => {
+    const user = userEvent.setup();
+    transcribeRecording.mockRejectedValueOnce(new Error("provider unavailable"));
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "failed-provider-error-record",
+        capturedAt: "2025-05-19T10:23:31Z",
+        finalText: "",
+        insertionStatus: "failed",
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Retry transcription for Windows Terminal",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Retry failed: provider unavailable",
+      );
+    });
+    expect(updateDictationRecord).not.toHaveBeenCalled();
+    expect(saveDictationRecord).not.toHaveBeenCalled();
+    expect(screen.getByText(/^Failed$/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Retry transcription for Windows Terminal",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not reuse stale processed audio when retrying failed records", async () => {
+    const user = userEvent.setup();
+    loadSavedDictationAudio.mockResolvedValue({
+      audioBytes: new Uint8Array([1, 2, 3, 4]),
+      mimeType: "audio/webm",
+    });
+    transcribeRecording.mockImplementation(async ({ audioBlob }) => {
+      expect(audioBlob).toBeInstanceOf(Blob);
+      expect(audioBlob.type).toBe("audio/webm");
+      return {
+        providerId: "smallest",
+        model: "pulse",
+        text: "Recovered from original fallback",
+        durationMs: 900,
+      };
+    });
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "failed-record-with-processed-audio",
+        capturedAt: "2025-05-19T10:23:31Z",
+        finalText: "",
+        insertionStatus: "failed",
+        processedAudio: {
+          relativePath: "recordings/2025/05/19/failed-record-with-processed-audio.wav",
+          mimeType: "audio/wav",
+          byteLength: 4096,
+        },
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Retry transcription for Windows Terminal",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(loadSavedDictationAudio).toHaveBeenCalledWith(
+        "recordings/2025/05/19/failed-record-with-processed-audio.webm",
+      );
+      expect(transcribeRecording).toHaveBeenCalledWith({
+        providerId: "azure-openai",
+        audioBlob: expect.any(Blob),
+        language: "en",
+        model: "gpt-4o-transcribe",
+      });
+    });
+  });
+
+  it("reprocesses original audio into transcription segments before retrying", async () => {
+    const user = userEvent.setup();
+    const firstSegment = new Blob(["first"], { type: "audio/wav" });
+    const secondSegment = new Blob(["second"], { type: "audio/wav" });
+    analyzeAudioForRetry.mockResolvedValue({
+      processedAudio: new Blob(["processed"], { type: "audio/wav" }),
+      transcriptionSegments: [firstSegment, secondSegment],
+    });
+    transcribeRecording
+      .mockResolvedValueOnce({
+        providerId: "smallest",
+        model: "pulse",
+        text: "First segment",
+        durationMs: 700,
+      })
+      .mockResolvedValueOnce({
+        providerId: "smallest",
+        model: "pulse",
+        text: "second segment",
+        durationMs: 800,
+      });
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "failed-record-needs-reprocessing",
+        capturedAt: "2025-05-19T10:23:31Z",
+        finalText: "",
+        insertionStatus: "failed",
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Retry transcription for Windows Terminal",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(analyzeAudioForRetry).toHaveBeenCalledWith(expect.any(Blob));
+      expect(transcribeRecording).toHaveBeenCalledTimes(2);
+      expect(transcribeRecording).toHaveBeenNthCalledWith(1, {
+        providerId: "azure-openai",
+        audioBlob: firstSegment,
+        language: "en",
+        model: "gpt-4o-transcribe",
+      });
+      expect(transcribeRecording).toHaveBeenNthCalledWith(2, {
+        providerId: "azure-openai",
+        audioBlob: secondSegment,
+        language: "en",
+        model: "gpt-4o-transcribe",
+      });
+      expect(updateDictationRecord).toHaveBeenCalledWith(
+        "failed-record-needs-reprocessing",
+        expect.objectContaining({
+          transcript: {
+            rawText: "First segment second segment",
+            finalText: "First segment second segment",
+            characterCount: 28,
+          },
+          processedAudio: {
+            relativePath: "recordings/2025/05/19/retry-processed.wav",
+            mimeType: "audio/wav",
+            byteLength: 4096,
+          },
+        }),
+      );
+    });
+  });
+
+  it("falls back to the full processed retry audio when segments return empty provider responses", async () => {
+    const user = userEvent.setup();
+    const firstSegment = new Blob(["first"], { type: "audio/wav" });
+    const secondSegment = new Blob(["second"], { type: "audio/wav" });
+    const fullProcessedAudio = new Blob(["processed-full"], { type: "audio/wav" });
+    analyzeAudioForRetry.mockResolvedValue({
+      processedAudio: fullProcessedAudio,
+      transcriptionSegments: [firstSegment, secondSegment],
+    });
+    transcribeRecording
+      .mockRejectedValueOnce({
+        code: "invalid_provider_response",
+        message: "provider returned an invalid response",
+      })
+      .mockRejectedValueOnce({
+        code: "invalid_provider_response",
+        message: "provider returned an invalid response",
+      })
+      .mockResolvedValueOnce({
+        providerId: "smallest",
+        model: "pulse",
+        text: "Recovered from full processed audio",
+        durationMs: 1200,
+      });
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "failed-record-empty-segments",
+        capturedAt: "2025-05-19T10:23:31Z",
+        finalText: "",
+        insertionStatus: "failed",
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Retry transcription for Windows Terminal",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(transcribeRecording).toHaveBeenCalledTimes(3);
+      expect(transcribeRecording).toHaveBeenNthCalledWith(3, {
+        providerId: "azure-openai",
+        audioBlob: fullProcessedAudio,
+        language: "en",
+        model: "gpt-4o-transcribe",
+      });
+      expect(updateDictationRecord).toHaveBeenCalledWith(
+        "failed-record-empty-segments",
+        expect.objectContaining({
+          transcript: {
+            rawText: "Recovered from full processed audio",
+            finalText: "Recovered from full processed audio",
+            characterCount: 35,
+          },
+        }),
+      );
+    });
   });
 
   it("hides processed audio artifacts in production", async () => {

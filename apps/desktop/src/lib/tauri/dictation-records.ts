@@ -27,7 +27,7 @@ export type DictationTranscript = {
 };
 
 export type DictationInsertionOutcome = {
-  status: "inserted" | "skipped" | "failed";
+  status: "inserted" | "skipped" | "failed" | "recovered";
   method: string | null;
   errorCode: string | null;
   errorMessage: string | null;
@@ -75,10 +75,22 @@ export type DictationRecord = DictationRecordDraft & {
   platform: string;
 };
 
+export type DictationRecordUpdate = Pick<
+  DictationRecordDraft,
+  "recording" | "processedAudio" | "provider" | "transcript" | "insertion"
+>;
+
 export async function saveDictationRecord(
   draft: DictationRecordDraft,
 ): Promise<DictationRecord> {
   return invokeTauri("save_dictation_record", { draft });
+}
+
+export async function updateDictationRecord(
+  recordId: string,
+  patch: DictationRecordUpdate,
+): Promise<DictationRecord> {
+  return invokeTauri("update_dictation_record", { recordId, patch });
 }
 
 export async function getRecentDictationRecords(

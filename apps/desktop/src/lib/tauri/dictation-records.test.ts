@@ -11,6 +11,7 @@ import {
   loadSavedDictationAudio,
   persistDictationAudio,
   saveDictationRecord,
+  updateDictationRecord,
   targetSnapshotFromFocusedField,
 } from "./dictation-records";
 
@@ -183,6 +184,106 @@ describe("dictation record Tauri API", () => {
       draft: expect.objectContaining({
         mode: "dictation",
         trigger: "hotkey",
+      }),
+    });
+  });
+
+  it("updates dictation records through the backend history command", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("update_dictation_record", {
+      schemaVersion: 1,
+      recordId: "record-1",
+      userId: "user-1",
+      installationId: "installation-1",
+      deviceId: "device-1",
+      sessionId: "session-1",
+      mode: "dictation",
+      trigger: "hotkey",
+      platform: "windows",
+      capturedAt: "2026-05-02T08:30:00Z",
+      startedAt: null,
+      endedAt: null,
+      recording: {
+        startupMs: 42,
+        streamAcquisitionMs: 18,
+        reusedWarmStream: false,
+        transcriptionMs: 900,
+      },
+      audio: {
+        relativePath: "recordings/2026/05/02/original.webm",
+        mimeType: "audio/webm",
+        byteLength: 2048,
+      },
+      processedAudio: {
+        relativePath: "recordings/2026/05/02/retry.wav",
+        mimeType: "audio/wav",
+        byteLength: 4096,
+      },
+      target: {
+        stableId: "target-1",
+        windowTitle: "Discord",
+        controlName: "Message",
+        controlType: "Edit",
+        controlTypeId: 50004,
+        automationId: "message-input",
+        frameworkId: "Win32",
+        className: "Chrome_WidgetWin_1",
+        nativeWindowHandle: 42,
+        inputKind: "text",
+        currentValue: null,
+      },
+      provider: {
+        providerId: "smallest",
+        modelId: "pulse",
+      },
+      transcript: {
+        rawText: "recovered",
+        finalText: "recovered",
+        characterCount: 9,
+      },
+      insertion: {
+        status: "recovered",
+        method: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+    });
+
+    await updateDictationRecord("record-1", {
+      recording: {
+        startupMs: 42,
+        streamAcquisitionMs: 18,
+        reusedWarmStream: false,
+        transcriptionMs: 900,
+      },
+      processedAudio: {
+        relativePath: "recordings/2026/05/02/retry.wav",
+        mimeType: "audio/wav",
+        byteLength: 4096,
+      },
+      provider: {
+        providerId: "smallest",
+        modelId: "pulse",
+      },
+      transcript: {
+        rawText: "recovered",
+        finalText: "recovered",
+        characterCount: 9,
+      },
+      insertion: {
+        status: "recovered",
+        method: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+    });
+
+    expectTauriCommand(tauri, "update_dictation_record", {
+      recordId: "record-1",
+      patch: expect.objectContaining({
+        insertion: expect.objectContaining({
+          status: "recovered",
+        }),
       }),
     });
   });

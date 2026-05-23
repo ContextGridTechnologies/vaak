@@ -174,6 +174,8 @@ The expected SHA256 digest should match the uploaded
 - Positioning: `docs/POSITIONING.md`
 - Product baseline: `docs/OPEN_SOURCE_PRODUCT_BASELINE.md`
 - Provider strategy: `docs/PROVIDER_STRATEGY.md`
+- Model-call retry base: `docs/MODEL_CALLING_RETRY_BASE.md`
+- Provider-specific retry notes: `docs/PROVIDER_SPECIFIC_RETRY.md`
 - Architecture details: `docs/ARCHITECTURE.md`
 - Repo layout conventions: `docs/PROJECT_STRUCTURE.md`
 

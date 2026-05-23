@@ -18,6 +18,18 @@ describe("normalizeError", () => {
     ).toBe("FOCUS_FAILED: No writable field found");
   });
 
+  it("includes retry guidance when the provider supplies retry timing", () => {
+    expect(
+      normalizeError({
+        code: "provider_rate_limited",
+        message: "Smallest AI returned 429 Too Many Requests",
+        retryAfterMs: 5000,
+      }),
+    ).toBe(
+      "provider_rate_limited: Smallest AI returned 429 Too Many Requests Try again in 5 seconds.",
+    );
+  });
+
   it("falls back for unknown values", () => {
     expect(normalizeError(null)).toBe("Unknown error");
   });

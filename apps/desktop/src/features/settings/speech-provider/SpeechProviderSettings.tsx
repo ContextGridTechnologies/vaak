@@ -1,9 +1,10 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { CheckCircle2Icon } from "lucide-react";
+import { CheckCircle2Icon, RotateCcwIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/app";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
@@ -87,6 +88,7 @@ export function SpeechProviderSettings({
     useState<ProviderErrors>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
   const selectedStatus = providerStatuses[selectedProviderId];
+  const selectedProviderError = providerErrors[selectedProviderId];
   const selectedProviderReadyMessage = providerTestResults[selectedProviderId];
   const azureHasSavedKey = Boolean(providerStatuses["azure-openai"]?.configured);
   const isOnboarding = variant === "onboarding";
@@ -551,6 +553,15 @@ export function SpeechProviderSettings({
     }
   };
 
+  const retrySelectedProviderTest = () => {
+    if (isOnboarding) {
+      void verifySavedProvider(selectedProviderId);
+      return;
+    }
+
+    void testSelectedProvider();
+  };
+
   const providerSetup = (
     <>
       {globalError ? (
@@ -671,6 +682,23 @@ export function SpeechProviderSettings({
           onTest={testSelectedProvider}
         />
       )}
+
+      {selectedProviderError ? (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-fit"
+            disabled={isLoading || Boolean(savingProviderId) || Boolean(testingProviderId)}
+            onClick={retrySelectedProviderTest}
+          >
+            <RotateCcwIcon aria-hidden={true} />
+            {testingProviderId === selectedProviderId
+              ? "Retrying..."
+              : "Retry provider test"}
+          </Button>
+        </div>
+      ) : null}
     </>
   );
 
