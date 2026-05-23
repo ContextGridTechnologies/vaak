@@ -232,6 +232,44 @@ describe("analytics", () => {
     });
   });
 
+  it("redacts sensitive diagnostic strings before sending telemetry", () => {
+    const posthog = {
+      capture: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+    };
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: "phc_public_project_key",
+      },
+      posthog,
+      storage: storageWith(),
+    });
+
+    analytics.capture("dictation_failed", {
+      error_code: "provider_auth_failed",
+      error_message:
+        "OpenAI key sk-test-secret failed while reading C:\\Users\\nikhi\\Desktop\\Projects\\vaak\\audio.wav",
+      provider_id: "openai",
+    });
+
+    expect(posthog.capture).toHaveBeenCalledWith("dictation_failed", {
+      app_env: "production",
+      app_version: "0.1.0",
+      error_code: "provider_auth_failed",
+      error_message:
+        "OpenAI key [redacted_secret] failed while reading [redacted_path]",
+      provider_id: "openai",
+    });
+  });
+
   it("does not initialize or capture when users toggle telemetry without a public key", () => {
     const posthog = {
       capture: vi.fn(),

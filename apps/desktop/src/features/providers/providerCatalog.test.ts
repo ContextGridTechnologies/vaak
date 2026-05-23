@@ -41,4 +41,21 @@ describe("providerCatalog", () => {
     expect(publicCopy).not.toContain("superwhisper");
     expect(publicCopy).not.toContain("competitor clone");
   });
+
+  it("marks backend-supported speech providers as configurable", () => {
+    const configurableProviderIds = providerCatalog
+      .filter((provider) => provider.setupStatus !== "coming-soon")
+      .map((provider) => provider.id);
+
+    expect(configurableProviderIds).toEqual(
+      expect.arrayContaining([
+        "openai",
+        "azure-openai",
+        "assemblyai",
+        "deepgram",
+        "elevenlabs",
+        "smallest",
+      ]),
+    );
+  });
 });

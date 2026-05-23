@@ -24,6 +24,7 @@ import {
   getAppShellPreferences,
   isTauriRuntime,
   saveAppShellPreferences,
+  type AppShellPreferences,
 } from "@/lib/tauri";
 import appIconUrl from "../../src-tauri/icons/32x32.png?url";
 import { appSections, type AppSection } from "./navigation";
@@ -40,6 +41,10 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
   const [compactViewport, setCompactViewport] = useState(() =>
     isCompactViewport(),
   );
+  const [appShellPreferences, setAppShellPreferences] =
+    useState<AppShellPreferences>({
+      sidebarCollapsed: false,
+    });
   const [sidebarPreferenceOpen, setSidebarPreferenceOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(() => !isCompactViewport());
 
@@ -66,6 +71,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
     void getAppShellPreferences()
       .then((preferences) => {
         const preferredOpen = !preferences.sidebarCollapsed;
+        setAppShellPreferences(preferences);
         setSidebarPreferenceOpen(preferredOpen);
         setSidebarOpen(isCompactViewport() ? false : preferredOpen);
       })
@@ -77,17 +83,22 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
   const handleSidebarOpenChange = useCallback((open: boolean) => {
     setSidebarPreferenceOpen(open);
     setSidebarOpen(compactViewport ? false : open);
+    const nextPreferences = {
+      ...appShellPreferences,
+      sidebarCollapsed: !open,
+    };
+    setAppShellPreferences(nextPreferences);
 
     if (!isTauriRuntime()) {
       return;
     }
 
-    void saveAppShellPreferences({ sidebarCollapsed: !open }).catch(
+    void saveAppShellPreferences(nextPreferences).catch(
       (error: unknown) => {
         console.error("Failed to save app shell preferences", error);
       },
     );
-  }, [compactViewport]);
+  }, [appShellPreferences, compactViewport]);
 
   return (
     <Tabs

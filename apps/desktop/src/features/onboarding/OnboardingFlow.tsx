@@ -149,5 +149,11 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
     );
   }
 
-  return children;
+  return (
+    <OnboardingModeChoice
+      error={error}
+      savingMode={savingMode}
+      onSelectMode={handleModeSelect}
+    />
+  );
 }

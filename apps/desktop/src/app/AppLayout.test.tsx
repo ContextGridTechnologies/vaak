@@ -161,6 +161,50 @@ describe("AppLayout", () => {
     expectTauriCommand(tauri, "get_app_shell_preferences", undefined);
   });
 
+  it("preserves voice capsule placement when saving sidebar collapse state", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_app_shell_preferences", {
+      sidebarCollapsed: false,
+      voiceCapsulePlacement: {
+        anchor: "bottomRight",
+        offsetX: 32,
+        offsetY: 20,
+      },
+    });
+    tauri.resolveCommand("save_app_shell_preferences", {
+      sidebarCollapsed: true,
+      voiceCapsulePlacement: {
+        anchor: "bottomRight",
+        offsetX: 32,
+        offsetY: 20,
+      },
+    });
+
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+      </AppLayout>,
+    );
+
+    await waitFor(() =>
+      expectTauriCommand(tauri, "get_app_shell_preferences", undefined),
+    );
+    fireEvent.click(screen.getByTestId("app-sidebar-dock-toggle"));
+
+    await waitFor(() =>
+      expectTauriCommand(tauri, "save_app_shell_preferences", {
+        preferences: {
+          sidebarCollapsed: true,
+          voiceCapsulePlacement: {
+            anchor: "bottomRight",
+            offsetX: 32,
+            offsetY: 20,
+          },
+        },
+      }),
+    );
+  });
+
   it("restores the persisted icon rail state on mount", async () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("get_app_shell_preferences", {

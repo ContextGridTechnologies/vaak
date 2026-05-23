@@ -167,6 +167,7 @@ impl LocalDictationRecordStore {
             .lock
             .lock()
             .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        validate_audio_artifact_paths(&draft)?;
         let identity = settings.local_identity()?;
         let record = DictationRecordV1 {
             schema_version: 1,
@@ -323,16 +324,28 @@ impl LocalDictationRecordStore {
 
         let raw = fs::read_to_string(&self.records_path)
             .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
-        raw.lines()
+        let records = raw
+            .lines()
             .rev()
             .filter(|line| !line.trim().is_empty())
+            .filter_map(
+                |line| match serde_json::from_str::<DictationRecordV1>(line) {
+                    Ok(record) => Some(record),
+                    Err(err) => {
+                        log::warn!(
+                            "skipping malformed dictation record in {}: {}",
+                            self.records_path.display(),
+                            err
+                        );
+                        None
+                    }
+                },
+            )
             .skip(offset)
             .take(limit)
-            .map(|line| {
-                serde_json::from_str::<DictationRecordV1>(line)
-                    .map_err(|err| ProviderFailure::SettingsStore(err.to_string()).into())
-            })
-            .collect()
+            .collect();
+
+        Ok(records)
     }
 
     fn resolve_audio_path(&self, relative_path: &str) -> Result<PathBuf, ProviderError> {
@@ -492,6 +505,16 @@ fn is_safe_relative_audio_path(path: &Path) -> bool {
     }
 
     components.all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn validate_audio_artifact_paths(draft: &DictationRecordDraftV1) -> Result<(), ProviderError> {
+    for artifact in [&draft.audio, &draft.processed_audio].into_iter().flatten() {
+        if !is_safe_relative_audio_path(Path::new(&artifact.relative_path)) {
+            return Err(ProviderFailure::InvalidRequest("invalid audio path".to_string()).into());
+        }
+    }
+
+    Ok(())
 }
 
 fn next_available_export_path(export_dir: &Path, file_name: &str) -> PathBuf {
@@ -888,6 +911,122 @@ mod tests {
         assert_eq!(recent.len(), 2);
         assert_eq!(recent[0].session_id, "session-2");
         assert_eq!(recent[1].session_id, "session-1");
+    }
+
+    #[test]
+    fn skips_malformed_record_lines_when_listing_recent_records() {
+        let dir = temp_config_dir("dictation-record-history-corrupt-line");
+        let settings = crate::storage::LocalSettingsStore::new(&dir);
+        let store = LocalDictationRecordStore::new(&dir);
+
+        store
+            .save(
+                &settings,
+                DictationRecordDraftV1 {
+                    session_id: Some("session-good".to_string()),
+                    mode: "dictation".to_string(),
+                    trigger: "hotkey".to_string(),
+                    captured_at: "2026-05-02T08:30:00Z".to_string(),
+                    started_at: None,
+                    ended_at: None,
+                    recording: None,
+                    audio: None,
+                    processed_audio: None,
+                    target: DictationTargetSnapshot {
+                        stable_id: "target-good".to_string(),
+                        window_title: "Notes".to_string(),
+                        control_name: "Message".to_string(),
+                        control_type: "Edit".to_string(),
+                        control_type_id: 50004,
+                        automation_id: "message-input".to_string(),
+                        framework_id: "Win32".to_string(),
+                        class_name: "Chrome_WidgetWin_1".to_string(),
+                        native_window_handle: 42,
+                        input_kind: "text".to_string(),
+                        current_value: None,
+                    },
+                    provider: None,
+                    transcript: DictationTranscript {
+                        raw_text: "raw-good".to_string(),
+                        final_text: "final-good".to_string(),
+                        character_count: 10,
+                    },
+                    insertion: DictationInsertionOutcome {
+                        status: "inserted".to_string(),
+                        method: Some("send_input".to_string()),
+                        error_code: None,
+                        error_message: None,
+                    },
+                },
+            )
+            .unwrap();
+        fs::OpenOptions::new()
+            .append(true)
+            .open(dir.join("dictation-records.jsonl"))
+            .unwrap()
+            .write_all(b"{not-json}\n")
+            .unwrap();
+
+        let recent = store.list_recent(1, 0).unwrap();
+
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].session_id, "session-good");
+    }
+
+    #[test]
+    fn rejects_records_with_audio_artifacts_outside_recordings_scope() {
+        let dir = temp_config_dir("dictation-record-unsafe-audio");
+        let settings = crate::storage::LocalSettingsStore::new(&dir);
+        let store = LocalDictationRecordStore::new(&dir);
+
+        let err = store
+            .save(
+                &settings,
+                DictationRecordDraftV1 {
+                    session_id: Some("session-unsafe-audio".to_string()),
+                    mode: "dictation".to_string(),
+                    trigger: "hotkey".to_string(),
+                    captured_at: "2026-05-02T08:30:00Z".to_string(),
+                    started_at: None,
+                    ended_at: None,
+                    recording: None,
+                    audio: Some(DictationAudioArtifact {
+                        relative_path: "../outside.webm".to_string(),
+                        mime_type: "audio/webm".to_string(),
+                        byte_length: 12,
+                    }),
+                    processed_audio: None,
+                    target: DictationTargetSnapshot {
+                        stable_id: "target-unsafe-audio".to_string(),
+                        window_title: "Notes".to_string(),
+                        control_name: "Message".to_string(),
+                        control_type: "Edit".to_string(),
+                        control_type_id: 50004,
+                        automation_id: "message-input".to_string(),
+                        framework_id: "Win32".to_string(),
+                        class_name: "Chrome_WidgetWin_1".to_string(),
+                        native_window_handle: 42,
+                        input_kind: "text".to_string(),
+                        current_value: None,
+                    },
+                    provider: None,
+                    transcript: DictationTranscript {
+                        raw_text: "raw".to_string(),
+                        final_text: "final".to_string(),
+                        character_count: 5,
+                    },
+                    insertion: DictationInsertionOutcome {
+                        status: "inserted".to_string(),
+                        method: Some("send_input".to_string()),
+                        error_code: None,
+                        error_message: None,
+                    },
+                },
+            )
+            .unwrap_err();
+
+        assert_eq!(err.code, "invalid_provider_request");
+        assert!(!dir.join("dictation-records.jsonl").exists());
     }
 
     #[test]

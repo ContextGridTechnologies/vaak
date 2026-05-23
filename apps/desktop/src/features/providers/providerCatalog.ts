@@ -80,7 +80,7 @@ export const providerCatalog: ProviderCatalogItem[] = [
     description: "Use ElevenLabs Scribe for speech-to-text with your own API key.",
     categories: ["speech-to-text"],
     credentialLabel: "ElevenLabs API key",
-    setupStatus: "coming-soon",
+    setupStatus: "not-configured",
     modelHint: "Scribe batch transcription",
   },
 ];

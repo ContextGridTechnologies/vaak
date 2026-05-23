@@ -43,11 +43,11 @@ impl PlatformError {
         }
     }
 
-    #[cfg(not(windows))]
-    pub fn unsupported(action: &str) -> Self {
+    #[cfg(any(not(windows), test))]
+    pub fn unsupported(platform: &str, action: &str) -> Self {
         Self::new(
             "unsupported",
-            format!("{action} is only available on Windows"),
+            format!("{action} is not available on {platform} yet"),
         )
     }
 }
@@ -59,3 +59,16 @@ impl std::fmt::Display for PlatformError {
 }
 
 impl std::error::Error for PlatformError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_errors_name_the_platform_and_action() {
+        let err = PlatformError::unsupported("macOS", "insert_text");
+
+        assert_eq!(err.code, "unsupported");
+        assert_eq!(err.message, "insert_text is not available on macOS yet");
+    }
+}

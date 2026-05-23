@@ -176,4 +176,79 @@ describe("microphone selection", () => {
       deviceId: "usb-mic",
     });
   });
+
+  it("restores the last saved microphone selection when persistence fails", async () => {
+    isTauriRuntime.mockReturnValue(true);
+    saveMicrophoneSelection.mockRejectedValue(new Error("settings store unavailable"));
+    useAudioDevices.mockReturnValue({
+      devices: [{ deviceId: "usb-mic", label: "USB microphone" }],
+      error: null,
+      hasPermission: false,
+      isLoading: false,
+      refresh: vi.fn(),
+      requestPermission: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useMicrophoneSelection());
+
+    await waitFor(() => {
+      expect(result.current.selection).toEqual({ mode: "system" });
+    });
+
+    await act(async () => {
+      await result.current.selectManual("usb-mic");
+    });
+
+    expect(result.current.selection).toEqual({ mode: "system" });
+    expect(result.current.error).toBe("settings store unavailable");
+  });
+
+  it("ignores stale microphone persistence failures after a newer choice is saved", async () => {
+    isTauriRuntime.mockReturnValue(true);
+    let rejectFirstSave: ((error: Error) => void) | undefined;
+    saveMicrophoneSelection
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirstSave = reject;
+          }),
+      )
+      .mockResolvedValueOnce({ mode: "manual", deviceId: "conference-mic" });
+    useAudioDevices.mockReturnValue({
+      devices: [
+        { deviceId: "usb-mic", label: "USB microphone" },
+        { deviceId: "conference-mic", label: "Conference microphone" },
+      ],
+      error: null,
+      hasPermission: false,
+      isLoading: false,
+      refresh: vi.fn(),
+      requestPermission: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useMicrophoneSelection());
+
+    await waitFor(() => {
+      expect(result.current.selection).toEqual({ mode: "system" });
+    });
+
+    let firstSave: Promise<void> | undefined;
+    await act(async () => {
+      firstSave = result.current.selectManual("usb-mic");
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await result.current.selectManual("conference-mic");
+    });
+    await act(async () => {
+      rejectFirstSave?.(new Error("old save failed"));
+      await firstSave;
+    });
+
+    expect(result.current.selection).toEqual({
+      mode: "manual",
+      deviceId: "conference-mic",
+    });
+    expect(result.current.error).toBeNull();
+  });
 });

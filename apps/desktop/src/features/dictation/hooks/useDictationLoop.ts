@@ -286,6 +286,10 @@ export function useDictationLoop(
           .filter((value) => value.length > 0)
           .join(" ");
       } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
         await persistDraft({
           audioBlob,
           processedAudioBlob: captureAnalysis?.processedAudio ?? null,

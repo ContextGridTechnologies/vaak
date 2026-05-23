@@ -395,6 +395,26 @@ export function useAudioRecorder(
   }, [releaseAudioUrl, teardownCaptureAnalysis]);
 
   useEffect(() => {
+    const recorder = recorderRef.current;
+    if (recorder?.state === "recording") {
+      clearTimer();
+      recorder.ondataavailable = null;
+      recorder.onerror = null;
+      recorder.onstop = null;
+      recordingAnalysisActiveRef.current = false;
+      recorder.stop();
+      recorderRef.current = null;
+      chunksRef.current = [];
+      startTimeRef.current = null;
+      setAudioBlob(null);
+      releaseAudioUrl(null);
+      setAudioLevel(0);
+      setCaptureAnalysis(null);
+      setElapsedMs(0);
+      setStatus("idle");
+      setError(null);
+    }
+
     stopTracks(streamRef.current);
     streamRef.current = null;
     teardownCaptureAnalysis();
@@ -402,7 +422,7 @@ export function useAudioRecorder(
     setActiveMicrophone(null);
     setAudioLevel(0);
     setStartupMetrics(null);
-  }, [selectionKey, teardownCaptureAnalysis]);
+  }, [releaseAudioUrl, selectionKey, teardownCaptureAnalysis]);
 
   useEffect(() => {
     return () => {

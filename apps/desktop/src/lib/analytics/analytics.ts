@@ -57,6 +57,13 @@ type CreateAnalyticsOptions = {
 
 const TELEMETRY_ENABLED_KEY = "vaak.telemetry.enabled";
 const FIRST_RUN_CAPTURED_KEY = "vaak.analytics.firstRunCaptured";
+const MAX_ANALYTICS_STRING_LENGTH = 160;
+const SECRET_VALUE_PATTERN =
+  /\b(?:sk-[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._-]+|[A-Za-z0-9_-]*api[_-]?key[A-Za-z0-9_-]*)\b/gi;
+const WINDOWS_PATH_PATTERN =
+  /\b[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*/g;
+const UNIX_PATH_PATTERN =
+  /(?<!\w)\/(?:Users|home|var|tmp|private|Volumes)\/[^\s"'<>]+/g;
 
 export function getTelemetryEnabledPreference(storage: Storage): boolean {
   return storage.getItem(TELEMETRY_ENABLED_KEY) !== "false";
@@ -195,9 +202,18 @@ function sanitizeAnalyticsProperties(
       typeof value === "string" ||
       value === null
     ) {
-      sanitized[key] = value;
+      sanitized[key] =
+        typeof value === "string" ? sanitizeAnalyticsString(value) : value;
     }
   }
 
   return sanitized;
+}
+
+function sanitizeAnalyticsString(value: string): string {
+  return value
+    .replace(SECRET_VALUE_PATTERN, "[redacted_secret]")
+    .replace(WINDOWS_PATH_PATTERN, "[redacted_path]")
+    .replace(UNIX_PATH_PATTERN, "[redacted_path]")
+    .slice(0, MAX_ANALYTICS_STRING_LENGTH);
 }

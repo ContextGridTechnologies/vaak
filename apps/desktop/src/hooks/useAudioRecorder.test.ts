@@ -289,6 +289,39 @@ describe("useAudioRecorder", () => {
     expect(track.stop).toHaveBeenCalledTimes(1);
   });
 
+  it("aborts an active recording when the microphone selection changes", async () => {
+    const firstTrack: MockTrack = {
+      label: "Built-in microphone",
+      stop: vi.fn(),
+      getSettings: () => ({ deviceId: "built-in" }),
+    };
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getAudioTracks: () => [firstTrack],
+      getTracks: () => [firstTrack],
+    });
+    setMediaDevices({ getUserMedia });
+    const { result, rerender } = renderHook(
+      ({ deviceId }: { deviceId: string }) =>
+        useAudioRecorder({
+          microphoneSelection: { mode: "manual", deviceId },
+        }),
+      { initialProps: { deviceId: "built-in" } },
+    );
+
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.status).toBe("recording");
+
+    rerender({ deviceId: "usb-mic" });
+
+    expect(firstTrack.stop).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("idle");
+    expect(result.current.audioBlob).toBeNull();
+    expect(result.current.audioUrl).toBeNull();
+    expect(MockMediaRecorder.instances[0]?.state).toBe("inactive");
+  });
+
   it("produces capture analysis for valid speech and exposes wav transcription segments", async () => {
     const track: MockTrack = {
       label: "USB microphone",

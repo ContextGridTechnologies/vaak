@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AudioInputDevice } from "@/hooks/useAudioDevices";
 import { useAudioDevices } from "@/hooks/useAudioDevices";
@@ -128,6 +128,7 @@ export function useMicrophoneSelection(): UseMicrophoneSelectionState &
     useState<ActiveMicrophone | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [isResolving, setIsResolving] = useState(false);
+  const saveAttemptRef = useRef(0);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -185,6 +186,9 @@ export function useMicrophoneSelection(): UseMicrophoneSelectionState &
         return;
       }
 
+      const previousSelection = selection;
+      const saveAttempt = saveAttemptRef.current + 1;
+      saveAttemptRef.current = saveAttempt;
       setSelection(nextSelection);
       setSelectionError(null);
       setActiveMicrophone(null);
@@ -195,12 +199,17 @@ export function useMicrophoneSelection(): UseMicrophoneSelectionState &
 
       try {
         const savedSelection = await saveMicrophoneSelection(nextSelection);
-        setSelection(savedSelection);
+        if (saveAttemptRef.current === saveAttempt) {
+          setSelection(savedSelection);
+        }
       } catch (err) {
-        setSelectionError(normalizeError(err));
+        if (saveAttemptRef.current === saveAttempt) {
+          setSelection(previousSelection);
+          setSelectionError(normalizeError(err));
+        }
       }
     },
-    [],
+    [selection],
   );
 
   const requestMicrophoneAccess = useCallback(async () => {

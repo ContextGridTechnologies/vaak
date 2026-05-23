@@ -1,15 +1,37 @@
 # Vaak
 
-Open-source, local-first voice input for desktop workflows.
+Open-source, local-first voice input for desktop workflows on Windows.
 
-Vaak turns speech into polished text and inserts it into the app you were
-already using. The project is being built as a serious desktop productivity
-tool: local-first by default, bring-your-own provider support for users who want
-control, and optional account, sync, team, and managed cloud features later.
+Vaak turns speech into text and inserts it into the app you were already using.
+It is built for people who want a serious desktop voice workflow without making
+a hosted account or a single vendor the center of the product.
+
+The early Windows preview is for users who want to try local-first dictation,
+bring their own speech provider key, and help shape the product while it is
+still moving quickly.
+
+## Why Try Vaak
+
+- Open-source desktop app, not a closed hosted recorder.
+- Local-first by default: no Vaak account is required for local dictation.
+- Bring your own provider key and choose the speech service you trust.
+- API keys are stored through the app's secure storage path, not plain browser
+  storage.
+- Built as a production desktop tool with Tauri, React, TypeScript, and Rust.
+- Optional sync, team, billing, and managed cloud features can come later
+  without blocking the local product.
+
+## Screenshots
+
+![Choose local mode in Vaak onboarding](apps/desktop/designs/onboarding/first-run-mode-choice.png)
+
+![Test a speech provider before dictating](apps/desktop/designs/onboarding/test-provider-ready.png)
+
+![Try your first dictation](apps/desktop/designs/onboarding/try-first-dictation.png)
 
 ## Download
 
-Download the latest Windows installer:
+Download the latest Windows preview installer:
 [Vaak-Windows-Setup.exe](https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe)
 
 Checksum:
@@ -23,6 +45,40 @@ Report bugs or request workflow improvements from the
 
 Early Windows installers are unsigned, so Windows may show a SmartScreen warning
 until code signing is added.
+
+## What Works Today
+
+Vaak is in early active development. The current focus is the local
+bring-your-own-provider dictation loop:
+
+- install the Windows desktop app
+- continue without a Vaak account
+- configure a speech provider in Settings
+- store provider credentials through secure local storage
+- test provider readiness before dictating
+- capture microphone input
+- transcribe speech through the selected provider
+- insert dictated text into the focused desktop app
+
+The core product should not require a Vaak account or hosted backend.
+
+## Provider Support
+
+Vaak uses one internal provider interface with separate adapters. Current and
+near-term speech provider work includes OpenAI, Azure OpenAI, AssemblyAI,
+Deepgram, Groq, ElevenLabs, and Smallest AI. Additional providers should fit
+behind the same internal boundary.
+
+## Project Direction
+
+Vaak is voice input infrastructure for desktop work:
+
+- open-source desktop app
+- local-first workflow by default
+- bring-your-own transcription and model providers
+- provider adapters behind one internal provider interface
+- optional cloud features for sync, managed usage, billing, and teams later
+- production-grade desktop UX rather than a demo shell
 
 ### Windows SmartScreen
 
@@ -39,33 +95,6 @@ Get-FileHash .\Vaak-Windows-Setup.exe -Algorithm SHA256
 
 Compare the result with the matching `Vaak-Windows-Setup.exe.sha256` release
 asset.
-
-## Status
-
-Vaak is in early active development. The current milestone is the local
-bring-your-own-model dictation loop:
-
-- select local provider settings
-- store provider credentials securely
-- capture microphone input
-- transcribe and optionally rewrite dictated text
-- insert polished text into the focused desktop app
-
-The core product should not require a Vaak account or hosted backend.
-
-## Product Direction
-
-Vaak is built around a few public commitments:
-
-- Open-source desktop app.
-- Local-first workflow by default.
-- Bring your own transcription and model providers.
-- Provider adapters behind one internal provider interface.
-- Optional cloud features for sync, managed usage, billing, and teams later.
-- Production-grade desktop UX rather than a demo shell.
-
-Current provider targets include OpenAI, Deepgram, and Groq. Additional
-providers should fit behind the same internal provider boundaries.
 
 ## Repository Layout
 

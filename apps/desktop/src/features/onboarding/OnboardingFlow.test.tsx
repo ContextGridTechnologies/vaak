@@ -389,4 +389,24 @@ describe("OnboardingGate", () => {
     expect(await screen.findByText("settings failed")).toBeInTheDocument();
     expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
   });
+
+  it("falls back to setup instead of entering the app shell for unknown incomplete steps", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "linuxPermissions",
+      selectedMode: "local",
+    });
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Choose how to use Vaak" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
+  });
 });

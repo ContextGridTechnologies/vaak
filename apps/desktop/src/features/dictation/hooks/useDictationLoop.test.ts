@@ -200,6 +200,62 @@ describe("useDictationLoop", () => {
     expect(transcribeRecording).toHaveBeenCalledTimes(1);
   });
 
+  it("does not persist a stale transcription failure after a newer recording starts", async () => {
+    const firstAudioBlob = recordingBlob();
+    const secondAudioBlob = new Blob([new Uint8Array([4, 5, 6])], {
+      type: "audio/webm",
+    });
+    let rejectFirstTranscription:
+      | ((reason?: unknown) => void)
+      | undefined;
+    transcribeRecording
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectFirstTranscription = reject;
+          }),
+      )
+      .mockResolvedValueOnce({
+        durationMs: 1200,
+        model: "gpt-4o-mini-transcribe",
+        providerId: "openai",
+        text: "new recording",
+      });
+
+    const { rerender } = renderHook(
+      ({ value }) => useDictationLoop(value),
+      { initialProps: { value: session({ audioBlob: firstAudioBlob }) } },
+    );
+
+    await waitFor(() => expect(transcribeRecording).toHaveBeenCalledTimes(1));
+    rerender({ value: session({ audioBlob: secondAudioBlob }) });
+    await waitFor(() => expect(transcribeRecording).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      rejectFirstTranscription?.(new Error("provider timeout"));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(saveDictationRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transcript: {
+            characterCount: 13,
+            finalText: "new recording",
+            rawText: "new recording",
+          },
+        }),
+      );
+    });
+    expect(saveDictationRecord).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        insertion: expect.objectContaining({
+          errorCode: "transcription_failed",
+        }),
+      }),
+    );
+  });
+
   it("inserts the raw transcript after transcription", async () => {
     const audioBlob = recordingBlob();
 

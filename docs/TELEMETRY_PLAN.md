@@ -51,6 +51,8 @@ Current status:
   session.
 - Analytics capture now sanitizes unsupported property values before sending
   events.
+- Analytics string properties are redacted for common secret/token shapes and
+  local Windows, macOS, and Linux paths, then capped before sending events.
 - PostHog SDK calls are isolated so telemetry failures do not break local app
   behavior.
 
