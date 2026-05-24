@@ -43,6 +43,13 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 hide_main_window_instead_of_closing(window.label(), window, api);
             }
+            if let tauri::WindowEvent::ThemeChanged(theme) = event {
+                if window.label() == "main" {
+                    if let Err(err) = windowing::apply_main_window_theme(window, *theme) {
+                        log::warn!("failed to apply main window theme: {err}");
+                    }
+                }
+            }
         })
         .setup(|app| {
             initialize_autostart_plugin(app.handle());
@@ -52,6 +59,9 @@ pub fn run() {
                 let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
                     .map_err(|err| err.to_string())?;
                 main_window.set_icon(icon).map_err(|err| err.to_string())?;
+                if let Err(err) = windowing::prepare_main_window(&main_window) {
+                    log::warn!("failed to prepare main window chrome: {err}");
+                }
             }
 
             let settings_store =

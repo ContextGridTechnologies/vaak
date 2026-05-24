@@ -2,6 +2,10 @@ use crate::storage::{VoiceCapsuleAnchor, VoiceCapsulePlacement};
 use tauri::window::Color;
 use tauri::{LogicalPosition, LogicalSize, Size, WebviewWindow};
 
+const APP_BACKGROUND_COLORREF: u32 = colorref_from_rgb(0xF8, 0xFA, 0xFC);
+const APP_TITLE_TEXT_COLORREF: u32 = colorref_from_rgb(0x20, 0x27, 0x2F);
+const APP_DARK_BACKGROUND_COLORREF: u32 = colorref_from_rgb(0x0F, 0x14, 0x1B);
+const APP_DARK_TITLE_TEXT_COLORREF: u32 = colorref_from_rgb(0xEA, 0xED, 0xF0);
 const VOICE_CAPSULE_WIDTH: f64 = 56.0;
 const VOICE_CAPSULE_HEIGHT: f64 = 36.0;
 const DEFAULT_EDGE_OFFSET: f64 = 24.0;
@@ -21,6 +25,160 @@ pub struct MonitorWorkArea {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+}
+
+pub fn prepare_main_window<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
+    let theme = window.theme().map_err(|err| err.to_string())?;
+    apply_native_titlebar_color(window, theme)
+}
+
+#[cfg(windows)]
+fn apply_native_titlebar_color<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    theme: tauri::Theme,
+) -> Result<(), String> {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
+    };
+
+    let hwnd = window.hwnd().map_err(|err| err.to_string())?;
+    let raw_hwnd = hwnd.0;
+    let titlebar_theme = native_titlebar_theme(theme);
+    set_dwm_bool_attribute(
+        raw_hwnd,
+        DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+        titlebar_theme.immersive_dark_mode,
+    )?;
+    set_dwm_color_attribute(
+        raw_hwnd,
+        DWMWA_CAPTION_COLOR as u32,
+        titlebar_theme.background,
+    )?;
+    set_dwm_color_attribute(
+        raw_hwnd,
+        DWMWA_BORDER_COLOR as u32,
+        titlebar_theme.background,
+    )?;
+    set_dwm_color_attribute(raw_hwnd, DWMWA_TEXT_COLOR as u32, titlebar_theme.text)?;
+    Ok(())
+}
+
+pub fn apply_main_window_theme(window: &tauri::Window, theme: tauri::Theme) -> Result<(), String> {
+    apply_native_window_titlebar_color(window, theme)
+}
+
+#[cfg(windows)]
+fn apply_native_window_titlebar_color(
+    window: &tauri::Window,
+    theme: tauri::Theme,
+) -> Result<(), String> {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
+    };
+
+    let hwnd = window.hwnd().map_err(|err| err.to_string())?;
+    let raw_hwnd = hwnd.0;
+    let titlebar_theme = native_titlebar_theme(theme);
+    set_dwm_bool_attribute(
+        raw_hwnd,
+        DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+        titlebar_theme.immersive_dark_mode,
+    )?;
+    set_dwm_color_attribute(
+        raw_hwnd,
+        DWMWA_CAPTION_COLOR as u32,
+        titlebar_theme.background,
+    )?;
+    set_dwm_color_attribute(
+        raw_hwnd,
+        DWMWA_BORDER_COLOR as u32,
+        titlebar_theme.background,
+    )?;
+    set_dwm_color_attribute(raw_hwnd, DWMWA_TEXT_COLOR as u32, titlebar_theme.text)?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn apply_native_window_titlebar_color(
+    _window: &tauri::Window,
+    _theme: tauri::Theme,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn set_dwm_color_attribute(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    attribute: u32,
+    color: u32,
+) -> Result<(), String> {
+    use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+
+    unsafe {
+        let result = DwmSetWindowAttribute(
+            hwnd,
+            attribute,
+            (&color as *const u32).cast::<core::ffi::c_void>(),
+            std::mem::size_of::<u32>() as u32,
+        );
+        if result < 0 {
+            return Err(format!("DwmSetWindowAttribute failed: HRESULT {result:#x}"));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn set_dwm_bool_attribute(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    attribute: u32,
+    value: bool,
+) -> Result<(), String> {
+    use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+
+    let enabled = u32::from(value);
+    unsafe {
+        let result = DwmSetWindowAttribute(
+            hwnd,
+            attribute,
+            (&enabled as *const u32).cast::<core::ffi::c_void>(),
+            std::mem::size_of::<u32>() as u32,
+        );
+        if result < 0 {
+            return Err(format!("DwmSetWindowAttribute failed: HRESULT {result:#x}"));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn apply_native_titlebar_color<R: tauri::Runtime>(
+    _window: &WebviewWindow<R>,
+    _theme: tauri::Theme,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct NativeTitlebarTheme {
+    background: u32,
+    text: u32,
+    immersive_dark_mode: bool,
+}
+
+fn native_titlebar_theme(theme: tauri::Theme) -> NativeTitlebarTheme {
+    match theme {
+        tauri::Theme::Dark => NativeTitlebarTheme {
+            background: APP_DARK_BACKGROUND_COLORREF,
+            text: APP_DARK_TITLE_TEXT_COLORREF,
+            immersive_dark_mode: true,
+        },
+        _ => NativeTitlebarTheme {
+            background: APP_BACKGROUND_COLORREF,
+            text: APP_TITLE_TEXT_COLORREF,
+            immersive_dark_mode: false,
+        },
+    }
 }
 
 pub fn prepare_voice_capsule_window(
@@ -122,6 +280,10 @@ fn default_offset_y(anchor: VoiceCapsuleAnchor) -> f64 {
         | VoiceCapsuleAnchor::BottomRight
         | VoiceCapsuleAnchor::TopCenter => DEFAULT_EDGE_OFFSET,
     }
+}
+
+const fn colorref_from_rgb(red: u8, green: u8, blue: u8) -> u32 {
+    (red as u32) | ((green as u32) << 8) | ((blue as u32) << 16)
 }
 
 impl<R: tauri::Runtime> VoiceCapsuleWindow for WebviewWindow<R> {
@@ -322,5 +484,31 @@ mod tests {
         show_voice_capsule_window(&window).unwrap();
 
         assert_eq!(*window.operations.borrow(), vec![Operation::Show]);
+    }
+
+    #[test]
+    fn converts_css_rgb_to_windows_colorref_order() {
+        assert_eq!(colorref_from_rgb(0xF8, 0xFA, 0xFC), 0x00FCFAF8);
+        assert_eq!(APP_BACKGROUND_COLORREF, 0x00FCFAF8);
+    }
+
+    #[test]
+    fn maps_light_and_dark_themes_to_native_titlebar_colors() {
+        assert_eq!(
+            native_titlebar_theme(tauri::Theme::Light),
+            NativeTitlebarTheme {
+                background: APP_BACKGROUND_COLORREF,
+                text: APP_TITLE_TEXT_COLORREF,
+                immersive_dark_mode: false,
+            },
+        );
+        assert_eq!(
+            native_titlebar_theme(tauri::Theme::Dark),
+            NativeTitlebarTheme {
+                background: APP_DARK_BACKGROUND_COLORREF,
+                text: APP_DARK_TITLE_TEXT_COLORREF,
+                immersive_dark_mode: true,
+            },
+        );
     }
 }

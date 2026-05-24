@@ -689,7 +689,7 @@ describe("HomePanel", () => {
     );
     expect(transcript).toHaveClass(
       "line-clamp-3",
-      "text-muted-foreground",
+      "text-foreground/72",
       "break-words",
       "[overflow-wrap:anywhere]",
     );
@@ -747,7 +747,7 @@ describe("HomePanel", () => {
       "lg:pt-[6.075rem]",
     );
     expect(content).toHaveClass("py-5", "lg:py-6");
-    expect(shell).toHaveClass("mx-auto", "w-full", "max-w-[52rem]");
+    expect(shell).toHaveClass("mx-auto", "w-full", "max-w-[56rem]");
   });
 
   it("replaces editor accessibility placeholder text with a clean target label", async () => {

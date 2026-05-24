@@ -34,13 +34,13 @@ describe("globals.css", () => {
   });
 
   it("uses a clean white desktop palette with a branded content surface", () => {
-    expect(globalsCss).toContain("--background: #F8FBFD;");
-    expect(globalsCss).toContain("--card: #F8FBFD;");
-    expect(globalsCss).toContain("--muted: oklch(0.968 0.002 250);");
-    expect(globalsCss).toContain("--border: oklch(0.92 0.004 250);");
-    expect(globalsCss).toContain("--sidebar: #F8FBFD;");
+    expect(globalsCss).toContain("--background: #F8FAFC;");
+    expect(globalsCss).toContain("--card: #FFFFFF;");
+    expect(globalsCss).toContain("--muted: oklch(0.945 0.005 250);");
+    expect(globalsCss).toContain("--border: oklch(0.875 0.008 250);");
+    expect(globalsCss).toContain("--sidebar: #F8FAFC;");
     expect(readCssBlock(".vaak-content-surface")).toContain(
-      "linear-gradient(135deg, #fffaf7 0%, #f8fbfd 52%, #f3f7f6 100%);",
+      "background: var(--background);",
     );
   });
 
@@ -49,15 +49,16 @@ describe("globals.css", () => {
     expect(readToken(".dark", "--primary")).toBe("#DD6040");
   });
 
-  it("defines a dark branded content surface instead of reusing the light shell gradient", () => {
-    const lightSurface = readCssBlock(".vaak-content-surface");
+  it("defines a dark neutral shell that follows the dark background token", () => {
     const darkSurface = readCssBlock(".dark .vaak-content-surface");
 
-    expect(darkSurface).toContain("linear-gradient(135deg");
-    expect(darkSurface).not.toBe(lightSurface);
-    expect(darkSurface).not.toContain("#fffaf7");
-    expect(darkSurface).not.toContain("#f8fbfd");
-    expect(darkSurface).not.toContain("#f3f7f6");
+    expect(globalsCss).toContain("--background: #0F141B;");
+    expect(globalsCss).toContain("--card: #111820;");
+    expect(globalsCss).toContain("--sidebar: #0F141B;");
+    expect(darkSurface).toContain("background: var(--background);");
+    expect(darkSurface).not.toContain("#ffffff");
+    expect(darkSurface).not.toContain("#f8fafc");
+    expect(darkSurface).not.toContain("#f1f6f8");
   });
 
   it("defines the shared branded scrollbar rules with stable idle visibility", () => {

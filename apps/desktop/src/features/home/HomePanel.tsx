@@ -316,41 +316,47 @@ export function HomePanel() {
         data-testid="app-screen-content"
         className={cn(
           appScreenContentClassName,
-          "max-w-[74rem] gap-5",
+          "max-w-[74rem] gap-4",
         )}
       >
         <section
           data-testid="voice-activity-shell"
-          className="mx-auto mt-12 w-full max-w-[52rem] lg:mt-16"
+          className="mx-auto mt-2 w-full max-w-[56rem] lg:mt-4"
         >
-          <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2 pb-2 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex flex-col gap-1">
-              <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-                Voice Activity
-              </h2>
+              <div className="flex items-center gap-2">
+                <span aria-hidden="true" className="h-4 w-1 rounded-full bg-primary/85" />
+                <h2 className="text-[1.55rem] font-semibold leading-tight tracking-tight text-foreground">
+                  Voice Activity
+                </h2>
+              </div>
+              <p className="text-[0.9rem] text-muted-foreground">
+                Recent local dictation captures from this desktop.
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               <StatusBadge
                 tone="success"
-                className="normal-case tracking-normal"
+                className="border-success/30 bg-success/12 px-2.5 normal-case tracking-normal"
               >
                 {activityOverview.insertedCount} inserted
               </StatusBadge>
               <StatusBadge
                 tone="warning"
-                className="normal-case tracking-normal"
+                className="border-warning/45 bg-warning/18 px-2.5 normal-case tracking-normal"
               >
                 {activityOverview.skippedCount} skipped
               </StatusBadge>
-              <StatusBadge tone="error" className="normal-case tracking-normal">
+              <StatusBadge tone="error" className="border-destructive/30 bg-destructive/12 px-2.5 normal-case tracking-normal">
                 {activityOverview.failedCount} failed
               </StatusBadge>
             </div>
           </div>
 
           {activities.length > 0 ? (
-            <div className="flex flex-col gap-3">
+            <div className="overflow-hidden rounded-lg border-y border-border/80 bg-card shadow-xs">
               {visibleActivities.map((activity) => (
                 <ActivityFeedItem
                   key={activity.recordId}
@@ -385,7 +391,7 @@ export function HomePanel() {
             </Card>
           )}
 
-          <div className="flex flex-col gap-1 px-1 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-1 border-t border-border/70 px-1 pt-3 text-xs font-medium text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <span>
               Showing {visibleActivities.length} of {activities.length} captures on this device
             </span>
@@ -596,14 +602,14 @@ function ActivityFeedItem({
   return (
     <article
       className={cn(
-        "group/activity flex flex-col gap-3 overflow-hidden rounded-xl border border-border/70 bg-card px-4 py-3.5 shadow-sm transition-[border-color,box-shadow,transform] sm:px-5",
-        activity.isLatest
-          ? "border-border shadow-md"
-          : "hover:border-border hover:shadow-md",
+        "group/activity relative flex flex-col gap-2 border-l-2 border-l-transparent border-b border-border/65 bg-card px-3.5 py-2 transition-colors last:border-b-0 hover:bg-muted/20 sm:px-4",
+        activity.status === "failed" && "border-l-destructive/70 bg-destructive/[0.025]",
+        activity.status === "skipped" && "border-l-warning/65 bg-warning/[0.012]",
+        activity.isLatest && "bg-background/70",
       )}
     >
-      <div className="flex min-w-0 items-start gap-4">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground shadow-xs">
+      <div className="flex min-w-0 items-start gap-3">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/75 bg-muted/35 text-muted-foreground">
           {activity.iconMark ? (
             <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-foreground/75">
               {activity.iconMark}
@@ -613,37 +619,37 @@ function ActivityFeedItem({
           )}
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-4">
             <div className="min-w-0 flex-1">
-              <div className="text-[1.05rem] font-semibold leading-tight text-foreground">
+              <div className="text-[0.98rem] font-semibold leading-tight text-foreground">
                 {activity.appName}
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-sm lg:justify-end">
+            <div className="flex flex-wrap items-center gap-2 text-xs lg:justify-end">
               {activity.status === "inserted" ? null : (
                 <StatusBadge
                   tone={statusMeta[activity.status].tone}
-                  className="normal-case tracking-normal"
+                  className="px-2.5 normal-case tracking-normal"
                 >
                   <ActivityStatusIcon data-icon="inline-start" />
                   {statusMeta[activity.status].label}
                 </StatusBadge>
               )}
-              <span className="text-sm text-muted-foreground">
+              <span className="min-w-[4.75rem] text-right text-xs font-medium text-muted-foreground">
                 {formatRelativeTime(activity.capturedAt)}
               </span>
             </div>
           </div>
 
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
               <div className="min-w-0 overflow-hidden">
                 <p
                   data-testid={`activity-transcript-${activity.recordId}`}
                   className={cn(
-                    "max-w-full whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]",
+                    "max-w-full whitespace-pre-wrap break-words text-[0.92rem] leading-5 text-foreground/72 [overflow-wrap:anywhere]",
                     canExpandTranscript &&
                       !isTranscriptExpanded &&
                       "line-clamp-3",
@@ -672,9 +678,9 @@ function ActivityFeedItem({
                 ) : null}
                 <div
                   data-testid={`activity-metadata-${activity.recordId}`}
-                  className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2"
+                  className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5"
                 >
-                  <span className="min-w-0 truncate text-xs text-muted-foreground">
+                  <span className="min-w-0 truncate rounded-md border border-border/55 bg-muted/30 px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
                     {activity.providerLabel}
                   </span>
                   {activity.audio ? (
@@ -682,7 +688,7 @@ function ActivityFeedItem({
                       type="button"
                       variant="ghost"
                       size="xs"
-                      className="h-6 rounded-full px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+                      className="h-6 rounded-md border border-transparent px-1.5 text-xs font-medium text-muted-foreground hover:border-border/70 hover:bg-muted/60 hover:text-foreground"
                       onClick={() => {
                         void handlePlayAudio();
                       }}
@@ -708,7 +714,7 @@ function ActivityFeedItem({
                       type="button"
                       variant="ghost"
                       size="xs"
-                      className="h-6 rounded-full px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+                      className="h-6 rounded-md border border-transparent px-1.5 text-xs font-medium text-muted-foreground hover:border-border/70 hover:bg-muted/60 hover:text-foreground"
                       onClick={() => {
                         void handlePlayProcessedAudio();
                       }}
@@ -732,9 +738,9 @@ function ActivityFeedItem({
                   {canRetryTranscription ? (
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                       size="xs"
-                      className="h-6 rounded-full px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                      className="h-6 rounded-md border-destructive/30 bg-destructive/8 px-2 text-xs font-semibold text-destructive hover:bg-destructive/12 hover:text-destructive"
                       onClick={() => {
                         onRetryTranscription(activity);
                       }}
@@ -766,7 +772,7 @@ function ActivityFeedItem({
                 type="button"
                 variant="ghost"
                 size="xs"
-                className="shrink-0 rounded-md px-2 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/activity:opacity-100"
+                className="shrink-0 rounded-md px-2 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/activity:opacity-100"
                 onClick={() => {
                   void handleCopyTranscript();
                 }}

@@ -121,24 +121,24 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
           data-testid="app-sidebar"
           data-collapsible="icon"
           collapsible="icon"
-          className="relative [&_[data-sidebar=sidebar]]:bg-transparent"
+          className="relative border-r border-sidebar-border/60 [&_[data-sidebar=sidebar]]:bg-sidebar [&_[data-sidebar=sidebar]]:shadow-[inset_-1px_0_0_rgb(15_23_42/0.035)]"
         >
-          <SidebarHeader className="px-3 py-3">
+          <SidebarHeader className="px-3 py-3.5">
             <div className="flex min-w-0 items-center gap-2">
               <img
                 src={appIconUrl}
                 alt=""
                 aria-hidden="true"
                 data-testid="app-sidebar-brand-mark"
-                className="size-8 shrink-0 rounded-lg"
+                className="size-8 shrink-0 rounded-md border border-sidebar-border bg-background shadow-xs"
               />
-              <span className="truncate text-[1.35rem] font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden">
+              <span className="truncate text-[1.3rem] font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden">
                 Vaak
               </span>
             </div>
           </SidebarHeader>
           <SidebarContent>
-            <SidebarGroup className="px-2 py-1.5" data-testid="app-sidebar-primary">
+            <SidebarGroup className="px-2 py-1" data-testid="app-sidebar-primary">
               <SidebarGroupContent>
                 <SidebarMenu aria-label="Primary navigation" className="gap-1">
                   {appSections.map((section) => {
@@ -158,12 +158,12 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
                           isActive={isActive}
                           tooltip={section.label}
                           aria-label={section.label}
-                          className="h-9 rounded-lg px-2.5 text-sm font-medium text-sidebar-foreground/84 data-[active=true]:bg-sidebar-accent/80 data-[active=true]:text-sidebar-foreground"
+                          className="h-8 rounded-md px-2.5 text-sm font-medium text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[active=true]:bg-background data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-xs"
                           onClick={() => setActiveSection(section.value)}
                         >
                           <span
                             aria-hidden="true"
-                            className="flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 group-data-[state=collapsed]/sidebar-wrapper:size-4 group-data-[active=true]/menu-button:bg-background/80 group-data-[active=true]/menu-button:text-primary"
+                            className="flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/62 group-data-[state=collapsed]/sidebar-wrapper:size-4 group-data-[active=true]/menu-button:bg-primary/10 group-data-[active=true]/menu-button:text-primary"
                           >
                             <Icon
                               data-icon="inline-start"
@@ -220,7 +220,7 @@ function SidebarDockToggle() {
       size="icon-sm"
       aria-label="Toggle Sidebar"
       data-testid="app-sidebar-dock-toggle"
-      className="absolute right-0 bottom-3 z-10 size-7 translate-x-1/2 rounded-lg border-sidebar-border bg-background shadow-sm"
+      className="absolute right-0 bottom-3 z-10 size-7 translate-x-1/2 rounded-md border-sidebar-border bg-card shadow-sm"
       onClick={toggleSidebar}
     >
       {open ? <ChevronLeftIcon data-icon="icon" /> : <ChevronRightIcon data-icon="icon" />}

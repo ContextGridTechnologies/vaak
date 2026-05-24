@@ -88,8 +88,8 @@ describe("AppLayout", () => {
     expect(screen.queryByText("Workspace")).not.toBeInTheDocument();
     expect(screen.queryByTestId("app-sidebar-utility")).not.toBeInTheDocument();
     expect(screen.queryByText("User")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Voice" })).toHaveClass("h-9");
-    expect(screen.getByRole("button", { name: "Settings" })).toHaveClass("h-9");
+    expect(screen.getByRole("button", { name: "Voice" })).toHaveClass("h-8");
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveClass("h-8");
     expect(screen.getByTestId("app-sidebar-nav-icon-home")).toHaveClass(
       "lucide-audio-lines",
     );
