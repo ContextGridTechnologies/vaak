@@ -98,6 +98,7 @@ pub enum VoiceCapsuleAnchor {
     BottomRight,
     CenterLeft,
     CenterRight,
+    TopCenter,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -927,6 +928,30 @@ mod tests {
         assert!(json.contains("\"sidebarCollapsed\": true"));
         assert!(json.contains("\"voiceCapsulePlacement\""));
         assert!(json.contains("\"bottomRight\""));
+    }
+
+    #[test]
+    fn serializes_top_center_voice_capsule_anchor() {
+        let placement: VoiceCapsulePlacement = serde_json::from_str(
+            r#"{
+  "anchor": "topCenter",
+  "offsetX": 4.0,
+  "offsetY": 20.0
+}"#,
+        )
+        .unwrap();
+
+        let json = serde_json::to_string(&placement).unwrap();
+
+        assert!(json.contains("\"anchor\":\"topCenter\""));
+        assert_eq!(
+            placement,
+            VoiceCapsulePlacement {
+                anchor: VoiceCapsuleAnchor::TopCenter,
+                offset_x: Some(4.0),
+                offset_y: Some(20.0),
+            }
+        );
     }
 
     #[test]

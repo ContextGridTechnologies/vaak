@@ -69,6 +69,7 @@ pub fn resolve_voice_capsule_position(
     let centered_x = work_area.x + (work_area.width - VOICE_CAPSULE_WIDTH) / 2.0;
     let centered_y = work_area.y + (work_area.height - VOICE_CAPSULE_HEIGHT) / 2.0;
     let right_x = work_area.x + work_area.width - VOICE_CAPSULE_WIDTH - offset_x;
+    let top_y = work_area.y + offset_y;
     let bottom_y = work_area.y + work_area.height - VOICE_CAPSULE_HEIGHT - offset_y;
 
     match placement.anchor {
@@ -92,6 +93,10 @@ pub fn resolve_voice_capsule_position(
             x: right_x,
             y: centered_y + offset_y,
         },
+        VoiceCapsuleAnchor::TopCenter => CapsulePosition {
+            x: centered_x + offset_x,
+            y: top_y,
+        },
     }
 }
 
@@ -101,7 +106,7 @@ pub fn show_voice_capsule_window(window: &impl VoiceCapsuleWindow) -> Result<(),
 
 fn default_offset_x(anchor: VoiceCapsuleAnchor) -> f64 {
     match anchor {
-        VoiceCapsuleAnchor::BottomCenter => 0.0,
+        VoiceCapsuleAnchor::BottomCenter | VoiceCapsuleAnchor::TopCenter => 0.0,
         VoiceCapsuleAnchor::BottomLeft
         | VoiceCapsuleAnchor::BottomRight
         | VoiceCapsuleAnchor::CenterLeft
@@ -114,7 +119,8 @@ fn default_offset_y(anchor: VoiceCapsuleAnchor) -> f64 {
         VoiceCapsuleAnchor::CenterLeft | VoiceCapsuleAnchor::CenterRight => 0.0,
         VoiceCapsuleAnchor::BottomCenter
         | VoiceCapsuleAnchor::BottomLeft
-        | VoiceCapsuleAnchor::BottomRight => DEFAULT_EDGE_OFFSET,
+        | VoiceCapsuleAnchor::BottomRight
+        | VoiceCapsuleAnchor::TopCenter => DEFAULT_EDGE_OFFSET,
     }
 }
 
@@ -285,6 +291,28 @@ mod tests {
         );
 
         assert_eq!(position, CapsulePosition { x: 692.0, y: 800.0 });
+    }
+
+    #[test]
+    fn resolves_top_center_position_from_the_monitor_work_area() {
+        let placement: VoiceCapsulePlacement = serde_json::from_str(
+            r#"{
+  "anchor": "topCenter"
+}"#,
+        )
+        .unwrap();
+
+        let position = resolve_voice_capsule_position(
+            MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 860.0,
+            },
+            &placement,
+        );
+
+        assert_eq!(position, CapsulePosition { x: 692.0, y: 24.0 });
     }
 
     #[test]

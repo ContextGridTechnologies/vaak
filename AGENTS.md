@@ -67,6 +67,12 @@ All important UI changes should be checked with screenshots across desktop and m
 
 Use one internal provider interface and separate provider adapters.
 
+Before changing model calls, provider retries, activity retry behavior, or
+provider-specific error handling, read:
+
+- `docs/MODEL_CALLING_RETRY_BASE.md`
+- `docs/PROVIDER_SPECIFIC_RETRY.md`
+
 Initial provider targets:
 
 - OpenAI

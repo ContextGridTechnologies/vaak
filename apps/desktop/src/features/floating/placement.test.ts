@@ -32,6 +32,24 @@ describe("voice capsule placement", () => {
     });
   });
 
+  it("resolves a top-center placement below the work-area edge", () => {
+    const position = resolvePlacementPosition({
+      placement: {
+        anchor: "topCenter",
+      } as VoiceCapsulePlacement,
+      windowSize: {
+        width: 56,
+        height: 36,
+      },
+      workArea,
+    });
+
+    expect(position).toEqual({
+      x: 692,
+      y: 24,
+    });
+  });
+
   it("snaps a dropped capsule near the right edge to a bottom-right placement", () => {
     const placement = createSnapPlacementFromPosition({
       currentPosition: {
@@ -48,6 +66,26 @@ describe("voice capsule placement", () => {
     expect(placement).toEqual<VoiceCapsulePlacement>({
       anchor: "bottomRight",
       offsetX: 56,
+      offsetY: 28,
+    });
+  });
+
+  it("snaps a dropped capsule near the top center to a top-center placement", () => {
+    const placement = createSnapPlacementFromPosition({
+      currentPosition: {
+        x: 704,
+        y: 28,
+      },
+      windowSize: {
+        width: 56,
+        height: 36,
+      },
+      workArea,
+    });
+
+    expect(placement).toEqual({
+      anchor: "topCenter",
+      offsetX: 12,
       offsetY: 28,
     });
   });

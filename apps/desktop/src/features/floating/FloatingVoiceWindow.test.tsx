@@ -12,6 +12,7 @@ const {
   moveFloatingWindow,
   getFloatingWindowStartState,
   getFloatingMonitorWorkArea,
+  saveVoiceCapsulePlacement,
 } = vi.hoisted(() => ({
   useDictationLoop: vi.fn(),
   useDictationSession: vi.fn(),
@@ -19,6 +20,7 @@ const {
   moveFloatingWindow: vi.fn(),
   getFloatingWindowStartState: vi.fn(),
   getFloatingMonitorWorkArea: vi.fn(),
+  saveVoiceCapsulePlacement: vi.fn(),
 }));
 
 vi.mock("@/features/dictation/hooks/useDictationLoop", () => ({
@@ -33,7 +35,15 @@ vi.mock("@/lib/tauri", () => ({
   getOnboardingState,
   isTauriRuntime: () => true,
   listenToTauriEvent: vi.fn(async () => () => {}),
-  saveVoiceCapsulePlacement: vi.fn(async () => ({})),
+  saveVoiceCapsulePlacement,
+  voiceCapsuleAnchors: [
+    "bottomCenter",
+    "bottomLeft",
+    "bottomRight",
+    "centerLeft",
+    "centerRight",
+    "topCenter",
+  ],
 }));
 
 vi.mock("./window-controller", () => ({
@@ -49,6 +59,8 @@ describe("FloatingVoiceWindow", () => {
     Element.prototype.setPointerCapture = vi.fn();
     Element.prototype.releasePointerCapture = vi.fn();
     moveFloatingWindow.mockReset();
+    saveVoiceCapsulePlacement.mockReset();
+    saveVoiceCapsulePlacement.mockResolvedValue({});
     getFloatingWindowStartState.mockReset();
     getFloatingMonitorWorkArea.mockReset();
     getFloatingWindowStartState.mockResolvedValue({ x: 320, y: 640 });
@@ -153,6 +165,17 @@ describe("FloatingVoiceWindow", () => {
       "bg-white/14",
       "shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]",
     );
+  });
+
+  it("does not opt into Tauri native dragging while custom snap dragging is active", async () => {
+    render(<FloatingVoiceWindow />);
+
+    const button = await screen.findByRole("button", {
+      name: "Start recording",
+    });
+    const capsule = button.closest("section");
+
+    expect(capsule).not.toHaveAttribute("data-tauri-drag-region");
   });
 
   it("shows an animated wave and stops recording when pressed again", async () => {
@@ -297,6 +320,8 @@ describe("FloatingVoiceWindow", () => {
         button: 0,
         clientX: 340,
         clientY: 680,
+        screenX: 340,
+        screenY: 680,
         pointerId: 1,
       }),
     );
@@ -306,6 +331,8 @@ describe("FloatingVoiceWindow", () => {
         button: 0,
         clientX: 392,
         clientY: 712,
+        screenX: 392,
+        screenY: 712,
         pointerId: 1,
       }),
     );
@@ -315,6 +342,8 @@ describe("FloatingVoiceWindow", () => {
         button: 0,
         clientX: 392,
         clientY: 712,
+        screenX: 392,
+        screenY: 712,
         pointerId: 1,
       }),
     );
@@ -323,6 +352,184 @@ describe("FloatingVoiceWindow", () => {
     expect(startManualDictation).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(moveFloatingWindow).toHaveBeenCalled();
+    });
+  });
+
+  it("uses screen coordinates so moving the window does not feed back into drag deltas", async () => {
+    render(<FloatingVoiceWindow />);
+
+    const button = await screen.findByRole("button", {
+      name: "Start recording",
+    });
+
+    button.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 10,
+        clientY: 10,
+        screenX: 340,
+        screenY: 680,
+        pointerId: 1,
+      }),
+    );
+    button.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        button: 0,
+        clientX: 10,
+        clientY: 10,
+        screenX: 392,
+        screenY: 712,
+        pointerId: 1,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(moveFloatingWindow).toHaveBeenCalledWith({
+        x: 372,
+        y: 672,
+      });
+    });
+  });
+
+  it("stops dragging on pointer cancel", async () => {
+    render(<FloatingVoiceWindow />);
+
+    const button = await screen.findByRole("button", {
+      name: "Start recording",
+    });
+
+    button.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        screenX: 340,
+        screenY: 680,
+        pointerId: 1,
+      }),
+    );
+    button.dispatchEvent(
+      new PointerEvent("pointercancel", {
+        bubbles: true,
+        pointerId: 1,
+      }),
+    );
+    button.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        button: 0,
+        screenX: 392,
+        screenY: 712,
+        pointerId: 1,
+      }),
+    );
+
+    await Promise.resolve();
+
+    expect(moveFloatingWindow).not.toHaveBeenCalled();
+  });
+
+  it("ignores stale move callbacks after the pointer is released", async () => {
+    let resolveStartState: (position: { x: number; y: number }) => void;
+    getFloatingWindowStartState.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStartState = resolve;
+      }),
+    );
+
+    render(<FloatingVoiceWindow />);
+
+    const button = await screen.findByRole("button", {
+      name: "Start recording",
+    });
+
+    button.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        screenX: 340,
+        screenY: 680,
+        pointerId: 1,
+      }),
+    );
+    button.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        button: 0,
+        screenX: 392,
+        screenY: 712,
+        pointerId: 1,
+      }),
+    );
+    button.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        screenX: 704,
+        screenY: 28,
+        pointerId: 1,
+      }),
+    );
+
+    resolveStartState!({ x: 320, y: 640 });
+
+    await waitFor(() => {
+      expect(saveVoiceCapsulePlacement).toHaveBeenCalled();
+    });
+    expect(moveFloatingWindow).not.toHaveBeenCalledWith({
+      x: 372,
+      y: 672,
+    });
+  });
+
+  it("persists a top-center snap when dropped near the top center", async () => {
+    render(<FloatingVoiceWindow />);
+
+    const button = await screen.findByRole("button", {
+      name: "Start recording",
+    });
+
+    button.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 320,
+        clientY: 640,
+        screenX: 320,
+        screenY: 640,
+        pointerId: 1,
+      }),
+    );
+    button.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        button: 0,
+        clientX: 704,
+        clientY: 28,
+        screenX: 704,
+        screenY: 28,
+        pointerId: 1,
+      }),
+    );
+    button.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        button: 0,
+        clientX: 704,
+        clientY: 28,
+        screenX: 704,
+        screenY: 28,
+        pointerId: 1,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(saveVoiceCapsulePlacement).toHaveBeenCalledWith({
+        anchor: "topCenter",
+        offsetX: 12,
+        offsetY: 28,
+      });
     });
   });
 });

@@ -5,9 +5,24 @@ import {
   expectTauriCommand,
 } from "@/test/tauri";
 
-import { getAppShellPreferences, saveAppShellPreferences } from "./app-shell";
+import {
+  getAppShellPreferences,
+  saveAppShellPreferences,
+  voiceCapsuleAnchors,
+} from "./app-shell";
 
 describe("app shell Tauri API", () => {
+  it("publishes all voice capsule snap anchors including top center", () => {
+    expect(voiceCapsuleAnchors).toEqual([
+      "bottomCenter",
+      "bottomLeft",
+      "bottomRight",
+      "centerLeft",
+      "centerRight",
+      "topCenter",
+    ]);
+  });
+
   it("loads and saves non-secret app shell preferences through backend commands", async () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("get_app_shell_preferences", {

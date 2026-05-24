@@ -114,6 +114,8 @@ Useful docs:
 - `docs/POSITIONING.md`
 - `docs/OPEN_SOURCE_PRODUCT_BASELINE.md`
 - `docs/PROVIDER_STRATEGY.md`
+- `docs/MODEL_CALLING_RETRY_BASE.md`
+- `docs/PROVIDER_SPECIFIC_RETRY.md`
 - `docs/ARCHITECTURE.md`
 - `docs/DEVELOPMENT.md`
 - `docs/SECURITY.md`

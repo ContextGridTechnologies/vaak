@@ -283,10 +283,3 @@ body[data-window="voice-capsule"] #root {
   }
 }
 
-body[data-window="voice-capsule"] {
-  background: transparent;
-}
-
-body[data-window="voice-capsule"] #root {
-  background: transparent;
-}

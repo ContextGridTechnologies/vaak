@@ -6,6 +6,7 @@ export const voiceCapsuleAnchors = [
   "bottomRight",
   "centerLeft",
   "centerRight",
+  "topCenter",
 ] as const;
 
 export type VoiceCapsuleAnchor = (typeof voiceCapsuleAnchors)[number];

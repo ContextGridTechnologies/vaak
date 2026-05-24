@@ -1,5 +1,7 @@
 import type { VoiceCapsuleAnchor, VoiceCapsulePlacement } from "@/lib/tauri";
 
+import { DEFAULT_EDGE_OFFSET, SNAP_ANCHORS } from "./constants";
+
 export type { VoiceCapsulePlacement } from "@/lib/tauri";
 
 export type CapsuleWindowSize = {
@@ -19,8 +21,6 @@ export type CapsulePosition = {
   y: number;
 };
 
-const DEFAULT_EDGE_OFFSET = 24;
-
 export function resolvePlacementPosition({
   placement,
   windowSize,
@@ -35,6 +35,7 @@ export function resolvePlacementPosition({
   const centeredX = workArea.x + (workArea.width - windowSize.width) / 2;
   const centeredY = workArea.y + (workArea.height - windowSize.height) / 2;
   const rightX = workArea.x + workArea.width - windowSize.width - offsetX;
+  const topY = workArea.y + offsetY;
   const bottomY = workArea.y + workArea.height - windowSize.height - offsetY;
 
   switch (placement.anchor) {
@@ -63,6 +64,11 @@ export function resolvePlacementPosition({
         x: rightX,
         y: centeredY + offsetY,
       };
+    case "topCenter":
+      return {
+        x: centeredX + offsetX,
+        y: topY,
+      };
   }
 }
 
@@ -79,6 +85,7 @@ export function createSnapPlacementFromPosition({
   const centeredX = workArea.x + (workArea.width - windowSize.width) / 2;
   const centeredY = workArea.y + (workArea.height - windowSize.height) / 2;
   const rightEdge = workArea.x + workArea.width - windowSize.width - currentPosition.x;
+  const topEdge = currentPosition.y - workArea.y;
   const bottomEdge = workArea.y + workArea.height - windowSize.height - currentPosition.y;
 
   switch (anchor) {
@@ -112,6 +119,12 @@ export function createSnapPlacementFromPosition({
         offsetX: roundToTwo(rightEdge),
         offsetY: roundToTwo(currentPosition.y - centeredY),
       };
+    case "topCenter":
+      return {
+        anchor,
+        offsetX: roundToTwo(currentPosition.x - centeredX),
+        offsetY: roundToTwo(topEdge),
+      };
   }
 }
 
@@ -120,18 +133,10 @@ function nearestAnchor(
   windowSize: CapsuleWindowSize,
   workArea: WorkAreaRect,
 ): VoiceCapsuleAnchor {
-  const anchors: VoiceCapsuleAnchor[] = [
-    "bottomCenter",
-    "bottomLeft",
-    "bottomRight",
-    "centerLeft",
-    "centerRight",
-  ];
-
-  let nearest = anchors[0];
+  let nearest = SNAP_ANCHORS[0];
   let nearestDistance = Number.POSITIVE_INFINITY;
 
-  for (const anchor of anchors) {
+  for (const anchor of SNAP_ANCHORS) {
     const target = resolvePlacementPosition({
       placement: { anchor },
       windowSize,
@@ -152,7 +157,9 @@ function nearestAnchor(
 }
 
 function defaultOffsetX(anchor: VoiceCapsuleAnchor): number {
-  return anchor === "bottomCenter" ? 0 : DEFAULT_EDGE_OFFSET;
+  return anchor === "bottomCenter" || anchor === "topCenter"
+    ? 0
+    : DEFAULT_EDGE_OFFSET;
 }
 
 function defaultOffsetY(anchor: VoiceCapsuleAnchor): number {

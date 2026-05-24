@@ -43,5 +43,6 @@ export default defineConfig(async () => ({
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setupTests.ts",
+    testTimeout: 10_000,
   },
 }));

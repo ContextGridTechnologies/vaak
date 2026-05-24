@@ -1,58 +1,12 @@
-import {
-  type PointerEvent as ReactPointerEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import {
-  AlertCircleIcon,
-  CheckIcon,
-  Loader2Icon,
-  MicIcon,
-  SquareIcon,
-} from "lucide-react";
+import { useEffect } from "react";
 
-import { useDictationLoop } from "@/features/dictation/hooks/useDictationLoop";
-import { useDictationSession } from "@/features/dictation/hooks/useDictationSession";
-import {
-  getOnboardingState,
-  isTauriRuntime,
-  listenToTauriEvent,
-  saveVoiceCapsulePlacement,
-  type OnboardingState,
-} from "@/lib/tauri";
-import { cn } from "@/lib/utils";
-import {
-  createSnapPlacementFromPosition,
-  resolvePlacementPosition,
-} from "./placement";
-import {
-  getFloatingMonitorWorkArea,
-  getFloatingWindowStartState,
-  moveFloatingWindow,
-} from "./window-controller";
-
-const VOICE_CAPSULE_WIDTH = 56;
-const VOICE_CAPSULE_HEIGHT = 36;
-const DRAG_THRESHOLD = 6;
-const ONBOARDING_COMPLETED_EVENT = "vaak://onboarding-completed";
-
-type DragState = {
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
-  startWindowX: number;
-  startWindowY: number;
-  hasDragged: boolean;
-  positionReady: Promise<void>;
-};
+import { VoiceCapsule } from "./VoiceCapsule";
+import { useVoiceCapsuleDictation } from "./useVoiceCapsuleDictation";
+import { useVoiceCapsuleDrag } from "./useVoiceCapsuleDrag";
 
 export function FloatingVoiceWindow() {
-  const [sessionEnabled, setSessionEnabled] = useState(false);
-  const session = useDictationSession({ enabled: sessionEnabled });
-  const dictation = useDictationLoop(session);
-  const dragStateRef = useRef<DragState | null>(null);
-  const suppressClickRef = useRef(false);
+  const { dictation, session } = useVoiceCapsuleDictation();
+  const drag = useVoiceCapsuleDrag();
 
   useEffect(() => {
     document.documentElement.dataset.window = "voice-capsule";
@@ -66,66 +20,12 @@ export function FloatingVoiceWindow() {
     };
   }, []);
 
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
-    const loadOnboardingState = async () => {
-      try {
-        const state = await getOnboardingState();
-        if (!disposed) {
-          setSessionEnabled(state.completed);
-        }
-      } catch {
-        if (!disposed) {
-          setSessionEnabled(false);
-        }
-      }
-    };
-
-    void loadOnboardingState();
-    void listenToTauriEvent<OnboardingState>(
-      ONBOARDING_COMPLETED_EVENT,
-      (event) => {
-        setSessionEnabled(event.payload.completed);
-      },
-    ).then((detach) => {
-      if (disposed) {
-        detach();
-        return;
-      }
-      unlisten = detach;
-    });
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
-
   const state = dictation.state;
-  const message = dictation.message;
-  const audioLevel = session.audioLevel ?? 0;
   const isRecording = state === "recording";
   const isBusy = state === "transcribing" || state === "inserting";
-  const Icon =
-    state === "error"
-      ? AlertCircleIcon
-      : isRecording
-        ? SquareIcon
-        : isBusy
-          ? Loader2Icon
-          : state === "inserted"
-            ? CheckIcon
-            : MicIcon;
 
   const handleToggleRecording = () => {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
-
-    if (isBusy) {
+    if (drag.consumeSuppressedClick() || isBusy) {
       return;
     }
 
@@ -137,198 +37,13 @@ export function FloatingVoiceWindow() {
     void session.startManualDictation();
   };
 
-  const handlePointerDown = async (event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0 || !isTauriRuntime()) {
-      return;
-    }
-
-    const target = event.currentTarget;
-
-    target.setPointerCapture(event.pointerId);
-
-    const dragState: DragState = {
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startWindowX: 0,
-      startWindowY: 0,
-      hasDragged: false,
-      positionReady: Promise.resolve(),
-    };
-
-    dragState.positionReady = (async () => {
-      const position = await getFloatingWindowStartState();
-
-      dragState.startWindowX = position.x;
-      dragState.startWindowY = position.y;
-    })();
-
-    dragStateRef.current = dragState;
-  };
-
-  const handlePointerMove = async (event: ReactPointerEvent<HTMLElement>) => {
-    const dragState = dragStateRef.current;
-    if (!dragState || dragState.pointerId !== event.pointerId) {
-      return;
-    }
-
-    const deltaX = event.clientX - dragState.startClientX;
-    const deltaY = event.clientY - dragState.startClientY;
-
-    if (!dragState.hasDragged && Math.hypot(deltaX, deltaY) < DRAG_THRESHOLD) {
-      return;
-    }
-
-    dragState.hasDragged = true;
-    suppressClickRef.current = true;
-    await dragState.positionReady;
-    await moveFloatingWindow({
-      x: dragState.startWindowX + deltaX,
-      y: dragState.startWindowY + deltaY,
-    });
-  };
-
-  const handlePointerUp = async (event: ReactPointerEvent<HTMLElement>) => {
-    const dragState = dragStateRef.current;
-    dragStateRef.current = null;
-
-    if (!dragState || dragState.pointerId !== event.pointerId) {
-      return;
-    }
-
-    event.currentTarget.releasePointerCapture(event.pointerId);
-
-    if (!dragState.hasDragged) {
-      return;
-    }
-
-    await dragState.positionReady;
-
-    const deltaX = event.clientX - dragState.startClientX;
-    const deltaY = event.clientY - dragState.startClientY;
-    const workArea = await getFloatingMonitorWorkArea();
-
-    if (!workArea) {
-      return;
-    }
-    const currentPosition = {
-      x: dragState.startWindowX + deltaX,
-      y: dragState.startWindowY + deltaY,
-    };
-    const placement = createSnapPlacementFromPosition({
-      currentPosition,
-      windowSize: {
-        width: VOICE_CAPSULE_WIDTH,
-        height: VOICE_CAPSULE_HEIGHT,
-      },
-      workArea,
-    });
-    const snappedPosition = resolvePlacementPosition({
-      placement,
-      windowSize: {
-        width: VOICE_CAPSULE_WIDTH,
-        height: VOICE_CAPSULE_HEIGHT,
-      },
-      workArea,
-    });
-    await moveFloatingWindow(snappedPosition);
-    await saveVoiceCapsulePlacement(placement);
-  };
-
   return (
-    <main className="h-full w-full bg-transparent p-1.5">
-      <section
-        className={cn(
-          "flex h-full w-full items-center gap-1 overflow-hidden rounded-full border border-white/15 bg-neutral-950/92 px-[3px] py-[2px] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
-          state === "recording" && "border-emerald-400/45",
-          isBusy && "border-sky-400/35",
-          state === "inserted" && "border-emerald-400/35",
-          state === "error" && "border-rose-500/45",
-        )}
-        data-tauri-drag-region
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-      >
-        <button
-          type="button"
-          className={cn(
-            "flex size-5 shrink-0 items-center justify-center rounded-full border border-white/14 bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition-colors hover:bg-white/18 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/55 focus-visible:ring-offset-0",
-            state === "recording" && "bg-emerald-400/20 text-emerald-100",
-            isBusy && "bg-sky-400/20 text-sky-100",
-            state === "inserted" && "bg-emerald-400/18 text-emerald-100",
-            state === "error" && "bg-rose-500/18 text-rose-100",
-          )}
-          onClick={handleToggleRecording}
-          disabled={isBusy}
-          aria-label={
-            isRecording
-              ? "Stop recording"
-              : isBusy
-                ? "Dictation busy"
-                : "Start recording"
-          }
-          aria-pressed={isRecording}
-        >
-          <Icon
-            className={cn("size-3", isBusy && "animate-spin")}
-            aria-hidden="true"
-          />
-        </button>
-
-        <div
-          className="flex h-5 min-w-4 items-center justify-center pr-px"
-          data-tauri-drag-region
-        >
-          {isRecording ? (
-            <div
-              className="voice-wave-active flex items-end gap-0.5"
-              aria-label="Recording wave"
-            >
-              <span
-                className="voice-wave-bar"
-                style={meterStyle(audioLevel, 0.72)}
-              />
-              <span
-                className="voice-wave-bar"
-                style={meterStyle(audioLevel, 1)}
-              />
-              <span
-                className="voice-wave-bar"
-                style={meterStyle(audioLevel, 0.84)}
-              />
-            </div>
-          ) : isBusy ? (
-            <div
-              className="voice-wave-active flex items-end gap-0.5"
-              aria-label={
-                state === "transcribing" ? "Transcribing audio" : "Inserting text"
-              }
-            >
-              <span className="voice-wave-bar h-1.5" />
-              <span className="voice-wave-bar h-2.5" />
-              <span className="voice-wave-bar h-2" />
-            </div>
-          ) : (
-            <div className="flex items-end gap-0.5 opacity-55" aria-hidden="true">
-              <span className="block h-1 w-[2px] rounded-full bg-white/45" />
-              <span className="block h-2 w-[2px] rounded-full bg-white/35" />
-              <span className="block h-1.5 w-[2px] rounded-full bg-white/25" />
-            </div>
-          )}
-        </div>
-
-        <span className="sr-only" aria-live="polite">
-          {message}
-        </span>
-      </section>
-    </main>
+    <VoiceCapsule
+      audioLevel={session.audioLevel ?? 0}
+      message={drag.movementError ?? dictation.message}
+      onToggleRecording={handleToggleRecording}
+      state={drag.movementError ? "error" : state}
+      {...drag.pointerHandlers}
+    />
   );
-}
-
-function meterStyle(audioLevel: number, multiplier: number) {
-  const height = 6 + Math.round(audioLevel * multiplier * 12);
-  return {
-    height: `${height}px`,
-  };
 }
