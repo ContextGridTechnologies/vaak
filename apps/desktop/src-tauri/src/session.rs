@@ -4,6 +4,10 @@ use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+#[cfg(target_os = "macos")]
+mod macos_hotkey;
+#[cfg(target_os = "macos")]
+use std::thread;
 #[cfg(windows)]
 use std::{thread, time::Duration};
 #[cfg(windows)]
@@ -12,6 +16,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 
 const HOTKEY_EVENT: &str = "vaak://session-hotkey";
+#[cfg(target_os = "macos")]
+pub const DEFAULT_DICTATION_BINDING_LABEL: &str = "Control+Command";
+#[cfg(not(target_os = "macos"))]
 pub const DEFAULT_DICTATION_BINDING_LABEL: &str = "Ctrl+Win";
 
 #[derive(Clone, Debug)]
@@ -35,15 +42,24 @@ impl ModifierHotkey {
     fn label(&self) -> String {
         let mut parts = Vec::new();
         if self.ctrl {
+            #[cfg(target_os = "macos")]
+            parts.push("Control");
+            #[cfg(not(target_os = "macos"))]
             parts.push("Ctrl");
         }
         if self.shift {
             parts.push("Shift");
         }
         if self.win {
+            #[cfg(target_os = "macos")]
+            parts.push("Command");
+            #[cfg(not(target_os = "macos"))]
             parts.push("Win");
         }
         if self.alt {
+            #[cfg(target_os = "macos")]
+            parts.push("Option");
+            #[cfg(not(target_os = "macos"))]
             parts.push("Alt");
         }
         parts.join("+")
@@ -193,7 +209,15 @@ pub fn start_hotkey_monitor<R: Runtime + 'static>(app: &AppHandle<R>, store: &Se
         });
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let app = app.clone();
+        thread::spawn(move || {
+            macos_hotkey::monitor_loop(app);
+        });
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = app;
         let _ = store;
@@ -248,13 +272,28 @@ fn parse_hotkey(shortcut: &str, allow_alt: bool) -> Result<ModifierHotkey, Strin
         match token.to_ascii_lowercase().as_str() {
             "ctrl" | "control" => hotkey.ctrl = true,
             "shift" => hotkey.shift = true,
+            #[cfg(target_os = "macos")]
+            "cmd" | "command" | "meta" | "super" | "win" | "windows" => hotkey.win = true,
+            #[cfg(not(target_os = "macos"))]
             "win" | "windows" | "meta" | "super" => hotkey.win = true,
+            #[cfg(target_os = "macos")]
+            "option" if allow_alt => hotkey.alt = true,
+            #[cfg(target_os = "macos")]
+            "option" => return Err("Option is reserved for command mode.".to_string()),
             "alt" if allow_alt => hotkey.alt = true,
+            #[cfg(target_os = "macos")]
+            "alt" => return Err("Option is reserved for command mode.".to_string()),
+            #[cfg(not(target_os = "macos"))]
             "alt" => return Err("Alt is reserved for command mode.".to_string()),
             _ => {
+                #[cfg(target_os = "macos")]
+                return Err(
+                    "Use only Control, Shift, and Command for the dictation shortcut.".to_string(),
+                );
+                #[cfg(not(target_os = "macos"))]
                 return Err(
                     "Use only Ctrl, Shift, and Windows for the dictation shortcut.".to_string(),
-                )
+                );
             }
         }
     }
@@ -298,7 +337,6 @@ fn is_alt_down() -> bool {
     is_key_down(VK_MENU.0 as i32)
 }
 
-#[cfg(windows)]
 fn transition_mode<R: Runtime>(app: &AppHandle<R>, from: ActiveMode, to: ActiveMode) {
     match from {
         ActiveMode::Dictation => emit_dictation_stop(app),
@@ -313,7 +351,6 @@ fn transition_mode<R: Runtime>(app: &AppHandle<R>, from: ActiveMode, to: ActiveM
     }
 }
 
-#[cfg(windows)]
 fn emit_dictation_start<R: Runtime>(app: &AppHandle<R>) {
     let bindings = app.state::<SessionStore>().hotkey_bindings();
     let payload = match platform::get_focused_field() {
@@ -340,7 +377,6 @@ fn emit_dictation_start<R: Runtime>(app: &AppHandle<R>) {
     let _ = app.emit(HOTKEY_EVENT, payload);
 }
 
-#[cfg(windows)]
 fn emit_dictation_stop<R: Runtime>(app: &AppHandle<R>) {
     let shortcut = app.state::<SessionStore>().hotkey_bindings().dictation;
     let _ = app.emit(
@@ -355,7 +391,6 @@ fn emit_dictation_stop<R: Runtime>(app: &AppHandle<R>) {
     );
 }
 
-#[cfg(windows)]
 fn emit_command_start<R: Runtime>(app: &AppHandle<R>) {
     let shortcut = app.state::<SessionStore>().hotkey_bindings().command;
     let _ = app.emit(
@@ -370,7 +405,6 @@ fn emit_command_start<R: Runtime>(app: &AppHandle<R>) {
     );
 }
 
-#[cfg(windows)]
 fn emit_command_stop<R: Runtime>(app: &AppHandle<R>) {
     let shortcut = app.state::<SessionStore>().hotkey_bindings().command;
     let _ = app.emit(
@@ -391,14 +425,33 @@ mod tests {
 
     #[test]
     fn normalizes_modifier_only_dictation_hotkeys() {
-        assert_eq!(
-            normalize_dictation_hotkey_label(" win + ctrl ").unwrap(),
-            "Ctrl+Win"
-        );
-        assert_eq!(
-            normalize_dictation_hotkey_label("shift+ctrl").unwrap(),
-            "Ctrl+Shift"
-        );
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(
+                normalize_dictation_hotkey_label(" win + ctrl ").unwrap(),
+                "Ctrl+Win"
+            );
+            assert_eq!(
+                normalize_dictation_hotkey_label("shift+ctrl").unwrap(),
+                "Ctrl+Shift"
+            );
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(
+                normalize_dictation_hotkey_label(" cmd + ctrl ").unwrap(),
+                "Control+Command"
+            );
+            assert_eq!(
+                normalize_dictation_hotkey_label("shift+control").unwrap(),
+                "Control+Shift"
+            );
+            assert_eq!(
+                normalize_dictation_hotkey_label("meta+control").unwrap(),
+                "Control+Command"
+            );
+        }
     }
 
     #[test]
@@ -410,10 +463,25 @@ mod tests {
 
     #[test]
     fn derives_command_binding_from_dictation_binding() {
-        assert_eq!(command_binding_label("Ctrl+Win").unwrap(), "Ctrl+Win+Alt");
-        assert_eq!(
-            command_binding_label("Ctrl+Shift").unwrap(),
-            "Ctrl+Shift+Alt"
-        );
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(command_binding_label("Ctrl+Win").unwrap(), "Ctrl+Win+Alt");
+            assert_eq!(
+                command_binding_label("Ctrl+Shift").unwrap(),
+                "Ctrl+Shift+Alt"
+            );
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(
+                command_binding_label("Control+Command").unwrap(),
+                "Control+Command+Option"
+            );
+            assert_eq!(
+                command_binding_label("Control+Shift").unwrap(),
+                "Control+Shift+Option"
+            );
+        }
     }
 }

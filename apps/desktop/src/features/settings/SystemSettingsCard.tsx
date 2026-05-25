@@ -15,6 +15,7 @@ import {
 
 export function SystemSettingsCard() {
   const [launchOnStartup, setLaunchOnStartup] = useState(true);
+  const [showSkippedTranscripts, setShowSkippedTranscripts] = useState(false);
   const [analyticsEnabled, setAnalyticsEnabled] = useState(() =>
     getTelemetryEnabledPreference(window.localStorage),
   );
@@ -31,6 +32,7 @@ export function SystemSettingsCard() {
       .then((settings) => {
         if (!cancelled) {
           setLaunchOnStartup(settings.launchOnStartup);
+          setShowSkippedTranscripts(settings.showSkippedTranscripts);
           setError(null);
         }
       })
@@ -54,14 +56,41 @@ export function SystemSettingsCard() {
     try {
       const savedSettings = await saveSystemSettings({
         launchOnStartup: nextValue,
+        showSkippedTranscripts,
       });
       setLaunchOnStartup(savedSettings.launchOnStartup);
+      setShowSkippedTranscripts(savedSettings.showSkippedTranscripts);
       analytics.capture("setting_changed", {
         enabled: savedSettings.launchOnStartup,
         setting_id: "launch_on_startup",
       });
     } catch (err) {
       setLaunchOnStartup(previousValue);
+      setError(normalizeError(err));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleSkippedTranscriptsChange(nextValue: boolean) {
+    const previousValue = showSkippedTranscripts;
+    setShowSkippedTranscripts(nextValue);
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const savedSettings = await saveSystemSettings({
+        launchOnStartup,
+        showSkippedTranscripts: nextValue,
+      });
+      setLaunchOnStartup(savedSettings.launchOnStartup);
+      setShowSkippedTranscripts(savedSettings.showSkippedTranscripts);
+      analytics.capture("setting_changed", {
+        enabled: savedSettings.showSkippedTranscripts,
+        setting_id: "show_skipped_transcripts",
+      });
+    } catch (err) {
+      setShowSkippedTranscripts(previousValue);
       setError(normalizeError(err));
     } finally {
       setIsSaving(false);
@@ -107,6 +136,25 @@ export function SystemSettingsCard() {
           checked={launchOnStartup}
           disabled={isSaving}
           onCheckedChange={(nextValue) => void handleStartupChange(nextValue)}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/60 p-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-sm font-medium text-foreground">
+            Skipped transcripts
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Show skipped no-op transcription attempts in Voice Activity.
+          </p>
+        </div>
+        <Switch
+          aria-label="Show skipped transcripts in Voice Activity"
+          checked={showSkippedTranscripts}
+          disabled={isSaving}
+          onCheckedChange={(nextValue) =>
+            void handleSkippedTranscriptsChange(nextValue)
+          }
         />
       </div>
 

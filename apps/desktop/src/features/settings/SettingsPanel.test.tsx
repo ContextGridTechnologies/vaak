@@ -114,6 +114,7 @@ describe("SettingsPanel provider setup", () => {
     });
     providerApi.getSystemSettings.mockResolvedValue({
       launchOnStartup: true,
+      showSkippedTranscripts: false,
     });
     providerApi.saveSystemSettings.mockImplementation((settings) =>
       Promise.resolve(settings),
@@ -298,6 +299,7 @@ describe("SettingsPanel provider setup", () => {
     await waitFor(() => {
       expect(providerApi.saveSystemSettings).toHaveBeenCalledWith({
         launchOnStartup: false,
+        showSkippedTranscripts: false,
       });
     });
     expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
@@ -305,6 +307,39 @@ describe("SettingsPanel provider setup", () => {
       {
         enabled: false,
         setting_id: "launch_on_startup",
+      },
+    );
+  });
+
+  it("keeps skipped transcript rows hidden by default with an application setting", async () => {
+    const user = userEvent.setup();
+    renderApp(<SettingsPanel />);
+
+    const systemCard = (await screen.findByText("System setting")).closest(
+      '[data-slot="card"]',
+    ) as HTMLElement | null;
+    expect(systemCard).not.toBeNull();
+    expect(within(systemCard!).getByText("Skipped transcripts")).toBeInTheDocument();
+
+    const toggle = within(systemCard!).getByRole("switch", {
+      name: "Show skipped transcripts in Voice Activity",
+    });
+    expect(toggle).not.toBeChecked();
+
+    await user.click(toggle);
+
+    expect(toggle).toBeChecked();
+    await waitFor(() => {
+      expect(providerApi.saveSystemSettings).toHaveBeenCalledWith({
+        launchOnStartup: true,
+        showSkippedTranscripts: true,
+      });
+    });
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "setting_changed",
+      {
+        enabled: true,
+        setting_id: "show_skipped_transcripts",
       },
     );
   });

@@ -30,6 +30,16 @@ pub struct CaptureInsertResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionStatus {
+    pub id: String,
+    pub label: String,
+    pub required: bool,
+    pub granted: bool,
+    pub guidance: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlatformError {
     pub code: String,
     pub message: String,
@@ -41,6 +51,11 @@ impl PlatformError {
             code: code.into(),
             message: message.into(),
         }
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    pub fn permission_denied(permission: &str, message: impl Into<String>) -> Self {
+        Self::new(format!("{permission}_permission_denied"), message)
     }
 
     #[cfg(any(not(windows), test))]
@@ -70,5 +85,16 @@ mod tests {
 
         assert_eq!(err.code, "unsupported");
         assert_eq!(err.message, "insert_text is not available on macOS yet");
+    }
+
+    #[test]
+    fn permission_errors_name_the_missing_permission() {
+        let err = PlatformError::permission_denied(
+            "accessibility",
+            "Grant Accessibility access to continue.",
+        );
+
+        assert_eq!(err.code, "accessibility_permission_denied");
+        assert_eq!(err.message, "Grant Accessibility access to continue.");
     }
 }

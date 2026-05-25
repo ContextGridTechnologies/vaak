@@ -267,22 +267,31 @@ export function useDictationLoop(
       try {
         const transcriptionStartedAt = now();
         const transcriptionResults = await Promise.all(
-          transcriptionSegments.map((segmentBlob) =>
-            transcribeRecording({
-              providerId,
-              audioBlob: segmentBlob,
-              language: "en",
-            }),
-          ),
+          transcriptionSegments.map(async (segmentBlob) => {
+            try {
+              return await transcribeRecording({
+                providerId,
+                audioBlob: segmentBlob,
+                language: "en",
+              });
+            } catch (err) {
+              if (isBlankProviderTranscription(err)) {
+                return null;
+              }
+
+              throw err;
+            }
+          }),
         );
         transcriptionMs = elapsedMs(transcriptionStartedAt);
-        const firstTranscriptionResult = transcriptionResults[0] ?? null;
+        const firstTranscriptionResult =
+          transcriptionResults.find((result) => result !== null) ?? null;
         transcriptionContext = {
           providerId: firstTranscriptionResult?.providerId ?? providerId,
           modelId: firstTranscriptionResult?.model ?? null,
         };
         text = transcriptionResults
-          .map((result) => result.text.trim())
+          .map((result) => result?.text.trim() ?? "")
           .filter((value) => value.length > 0)
           .join(" ");
       } catch (err) {
@@ -575,6 +584,15 @@ function shouldFallbackToRawTranscription(captureAnalysis: CaptureAnalysis | nul
   }
 
   return captureAnalysis.metrics.peakDbfs >= RAW_TRANSCRIPTION_FALLBACK_PEAK_DBFS;
+}
+
+function isBlankProviderTranscription(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "invalid_provider_response"
+  );
 }
 
 function captureMessage(reason: CaptureReason): string {

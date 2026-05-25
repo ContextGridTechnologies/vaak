@@ -1,6 +1,6 @@
 use crate::platform;
 use crate::platform::common::{
-    CaptureInsertResult, FocusedFieldInfo, PlatformError, TextInsertResult,
+    CaptureInsertResult, FocusedFieldInfo, PermissionStatus, PlatformError, TextInsertResult,
 };
 use crate::providers::credentials;
 use crate::providers::errors::{ProviderError, ProviderFailure};
@@ -45,6 +45,16 @@ pub fn insert_text(text: String) -> Result<TextInsertResult, PlatformError> {
 #[tauri::command]
 pub fn capture_and_insert(text: String) -> Result<CaptureInsertResult, PlatformError> {
     platform::capture_and_insert(&text)
+}
+
+#[tauri::command]
+pub fn get_accessibility_permission_status() -> PermissionStatus {
+    platform::accessibility_permission_status()
+}
+
+#[tauri::command]
+pub fn get_input_monitoring_permission_status() -> PermissionStatus {
+    platform::input_monitoring_permission_status()
 }
 
 #[tauri::command]

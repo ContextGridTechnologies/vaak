@@ -16,6 +16,7 @@ vi.mock("./retryAudioProcessing", () => ({
 
 const {
   getRecentDictationRecords,
+  getSystemSettings,
   persistDictationAudio,
   saveDictationRecord,
   updateDictationRecord,
@@ -26,6 +27,7 @@ const {
   sanitizeTargetControlName,
 } = vi.hoisted(() => ({
   getRecentDictationRecords: vi.fn(),
+  getSystemSettings: vi.fn(),
   persistDictationAudio: vi.fn(),
   saveDictationRecord: vi.fn(),
   updateDictationRecord: vi.fn(),
@@ -39,6 +41,7 @@ const {
 vi.mock("@/lib/tauri", () => ({
   exportSavedDictationAudio,
   getRecentDictationRecords,
+  getSystemSettings,
   persistDictationAudio,
   saveDictationRecord,
   updateDictationRecord,
@@ -107,6 +110,10 @@ describe("HomePanel", () => {
     globalThis.IntersectionObserver =
       MockIntersectionObserver as unknown as typeof IntersectionObserver;
     isTauriRuntime.mockReturnValue(true);
+    getSystemSettings.mockResolvedValue({
+      launchOnStartup: true,
+      showSkippedTranscripts: false,
+    });
     loadSavedDictationAudio.mockResolvedValue({
       audioBytes: new Uint8Array([1, 2, 3]),
       mimeType: "audio/webm",
@@ -294,8 +301,13 @@ describe("HomePanel", () => {
     expect(screen.queryByText("this minute")).not.toBeInTheDocument();
   });
 
-  it("keeps skipped and failed badges visible in activity rows", async () => {
+  it("hides skipped activity rows by default while keeping failed rows visible", async () => {
     getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "inserted-record",
+        capturedAt: "2025-05-19T10:25:31Z",
+        finalText: "Inserted transcript",
+      }),
       makeRecord({
         recordId: "skipped-record",
         capturedAt: "2025-05-19T10:24:31Z",
@@ -316,8 +328,36 @@ describe("HomePanel", () => {
       expect(screen.getByText("Voice Activity")).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/^Skipped$/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Skipped$/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Skipped transcript")).not.toBeInTheDocument();
+    expect(screen.queryByText("0 skipped")).not.toBeInTheDocument();
+    expect(screen.getByText("1 inserted")).toBeInTheDocument();
     expect(screen.getByText(/^Failed$/)).toBeInTheDocument();
+  });
+
+  it("shows skipped activity rows when the application setting is enabled", async () => {
+    getSystemSettings.mockResolvedValue({
+      launchOnStartup: true,
+      showSkippedTranscripts: true,
+    });
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "skipped-record",
+        capturedAt: "2025-05-19T10:24:31Z",
+        finalText: "Skipped transcript",
+        insertionStatus: "skipped",
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Voice Activity")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/^Skipped$/)).toBeInTheDocument();
+    expect(screen.getByText("1 skipped")).toBeInTheDocument();
+    expect(screen.getByText("Skipped transcript")).toBeInTheDocument();
   });
 
   it("updates the failed activity row when retry recovers transcript text", async () => {

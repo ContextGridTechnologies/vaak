@@ -35,6 +35,93 @@ describe("VoiceSetupPanel", () => {
     expect(screen.getAllByText("Desktop required")).toHaveLength(1);
   });
 
+  it("shows macOS accessibility guidance when focused app access is required", () => {
+    renderApp(
+      <VoiceSetupPanel
+        accessibilityPermission={{
+          granted: false,
+          guidance:
+            "Grant Accessibility access to Vaak in System Settings > Privacy & Security > Accessibility.",
+          id: "accessibility",
+          label: "Accessibility",
+          required: true,
+        }}
+        hasMicrophonePermission
+        tauriAvailable={true}
+      />,
+    );
+
+    expect(screen.getByText("Accessibility")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Grant Accessibility access to Vaak in System Settings > Privacy & Security > Accessibility.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Needs access")).toHaveLength(1);
+  });
+
+  it("shows macOS input monitoring guidance when global shortcut access is required", () => {
+    renderApp(
+      <VoiceSetupPanel
+        inputMonitoringPermission={{
+          granted: false,
+          guidance:
+            "Grant Input Monitoring access to Vaak in System Settings > Privacy & Security > Input Monitoring.",
+          id: "input_monitoring",
+          label: "Input Monitoring",
+          required: true,
+        }}
+        hasMicrophonePermission
+        tauriAvailable={true}
+      />,
+    );
+
+    expect(screen.getByText("Input Monitoring")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Grant Input Monitoring access to Vaak in System Settings > Privacy & Security > Input Monitoring.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Needs access")).toHaveLength(1);
+  });
+
+  it("hides input monitoring status when the platform does not require it", () => {
+    renderApp(
+      <VoiceSetupPanel
+        inputMonitoringPermission={{
+          granted: true,
+          guidance:
+            "Input Monitoring permission is not required on this platform.",
+          id: "input_monitoring",
+          label: "Input Monitoring",
+          required: false,
+        }}
+        hasMicrophonePermission
+        tauriAvailable={true}
+      />,
+    );
+
+    expect(screen.queryByText("Input Monitoring")).not.toBeInTheDocument();
+  });
+
+  it("hides accessibility status when the platform does not require it", () => {
+    renderApp(
+      <VoiceSetupPanel
+        accessibilityPermission={{
+          granted: true,
+          guidance: "Accessibility permission is not required on this platform.",
+          id: "accessibility",
+          label: "Accessibility",
+          required: false,
+        }}
+        hasMicrophonePermission
+        tauriAvailable={true}
+      />,
+    );
+
+    expect(screen.queryByText("Accessibility")).not.toBeInTheDocument();
+  });
+
   it("renders all configured provider setup cards", () => {
     renderApp(
       <VoiceSetupPanel hasMicrophonePermission tauriAvailable={true} />,

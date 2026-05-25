@@ -1,6 +1,6 @@
 [package]
 name = "vaak-desktop"
-version = "0.1.9"
+version = "0.1.10"
 description = "Open-source, local-first voice input for desktop workflows."
 authors = ["Vaak Contributors"]
 edition = "2021"
@@ -52,6 +52,9 @@ windows-sys = { version = "0.59", features = [
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSColor", "NSWindow", "objc2-core-foundation"] }
 
 [profile.release]
 codegen-units = 1

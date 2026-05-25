@@ -2,6 +2,7 @@ import { invokeTauri } from "./runtime";
 
 export type SystemSettings = {
   launchOnStartup: boolean;
+  showSkippedTranscripts: boolean;
 };
 
 export async function getSystemSettings(): Promise<SystemSettings> {

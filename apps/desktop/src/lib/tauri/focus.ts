@@ -23,6 +23,14 @@ export type CaptureInsertResult = {
   insert: TextInsertResult;
 };
 
+export type PermissionStatus = {
+  id: string;
+  label: string;
+  required: boolean;
+  granted: boolean;
+  guidance: string;
+};
+
 export type SessionHotkeyEvent = {
   mode: "dictation" | "command";
   phase: "start" | "stop";
@@ -52,6 +60,14 @@ export async function captureAndInsert(
   text: string,
 ): Promise<CaptureInsertResult> {
   return invokeTauri("capture_and_insert", { text });
+}
+
+export async function getAccessibilityPermissionStatus(): Promise<PermissionStatus> {
+  return invokeTauri("get_accessibility_permission_status");
+}
+
+export async function getInputMonitoringPermissionStatus(): Promise<PermissionStatus> {
+  return invokeTauri("get_input_monitoring_permission_status");
 }
 
 export async function insertIntoActiveTarget(
