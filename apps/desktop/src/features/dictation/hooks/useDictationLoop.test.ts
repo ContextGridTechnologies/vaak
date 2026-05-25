@@ -538,6 +538,115 @@ describe("useDictationLoop", () => {
     });
   });
 
+  it("ignores blank provider responses from individual segments and inserts the remaining transcript", async () => {
+    const audioBlob = recordingBlob();
+    const firstSegment = new Blob(["blank"], { type: "audio/wav" });
+    const secondSegment = new Blob(["spoken"], { type: "audio/wav" });
+    transcribeRecording.mockImplementation(async ({ audioBlob: nextBlob }) => {
+      if (nextBlob === firstSegment) {
+        return Promise.reject({ code: "invalid_provider_response" });
+      }
+
+      return {
+        durationMs: 500,
+        model: "gpt-4o-mini-transcribe",
+        providerId: "openai",
+        text: "world",
+      };
+    });
+
+    renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 1800,
+              leadingTrimMs: 110,
+              trailingTrimMs: 150,
+              longestPauseMs: 940,
+              estimatedSnrDb: 18,
+              averageDbfs: -19,
+              peakDbfs: -7,
+            },
+            processedAudio: new Blob(["processed"], { type: "audio/wav" }),
+            transcriptionSegments: [firstSegment, secondSegment],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("world");
+    });
+
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        insertion: expect.objectContaining({
+          status: "inserted",
+        }),
+        transcript: {
+          characterCount: 5,
+          finalText: "world",
+          rawText: "world",
+        },
+      }),
+    );
+  });
+
+  it("skips insertion when all segments return blank provider responses", async () => {
+    const audioBlob = recordingBlob();
+    const firstSegment = new Blob(["blank-a"], { type: "audio/wav" });
+    const secondSegment = new Blob(["blank-b"], { type: "audio/wav" });
+    transcribeRecording.mockRejectedValue({ code: "invalid_provider_response" });
+
+    const { result } = renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 1800,
+              leadingTrimMs: 110,
+              trailingTrimMs: 150,
+              longestPauseMs: 940,
+              estimatedSnrDb: 18,
+              averageDbfs: -19,
+              peakDbfs: -7,
+            },
+            processedAudio: new Blob(["processed"], { type: "audio/wav" }),
+            transcriptionSegments: [firstSegment, secondSegment],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(result.current.message).toBe("Nothing to insert.");
+    });
+
+    expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        insertion: {
+          errorCode: null,
+          errorMessage: null,
+          method: null,
+          status: "skipped",
+        },
+        transcript: {
+          characterCount: 0,
+          finalText: "",
+          rawText: "",
+        },
+      }),
+    );
+  });
+
   it("uses the raw recording for AssemblyAI even when processed audio is available", async () => {
     const audioBlob = recordingBlob();
     const processedSegment = new Blob(["processed"], { type: "audio/wav" });

@@ -9,10 +9,16 @@ const APP_DARK_TITLE_TEXT_COLORREF: u32 = colorref_from_rgb(0xEA, 0xED, 0xF0);
 const VOICE_CAPSULE_WIDTH: f64 = 56.0;
 const VOICE_CAPSULE_HEIGHT: f64 = 36.0;
 const DEFAULT_EDGE_OFFSET: f64 = 24.0;
+#[cfg(any(target_os = "macos", test))]
+const APP_BACKGROUND_RGB: (u8, u8, u8) = (0xF8, 0xFA, 0xFC);
+#[cfg(any(target_os = "macos", test))]
+const APP_DARK_BACKGROUND_RGB: (u8, u8, u8) = (0x0F, 0x14, 0x1B);
 
 pub trait VoiceCapsuleWindow {
     fn set_shadow(&self, shadow: bool) -> Result<(), String>;
     fn set_background_color(&self, color: Color) -> Result<(), String>;
+    fn set_always_on_top(&self, always_on_top: bool) -> Result<(), String>;
+    fn prepare_native_voice_capsule(&self) -> Result<(), String>;
     fn set_logical_size(&self, width: f64, height: f64) -> Result<(), String>;
     fn current_monitor_work_area(&self) -> Result<Option<MonitorWorkArea>, String>;
     fn set_logical_position(&self, x: f64, y: f64) -> Result<(), String>;
@@ -98,7 +104,7 @@ fn apply_native_window_titlebar_color(
     Ok(())
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn apply_native_window_titlebar_color(
     _window: &tauri::Window,
     _theme: tauri::Theme,
@@ -151,11 +157,59 @@ fn set_dwm_bool_attribute(
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn apply_native_titlebar_color<R: tauri::Runtime>(
     _window: &WebviewWindow<R>,
     _theme: tauri::Theme,
 ) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn apply_native_window_titlebar_color(
+    window: &tauri::Window,
+    theme: tauri::Theme,
+) -> Result<(), String> {
+    apply_macos_main_window_chrome(window.ns_window().map_err(|err| err.to_string())?, theme)
+}
+
+#[cfg(target_os = "macos")]
+fn apply_native_titlebar_color<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    theme: tauri::Theme,
+) -> Result<(), String> {
+    apply_macos_main_window_chrome(window.ns_window().map_err(|err| err.to_string())?, theme)
+}
+
+#[cfg(target_os = "macos")]
+fn apply_macos_main_window_chrome(
+    ns_window: *mut std::ffi::c_void,
+    theme: tauri::Theme,
+) -> Result<(), String> {
+    use objc2_app_kit::{NSColor, NSWindow, NSWindowTitleVisibility};
+
+    if ns_window.is_null() {
+        return Err("main window NSWindow was not available".to_string());
+    }
+
+    let (red, green, blue) = macos_main_window_background(theme);
+    let background_color = NSColor::colorWithSRGBRed_green_blue_alpha(
+        f64::from(red) / 255.0,
+        f64::from(green) / 255.0,
+        f64::from(blue) / 255.0,
+        1.0,
+    );
+
+    // Keep AppKit's standard traffic-light controls while removing the
+    // duplicate native title text and matching the titlebar to the app shell.
+    unsafe {
+        let ns_window = &*(ns_window.cast::<NSWindow>());
+        ns_window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
+        ns_window.setTitlebarAppearsTransparent(true);
+        ns_window.setBackgroundColor(Some(&background_color));
+        ns_window.setMovableByWindowBackground(true);
+    }
+
     Ok(())
 }
 
@@ -181,12 +235,22 @@ fn native_titlebar_theme(theme: tauri::Theme) -> NativeTitlebarTheme {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn macos_main_window_background(theme: tauri::Theme) -> (u8, u8, u8) {
+    match theme {
+        tauri::Theme::Dark => APP_DARK_BACKGROUND_RGB,
+        _ => APP_BACKGROUND_RGB,
+    }
+}
+
 pub fn prepare_voice_capsule_window(
     window: &impl VoiceCapsuleWindow,
     placement: Option<&VoiceCapsulePlacement>,
 ) -> Result<(), String> {
     window.set_shadow(false)?;
     window.set_background_color(Color(0, 0, 0, 0))?;
+    window.set_always_on_top(true)?;
+    window.prepare_native_voice_capsule()?;
     window.set_logical_size(0.0, 0.0)?;
     window.set_logical_size(VOICE_CAPSULE_WIDTH, VOICE_CAPSULE_HEIGHT)?;
     apply_voice_capsule_placement(window, placement)?;
@@ -295,6 +359,14 @@ impl<R: tauri::Runtime> VoiceCapsuleWindow for WebviewWindow<R> {
         WebviewWindow::set_background_color(self, Some(color)).map_err(|err| err.to_string())
     }
 
+    fn set_always_on_top(&self, always_on_top: bool) -> Result<(), String> {
+        WebviewWindow::set_always_on_top(self, always_on_top).map_err(|err| err.to_string())
+    }
+
+    fn prepare_native_voice_capsule(&self) -> Result<(), String> {
+        apply_native_voice_capsule_behavior(self)
+    }
+
     fn set_logical_size(&self, width: f64, height: f64) -> Result<(), String> {
         WebviewWindow::set_size(self, Size::Logical(LogicalSize::new(width, height)))
             .map_err(|err| err.to_string())
@@ -324,6 +396,41 @@ impl<R: tauri::Runtime> VoiceCapsuleWindow for WebviewWindow<R> {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn apply_native_voice_capsule_behavior<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+) -> Result<(), String> {
+    use objc2_app_kit::{NSFloatingWindowLevel, NSWindow, NSWindowCollectionBehavior};
+
+    let ns_window = window.ns_window().map_err(|err| err.to_string())?;
+    if ns_window.is_null() {
+        return Err("voice capsule NSWindow was not available".to_string());
+    }
+
+    // Tauri's generic always-on-top flag does not cover every macOS Space and
+    // full-screen case, so the capsule also opts into AppKit's auxiliary
+    // full-screen behavior without changing the app-wide Dock activation policy.
+    unsafe {
+        let ns_window = &*(ns_window.cast::<NSWindow>());
+        let behavior = ns_window.collectionBehavior()
+            | NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        ns_window.setCollectionBehavior(behavior);
+        ns_window.setLevel(NSFloatingWindowLevel);
+        ns_window.setHidesOnDeactivate(false);
+        ns_window.setCanHide(false);
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_native_voice_capsule_behavior<R: tauri::Runtime>(
+    _window: &WebviewWindow<R>,
+) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,6 +440,8 @@ mod tests {
     enum Operation {
         SetShadow(bool),
         SetBackgroundColor(Color),
+        SetAlwaysOnTop(bool),
+        PrepareNativeVoiceCapsule,
         SetLogicalSize(f64, f64),
         SetLogicalPosition(f64, f64),
         Show,
@@ -372,6 +481,20 @@ mod tests {
             Ok(())
         }
 
+        fn set_always_on_top(&self, always_on_top: bool) -> Result<(), String> {
+            self.operations
+                .borrow_mut()
+                .push(Operation::SetAlwaysOnTop(always_on_top));
+            Ok(())
+        }
+
+        fn prepare_native_voice_capsule(&self) -> Result<(), String> {
+            self.operations
+                .borrow_mut()
+                .push(Operation::PrepareNativeVoiceCapsule);
+            Ok(())
+        }
+
         fn set_logical_size(&self, width: f64, height: f64) -> Result<(), String> {
             self.operations
                 .borrow_mut()
@@ -407,6 +530,8 @@ mod tests {
             vec![
                 Operation::SetShadow(false),
                 Operation::SetBackgroundColor(Color(0, 0, 0, 0)),
+                Operation::SetAlwaysOnTop(true),
+                Operation::PrepareNativeVoiceCapsule,
                 Operation::SetLogicalSize(0.0, 0.0),
                 Operation::SetLogicalSize(VOICE_CAPSULE_WIDTH, VOICE_CAPSULE_HEIGHT),
                 Operation::SetLogicalPosition(692.0, 800.0),
@@ -433,6 +558,8 @@ mod tests {
             vec![
                 Operation::SetShadow(false),
                 Operation::SetBackgroundColor(Color(0, 0, 0, 0)),
+                Operation::SetAlwaysOnTop(true),
+                Operation::PrepareNativeVoiceCapsule,
                 Operation::SetLogicalSize(0.0, 0.0),
                 Operation::SetLogicalSize(VOICE_CAPSULE_WIDTH, VOICE_CAPSULE_HEIGHT),
                 Operation::SetLogicalPosition(692.0, 800.0),
@@ -509,6 +636,18 @@ mod tests {
                 text: APP_DARK_TITLE_TEXT_COLORREF,
                 immersive_dark_mode: true,
             },
+        );
+    }
+
+    #[test]
+    fn maps_light_and_dark_themes_to_macos_window_backgrounds() {
+        assert_eq!(
+            macos_main_window_background(tauri::Theme::Light),
+            APP_BACKGROUND_RGB,
+        );
+        assert_eq!(
+            macos_main_window_background(tauri::Theme::Dark),
+            APP_DARK_BACKGROUND_RGB,
         );
     }
 }

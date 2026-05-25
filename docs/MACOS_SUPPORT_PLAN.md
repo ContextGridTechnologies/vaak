@@ -148,7 +148,22 @@ Likely areas:
 - Completed: Input Monitoring permission status is exposed through
   `get_input_monitoring_permission_status` and shown in setup only when the
   platform requires it.
-- Window and floating capsule behavior across Spaces and full-screen apps.
+- Completed: macOS-specific floating capsule/window behavior now keeps the
+  existing capsule UI but opts into native Spaces/full-screen behavior with
+  AppKit collection behavior, floating window level, runtime always-on-top, and
+  visible-on-all-workspaces handling.
+- Completed: macOS native main-window polish hides the duplicate native title,
+  makes the decorated AppKit titlebar transparent over the app background, and
+  updates the native window background for light and dark themes.
+- Completed: macOS insertion strategy handling keeps clipboard paste as the
+  active insertion path so dictated text inserts at the caret instead of
+  replacing existing AX field contents.
+- Completed: macOS target matching now accepts exact AX stable identity and a
+  conservative same-process, same-window, same-AX-identifier fallback for benign
+  stable ID drift.
+- Completed: macOS structured focus/insertion diagnostics now log selected
+  targets, insertion strategy attempts, strategy success/failure, and target
+  mismatch payloads with the same operation-id pattern as Windows.
 - Platform-specific error messages where native permissions are denied.
 
 Implementation status:
@@ -172,7 +187,10 @@ Implementation status:
   accepts common Command aliases while keeping Option reserved for command mode.
 - Completed in current changes: Input Monitoring permission status is available
   through the backend and setup checklist.
-- Still pending: runtime validation on a macOS runner and a real Mac with
+- Completed in current changes: macOS captured target matching accepts a
+  conservative AX identifier fallback when stable IDs drift inside the same
+  process and window.
+- Still pending at the validation level: runtime validation on a real Mac with
   Accessibility and Input Monitoring permissions granted.
 
 Exit criteria:
@@ -180,6 +198,11 @@ Exit criteria:
 - A Mac user can dictate into another app without using a Vaak account.
 - Permission denial states explain what to do next.
 - Windows behavior still passes existing verification.
+
+### Remaining Module Gaps Compared With Windows
+
+The known macOS backend module gaps tracked in this plan are now implemented.
+Remaining work is real-device validation and any follow-up issues found there.
 
 ### Phase 5: Signing and Notarization
 
