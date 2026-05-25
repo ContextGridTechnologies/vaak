@@ -7,19 +7,26 @@ import {
   type SetupChecklistItem,
 } from "@/components/app";
 import { ProviderSetupGrid } from "@/features/providers";
+import type { PermissionStatus } from "@/lib/tauri";
 
 import { SyncPlaceholder } from "./SyncPlaceholder";
 
 type VoiceSetupPanelProps = {
+  accessibilityPermission?: PermissionStatus | null;
+  inputMonitoringPermission?: PermissionStatus | null;
   hasMicrophonePermission: boolean;
   tauriAvailable: boolean;
 };
 
 export function VoiceSetupPanel({
+  accessibilityPermission,
+  inputMonitoringPermission,
   hasMicrophonePermission,
   tauriAvailable,
 }: VoiceSetupPanelProps) {
   const setupItems = getSetupItems({
+    accessibilityPermission,
+    inputMonitoringPermission,
     hasMicrophonePermission,
     tauriAvailable,
   });
@@ -69,10 +76,12 @@ export function VoiceSetupPanel({
 }
 
 function getSetupItems({
+  accessibilityPermission,
+  inputMonitoringPermission,
   hasMicrophonePermission,
   tauriAvailable,
 }: VoiceSetupPanelProps): SetupChecklistItem[] {
-  return [
+  const items: SetupChecklistItem[] = [
     {
       id: "microphone",
       title: "Microphone",
@@ -82,6 +91,33 @@ function getSetupItems({
       status: hasMicrophonePermission ? "complete" : "blocked",
       statusLabel: hasMicrophonePermission ? "Ready" : "Needs access",
     },
+  ];
+
+  if (accessibilityPermission?.required) {
+    items.push({
+      id: "accessibility",
+      title: accessibilityPermission.label,
+      description: accessibilityPermission.granted
+        ? "Focused app access is available."
+        : accessibilityPermission.guidance,
+      status: accessibilityPermission.granted ? "complete" : "blocked",
+      statusLabel: accessibilityPermission.granted ? "Ready" : "Needs access",
+    });
+  }
+
+  if (inputMonitoringPermission?.required) {
+    items.push({
+      id: "input-monitoring",
+      title: inputMonitoringPermission.label,
+      description: inputMonitoringPermission.granted
+        ? "Global hold-to-talk shortcuts are available."
+        : inputMonitoringPermission.guidance,
+      status: inputMonitoringPermission.granted ? "complete" : "blocked",
+      statusLabel: inputMonitoringPermission.granted ? "Ready" : "Needs access",
+    });
+  }
+
+  items.push(
     {
       id: "speech-provider",
       title: "Speech provider",
@@ -105,5 +141,7 @@ function getSetupItems({
       status: tauriAvailable ? "complete" : "blocked",
       statusLabel: tauriAvailable ? "Available" : "Desktop required",
     },
-  ];
+  );
+
+  return items;
 }

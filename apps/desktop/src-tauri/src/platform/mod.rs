@@ -6,13 +6,15 @@ pub(crate) mod unsupported;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 pub mod macos;
 
 #[cfg(windows)]
 pub mod windows;
 
-use common::{CaptureInsertResult, FocusedFieldInfo, PlatformError, TextInsertResult};
+use common::{
+    CaptureInsertResult, FocusedFieldInfo, PermissionStatus, PlatformError, TextInsertResult,
+};
 
 #[cfg(windows)]
 pub fn get_focused_field() -> Result<FocusedFieldInfo, PlatformError> {
@@ -137,4 +139,63 @@ pub fn capture_and_insert(_text: &str) -> Result<CaptureInsertResult, PlatformEr
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub fn capture_and_insert(text: &str) -> Result<CaptureInsertResult, PlatformError> {
     unsupported::capture_and_insert(std::env::consts::OS, text)
+}
+
+#[cfg(target_os = "macos")]
+pub fn accessibility_permission_status() -> PermissionStatus {
+    macos::accessibility_permission_status()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn accessibility_permission_status() -> PermissionStatus {
+    PermissionStatus {
+        id: "accessibility".to_string(),
+        label: "Accessibility".to_string(),
+        required: false,
+        granted: true,
+        guidance: "Accessibility permission is not required on this platform.".to_string(),
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn input_monitoring_permission_status() -> PermissionStatus {
+    macos::input_monitoring_permission_status()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn input_monitoring_permission_status() -> PermissionStatus {
+    PermissionStatus {
+        id: "input_monitoring".to_string(),
+        label: "Input Monitoring".to_string(),
+        required: false,
+        granted: true,
+        guidance: "Input Monitoring permission is not required on this platform.".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn accessibility_permission_is_not_required_on_non_macos_platforms() {
+        let status = accessibility_permission_status();
+
+        assert_eq!(status.id, "accessibility");
+        assert_eq!(status.label, "Accessibility");
+        assert!(!status.required);
+        assert!(status.granted);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn input_monitoring_permission_is_not_required_on_non_macos_platforms() {
+        let status = input_monitoring_permission_status();
+
+        assert_eq!(status.id, "input_monitoring");
+        assert_eq!(status.label, "Input Monitoring");
+        assert!(!status.required);
+        assert!(status.granted);
+    }
 }

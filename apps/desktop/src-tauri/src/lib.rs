@@ -106,6 +106,8 @@ pub fn run() {
             commands::capture_dictation_target,
             commands::insert_text,
             commands::capture_and_insert,
+            commands::get_accessibility_permission_status,
+            commands::get_input_monitoring_permission_status,
             commands::insert_into_active_target,
             commands::get_hotkey_bindings,
             commands::save_dictation_hotkey,
