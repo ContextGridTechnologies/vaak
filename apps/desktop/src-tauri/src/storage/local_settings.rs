@@ -76,6 +76,8 @@ pub struct AppShellPreferences {
 pub struct SystemSettings {
     #[serde(default = "default_launch_on_startup")]
     pub launch_on_startup: bool,
+    #[serde(default)]
+    pub show_skipped_transcripts: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -176,6 +178,7 @@ impl Default for SystemSettings {
     fn default() -> Self {
         Self {
             launch_on_startup: default_launch_on_startup(),
+            show_skipped_transcripts: false,
         }
     }
 }
@@ -854,6 +857,7 @@ mod tests {
         let settings = store.system_settings().unwrap();
 
         assert!(settings.launch_on_startup);
+        assert!(!settings.show_skipped_transcripts);
     }
 
     #[test]
@@ -864,10 +868,12 @@ mod tests {
         let saved = store
             .save_system_settings(SystemSettings {
                 launch_on_startup: false,
+                show_skipped_transcripts: true,
             })
             .unwrap();
 
         assert!(!saved.launch_on_startup);
+        assert!(saved.show_skipped_transcripts);
         assert!(
             !LocalSettingsStore::new(&dir)
                 .system_settings()
@@ -878,6 +884,7 @@ mod tests {
         let json = fs::read_to_string(dir.join("settings.json")).unwrap();
         assert!(json.contains("\"system\""));
         assert!(json.contains("\"launchOnStartup\": false"));
+        assert!(json.contains("\"showSkippedTranscripts\": true"));
     }
 
     #[test]

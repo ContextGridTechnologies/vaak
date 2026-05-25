@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/empty";
 import {
   getRecentDictationRecords,
+  getSystemSettings,
   isTauriRuntime,
   loadSavedDictationAudio,
   persistDictationAudio,
@@ -110,6 +111,7 @@ const appIcon: Record<string, LucideIcon> = {
 
 export function HomePanel() {
   const [records, setRecords] = useState<DictationRecord[]>([]);
+  const [showSkippedTranscripts, setShowSkippedTranscripts] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasLoadedAllRecords, setHasLoadedAllRecords] = useState(false);
   const [retryingRecordIds, setRetryingRecordIds] = useState<Set<string>>(
@@ -124,6 +126,18 @@ export function HomePanel() {
     }
 
     let disposed = false;
+
+    getSystemSettings()
+      .then((settings) => {
+        if (!disposed) {
+          setShowSkippedTranscripts(settings.showSkippedTranscripts);
+        }
+      })
+      .catch((error) => {
+        if (!disposed) {
+          console.error("Failed to load system settings", error);
+        }
+      });
 
     const loadRecords = async () => {
       try {
@@ -159,8 +173,14 @@ export function HomePanel() {
   }, []);
 
   const activities = useMemo(
-    () => records.map((record, index) => mapRecordToActivity(record, index)),
-    [records],
+    () =>
+      records
+        .filter(
+          (record) =>
+            showSkippedTranscripts || record.insertion.status !== "skipped",
+        )
+        .map((record, index) => mapRecordToActivity(record, index)),
+    [records, showSkippedTranscripts],
   );
 
   const activityOverview = useMemo(
@@ -343,12 +363,14 @@ export function HomePanel() {
               >
                 {activityOverview.insertedCount} inserted
               </StatusBadge>
-              <StatusBadge
-                tone="warning"
-                className="border-warning/45 bg-warning/18 px-2.5 normal-case tracking-normal"
-              >
-                {activityOverview.skippedCount} skipped
-              </StatusBadge>
+              {showSkippedTranscripts ? (
+                <StatusBadge
+                  tone="warning"
+                  className="border-warning/45 bg-warning/18 px-2.5 normal-case tracking-normal"
+                >
+                  {activityOverview.skippedCount} skipped
+                </StatusBadge>
+              ) : null}
               <StatusBadge tone="error" className="border-destructive/30 bg-destructive/12 px-2.5 normal-case tracking-normal">
                 {activityOverview.failedCount} failed
               </StatusBadge>
