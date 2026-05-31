@@ -81,6 +81,7 @@ export function useAudioRecorder(
   const timerRef = useRef<ReturnType<typeof globalThis.setInterval> | null>(
     null,
   );
+  const trackCleanupRef = useRef<(() => void) | null>(null);
   const selectionKey = useMemo(() => JSON.stringify(microphoneSelection), [
     microphoneSelection,
   ]);
@@ -108,6 +109,11 @@ export function useAudioRecorder(
     stream.getTracks().forEach((track) => track.stop());
   };
 
+  const clearTrackLifecycleListeners = useCallback(() => {
+    trackCleanupRef.current?.();
+    trackCleanupRef.current = null;
+  }, []);
+
   const teardownCaptureAnalysis = useCallback(() => {
     audioWorkletNodeRef.current?.disconnect();
     audioSourceRef.current?.disconnect();
@@ -121,8 +127,94 @@ export function useAudioRecorder(
     }
   }, []);
 
+  const invalidateStream = useCallback(
+    (reason: string) => {
+      const recorder = recorderRef.current;
+      if (recorder?.state === "recording") {
+        recorder.ondataavailable = null;
+        recorder.onerror = null;
+        recorder.onstop = null;
+        recorder.stop();
+        recorderRef.current = null;
+        chunksRef.current = [];
+        startTimeRef.current = null;
+        setAudioBlob(null);
+        releaseAudioUrl(null);
+        setElapsedMs(0);
+      }
+      console.warn("[vaak][recorder] stream_invalidated", {
+        reason,
+        selection: microphoneSelection,
+      });
+      clearTimer();
+      clearTrackLifecycleListeners();
+      recordingAnalysisActiveRef.current = false;
+      setAudioLevel(0);
+      stopTracks(streamRef.current);
+      streamRef.current = null;
+      teardownCaptureAnalysis();
+      setActiveMicrophone(null);
+      preparePromiseRef.current = null;
+    },
+    [
+      clearTrackLifecycleListeners,
+      microphoneSelection,
+      releaseAudioUrl,
+      teardownCaptureAnalysis,
+    ],
+  );
+
+  const attachTrackLifecycleListeners = useCallback(
+    (stream: MediaStream) => {
+      clearTrackLifecycleListeners();
+      const tracks = stream.getAudioTracks();
+      const cleanups = tracks.map((track) => {
+        const handleEnded = () => {
+          const wasRecording = recorderRef.current?.state === "recording";
+          invalidateStream("track-ended");
+          if (wasRecording) {
+            setStatus("error");
+            setError("Microphone stream ended. Start dictation again.");
+          }
+        };
+        const handleMute = () => {
+          console.warn("[vaak][recorder] track_muted", {
+            label: track.label,
+            selection: microphoneSelection,
+          });
+        };
+        const handleUnmute = () => {
+          console.info("[vaak][recorder] track_unmuted", {
+            label: track.label,
+            selection: microphoneSelection,
+          });
+        };
+
+        track.addEventListener("ended", handleEnded);
+        track.addEventListener("mute", handleMute);
+        track.addEventListener("unmute", handleUnmute);
+
+        return () => {
+          track.removeEventListener("ended", handleEnded);
+          track.removeEventListener("mute", handleMute);
+          track.removeEventListener("unmute", handleUnmute);
+        };
+      });
+
+      trackCleanupRef.current = () => {
+        for (const cleanup of cleanups) {
+          cleanup();
+        }
+      };
+    },
+    [clearTrackLifecycleListeners, invalidateStream, microphoneSelection],
+  );
+
   const ensureCaptureAnalysis = useCallback(async (stream: MediaStream) => {
     if (audioWorkletNodeRef.current) {
+      if (audioContextRef.current?.state === "suspended") {
+        await audioContextRef.current.resume();
+      }
       return;
     }
     if (analysisSetupPromiseRef.current) {
@@ -138,6 +230,11 @@ export function useAudioRecorder(
 
     const setupPromise = (async () => {
       const context = new AudioContext();
+      context.onstatechange = () => {
+        console.info("[vaak][recorder] audio_context_state_changed", {
+          state: context.state,
+        });
+      };
       await context.audioWorklet.addModule(workletModuleUrl());
       const source = context.createMediaStreamSource(stream);
       const node = new AudioWorkletNode(context, "vaak-capture-analysis", {
@@ -215,6 +312,7 @@ export function useAudioRecorder(
       try {
         const stream = await streamPromise;
         streamRef.current = stream;
+        attachTrackLifecycleListeners(stream);
         await ensureCaptureAnalysis(stream);
         setActiveMicrophone(activeMicrophoneFromStream(stream));
         console.info("[vaak][recorder] stream_ready", {
@@ -240,7 +338,7 @@ export function useAudioRecorder(
         preparePromiseRef.current = null;
       }
     },
-    [ensureCaptureAnalysis, microphoneSelection],
+    [attachTrackLifecycleListeners, ensureCaptureAnalysis, microphoneSelection],
   );
 
   const prepare = useCallback(async () => {
@@ -306,6 +404,7 @@ export function useAudioRecorder(
         clearTimer();
         recordingAnalysisActiveRef.current = false;
         setAudioLevel(0);
+        clearTrackLifecycleListeners();
         stopTracks(streamRef.current);
         streamRef.current = null;
         teardownCaptureAnalysis();
@@ -366,7 +465,12 @@ export function useAudioRecorder(
       setError(err instanceof Error ? err.message : "Microphone access failed.");
       setActiveMicrophone(null);
     }
-  }, [ensureStream, releaseAudioUrl, teardownCaptureAnalysis]);
+  }, [
+    clearTrackLifecycleListeners,
+    ensureStream,
+    releaseAudioUrl,
+    teardownCaptureAnalysis,
+  ]);
 
   const stop = useCallback(() => {
     const recorder = recorderRef.current;
@@ -375,6 +479,26 @@ export function useAudioRecorder(
     }
     recorder.stop();
   }, []);
+
+  useEffect(() => {
+    if (typeof navigator.mediaDevices?.addEventListener !== "function") {
+      return;
+    }
+
+    const handleDeviceChange = () => {
+      invalidateStream("devicechange");
+      if (status === "recording") {
+        setStatus("error");
+        setError("Microphone devices changed. Start dictation again.");
+      }
+    };
+
+    navigator.mediaDevices?.addEventListener("devicechange", handleDeviceChange);
+
+    return () => {
+      navigator.mediaDevices?.removeEventListener?.("devicechange", handleDeviceChange);
+    };
+  }, [invalidateStream, status]);
 
   const reset = useCallback(() => {
     clearTimer();
@@ -387,12 +511,13 @@ export function useAudioRecorder(
     setError(null);
     setActiveMicrophone(null);
     setStartupMetrics(null);
+    clearTrackLifecycleListeners();
     stopTracks(streamRef.current);
     streamRef.current = null;
     teardownCaptureAnalysis();
     preparePromiseRef.current = null;
     recordingAnalysisActiveRef.current = false;
-  }, [releaseAudioUrl, teardownCaptureAnalysis]);
+  }, [clearTrackLifecycleListeners, releaseAudioUrl, teardownCaptureAnalysis]);
 
   useEffect(() => {
     const recorder = recorderRef.current;
@@ -415,6 +540,7 @@ export function useAudioRecorder(
       setError(null);
     }
 
+    clearTrackLifecycleListeners();
     stopTracks(streamRef.current);
     streamRef.current = null;
     teardownCaptureAnalysis();
@@ -422,7 +548,12 @@ export function useAudioRecorder(
     setActiveMicrophone(null);
     setAudioLevel(0);
     setStartupMetrics(null);
-  }, [releaseAudioUrl, selectionKey, teardownCaptureAnalysis]);
+  }, [
+    clearTrackLifecycleListeners,
+    releaseAudioUrl,
+    selectionKey,
+    teardownCaptureAnalysis,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -432,6 +563,7 @@ export function useAudioRecorder(
         recordingAnalysisActiveRef.current = false;
         recorder.stop();
       }
+      clearTrackLifecycleListeners();
       stopTracks(streamRef.current);
       streamRef.current = null;
       teardownCaptureAnalysis();
@@ -440,7 +572,7 @@ export function useAudioRecorder(
       setActiveMicrophone(null);
       setAudioLevel(0);
     };
-  }, [releaseAudioUrl, teardownCaptureAnalysis]);
+  }, [clearTrackLifecycleListeners, releaseAudioUrl, teardownCaptureAnalysis]);
 
   return {
     status,

@@ -27,6 +27,22 @@ export async function invokeTauri<T>(
   return invoke<T>(command, args);
 }
 
+export async function recordRendererHeartbeat(
+  windowLabel: string,
+): Promise<void> {
+  return invokeTauri("record_renderer_heartbeat", { windowLabel });
+}
+
+export async function recordRendererError(input: {
+  windowLabel: string;
+  message: string;
+  source?: string;
+  line?: number;
+  column?: number;
+}): Promise<void> {
+  return invokeTauri("record_renderer_error", input);
+}
+
 export async function minimizeCurrentWindow(): Promise<void> {
   if (!isTauriRuntime()) {
     return;

@@ -8,6 +8,7 @@ import { KeyboardShortcutSettingsCard } from "./KeyboardShortcutSettingsCard";
 import { MicrophoneSettingsCard } from "./MicrophoneSettingsCard";
 import { SpeechProviderSettings } from "./speech-provider";
 import { SystemSettingsCard } from "./SystemSettingsCard";
+import { DiagnosticsSettingsCard } from "./DiagnosticsSettingsCard";
 
 export function SettingsPanel() {
   useEffect(() => {
@@ -32,6 +33,7 @@ export function SettingsPanel() {
           <MicrophoneSettingsCard />
           <KeyboardShortcutSettingsCard />
           <SystemSettingsCard />
+          <DiagnosticsSettingsCard />
         </section>
       </main>
     </div>

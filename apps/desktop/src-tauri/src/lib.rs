@@ -3,6 +3,7 @@ mod config;
 mod platform;
 mod providers;
 mod session;
+mod stability;
 mod storage;
 mod windowing;
 
@@ -16,6 +17,8 @@ const TRAY_QUIT_MENU_ID: &str = "tray-quit";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    stability::initialize_panic_logging();
+
     let runtime_config = config::RuntimeConfig::from_process_env().unwrap_or_else(|err| {
         eprintln!("invalid Vaak runtime config: {err}");
         std::process::exit(1);
@@ -23,6 +26,7 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default()
         .manage(session::SessionStore::default())
+        .manage(stability::RendererHealth::default())
         .manage(runtime_config);
 
     #[cfg(desktop)]
@@ -52,6 +56,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            stability::initialize_process_recovery();
             initialize_autostart_plugin(app.handle());
             initialize_tray(app.handle())?;
 
@@ -99,9 +104,13 @@ pub fn run() {
                 .set_dictation_hotkey(&bindings.dictation)
                 .map_err(|err| err.to_string())?;
             session::start_hotkey_monitor(app.handle(), &session);
+            stability::start_renderer_watchdog(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::record_renderer_heartbeat,
+            commands::record_renderer_error,
+            commands::get_diagnostics_locations,
             commands::get_focused_field,
             commands::capture_dictation_target,
             commands::insert_text,

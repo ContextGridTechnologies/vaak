@@ -374,13 +374,13 @@ fn emit_dictation_start<R: Runtime>(app: &AppHandle<R>) {
         },
     };
 
-    let _ = app.emit(HOTKEY_EVENT, payload);
+    emit_hotkey_event(app, payload);
 }
 
 fn emit_dictation_stop<R: Runtime>(app: &AppHandle<R>) {
     let shortcut = app.state::<SessionStore>().hotkey_bindings().dictation;
-    let _ = app.emit(
-        HOTKEY_EVENT,
+    emit_hotkey_event(
+        app,
         HotkeySessionEvent {
             mode: "dictation".to_string(),
             phase: "stop".to_string(),
@@ -393,8 +393,8 @@ fn emit_dictation_stop<R: Runtime>(app: &AppHandle<R>) {
 
 fn emit_command_start<R: Runtime>(app: &AppHandle<R>) {
     let shortcut = app.state::<SessionStore>().hotkey_bindings().command;
-    let _ = app.emit(
-        HOTKEY_EVENT,
+    emit_hotkey_event(
+        app,
         HotkeySessionEvent {
             mode: "command".to_string(),
             phase: "start".to_string(),
@@ -407,8 +407,8 @@ fn emit_command_start<R: Runtime>(app: &AppHandle<R>) {
 
 fn emit_command_stop<R: Runtime>(app: &AppHandle<R>) {
     let shortcut = app.state::<SessionStore>().hotkey_bindings().command;
-    let _ = app.emit(
-        HOTKEY_EVENT,
+    emit_hotkey_event(
+        app,
         HotkeySessionEvent {
             mode: "command".to_string(),
             phase: "stop".to_string(),
@@ -417,6 +417,12 @@ fn emit_command_stop<R: Runtime>(app: &AppHandle<R>) {
             error: None,
         },
     );
+}
+
+fn emit_hotkey_event<R: Runtime>(app: &AppHandle<R>, payload: HotkeySessionEvent) {
+    if let Err(err) = app.emit(HOTKEY_EVENT, payload) {
+        log::warn!("failed to emit hotkey session event: {err}");
+    }
 }
 
 #[cfg(test)]

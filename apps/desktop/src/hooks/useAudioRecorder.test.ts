@@ -14,6 +14,9 @@ type MockTrack = {
   label?: string;
   stop: ReturnType<typeof vi.fn>;
   getSettings?: () => MediaTrackSettings;
+  addEventListener: ReturnType<typeof vi.fn>;
+  removeEventListener: ReturnType<typeof vi.fn>;
+  dispatch: (event: string) => void;
 };
 
 class MockMediaRecorder {
@@ -84,6 +87,68 @@ function setMediaDevices(value: Partial<MediaDevices> | undefined) {
   });
 }
 
+function createMockTrack({
+  label = "USB microphone",
+  deviceId = "usb-mic",
+}: {
+  label?: string;
+  deviceId?: string;
+} = {}): MockTrack {
+  const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+  return {
+    label,
+    stop: vi.fn(),
+    getSettings: () => ({ deviceId }),
+    addEventListener: vi.fn((event: string, listener: EventListenerOrEventListenerObject) => {
+      const eventListeners = listeners.get(event) ?? new Set();
+      eventListeners.add(listener);
+      listeners.set(event, eventListeners);
+    }),
+    removeEventListener: vi.fn(
+      (event: string, listener: EventListenerOrEventListenerObject) => {
+        listeners.get(event)?.delete(listener);
+      },
+    ),
+    dispatch: (event: string) => {
+      for (const listener of listeners.get(event) ?? []) {
+        if (typeof listener === "function") {
+          listener(new Event(event));
+        } else {
+          listener.handleEvent(new Event(event));
+        }
+      }
+    },
+  };
+}
+
+function createMockMediaDevices(getUserMedia: ReturnType<typeof vi.fn>) {
+  const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+  return {
+    getUserMedia: getUserMedia as unknown as MediaDevices["getUserMedia"],
+    addEventListener: vi.fn(
+      (event: string, listener: EventListenerOrEventListenerObject) => {
+        const eventListeners = listeners.get(event) ?? new Set();
+        eventListeners.add(listener);
+        listeners.set(event, eventListeners);
+      },
+    ),
+    removeEventListener: vi.fn(
+      (event: string, listener: EventListenerOrEventListenerObject) => {
+        listeners.get(event)?.delete(listener);
+      },
+    ),
+    dispatch: (event: string) => {
+      for (const listener of listeners.get(event) ?? []) {
+        if (typeof listener === "function") {
+          listener(new Event(event));
+        } else {
+          listener.handleEvent(new Event(event));
+        }
+      }
+    },
+  };
+}
+
 describe("useAudioRecorder", () => {
   beforeEach(() => {
     MockMediaRecorder.instances = [];
@@ -126,11 +191,7 @@ describe("useAudioRecorder", () => {
   });
 
   it("records from the selected microphone and publishes a captured blob on stop", async () => {
-    const track: MockTrack = {
-      label: "USB microphone",
-      stop: vi.fn(),
-      getSettings: () => ({ deviceId: "usb-mic" }),
-    };
+    const track = createMockTrack();
     const getUserMedia = vi.fn().mockResolvedValue({
       getAudioTracks: () => [track],
       getTracks: () => [track],
@@ -182,13 +243,17 @@ describe("useAudioRecorder", () => {
   it("uses system microphone constraints in system mode", async () => {
     const getUserMedia = vi.fn().mockResolvedValue({
       getAudioTracks: () => [
-        {
+        createMockTrack({
           label: "System selected microphone",
-          stop: vi.fn(),
-          getSettings: () => ({ deviceId: "system-active" }),
-        },
+          deviceId: "system-active",
+        }),
       ],
-      getTracks: () => [{ stop: vi.fn() }],
+      getTracks: () => [
+        createMockTrack({
+          label: "System selected microphone",
+          deviceId: "system-active",
+        }),
+      ],
     });
     setMediaDevices({ getUserMedia });
     const { result } = renderHook(() =>
@@ -242,11 +307,7 @@ describe("useAudioRecorder", () => {
   });
 
   it("warms and reuses the microphone stream across recordings", async () => {
-    const track: MockTrack = {
-      label: "USB microphone",
-      stop: vi.fn(),
-      getSettings: () => ({ deviceId: "usb-mic" }),
-    };
+    const track = createMockTrack();
     const stream = {
       getAudioTracks: () => [track],
       getTracks: () => [track],
@@ -289,12 +350,66 @@ describe("useAudioRecorder", () => {
     expect(track.stop).toHaveBeenCalledTimes(1);
   });
 
+  it("aborts active recording when the microphone stream ends", async () => {
+    const track = createMockTrack();
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    });
+    setMediaDevices({ getUserMedia });
+    const { result } = renderHook(() => useAudioRecorder());
+
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.status).toBe("recording");
+
+    act(() => {
+      track.dispatch("ended");
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.error).toBe(
+      "Microphone stream ended. Start dictation again.",
+    );
+    expect(result.current.activeMicrophone).toBeNull();
+    expect(result.current.audioBlob).toBeNull();
+    expect(result.current.audioUrl).toBeNull();
+    expect(MockMediaRecorder.instances[0]?.state).toBe("inactive");
+  });
+
+  it("invalidates the warm stream when microphone devices change", async () => {
+    const track = createMockTrack();
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    });
+    const mediaDevices = createMockMediaDevices(getUserMedia);
+    setMediaDevices(mediaDevices);
+    const { result } = renderHook(() => useAudioRecorder());
+
+    await act(async () => {
+      await result.current.prepare();
+    });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      mediaDevices.dispatch("devicechange");
+    });
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe("recording");
+  });
+
   it("aborts an active recording when the microphone selection changes", async () => {
-    const firstTrack: MockTrack = {
+    const firstTrack = createMockTrack({
       label: "Built-in microphone",
-      stop: vi.fn(),
-      getSettings: () => ({ deviceId: "built-in" }),
-    };
+      deviceId: "built-in",
+    });
     const getUserMedia = vi.fn().mockResolvedValue({
       getAudioTracks: () => [firstTrack],
       getTracks: () => [firstTrack],
@@ -323,11 +438,7 @@ describe("useAudioRecorder", () => {
   });
 
   it("produces capture analysis for valid speech and exposes wav transcription segments", async () => {
-    const track: MockTrack = {
-      label: "USB microphone",
-      stop: vi.fn(),
-      getSettings: () => ({ deviceId: "usb-mic" }),
-    };
+    const track = createMockTrack();
     const getUserMedia = vi.fn().mockResolvedValue({
       getAudioTracks: () => [track],
       getTracks: () => [track],
@@ -357,11 +468,7 @@ describe("useAudioRecorder", () => {
   });
 
   it("publishes live microphone level while recording and clears it after stop", async () => {
-    const track: MockTrack = {
-      label: "USB microphone",
-      stop: vi.fn(),
-      getSettings: () => ({ deviceId: "usb-mic" }),
-    };
+    const track = createMockTrack();
     const getUserMedia = vi.fn().mockResolvedValue({
       getAudioTracks: () => [track],
       getTracks: () => [track],
@@ -387,11 +494,7 @@ describe("useAudioRecorder", () => {
   });
 
   it("marks low-volume speech as unclear before transcription", async () => {
-    const track: MockTrack = {
-      label: "USB microphone",
-      stop: vi.fn(),
-      getSettings: () => ({ deviceId: "usb-mic" }),
-    };
+    const track = createMockTrack();
     const getUserMedia = vi.fn().mockResolvedValue({
       getAudioTracks: () => [track],
       getTracks: () => [track],

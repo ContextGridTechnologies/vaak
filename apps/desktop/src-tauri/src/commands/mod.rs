@@ -8,6 +8,7 @@ use crate::providers::{
     speech, ProviderConfig, ProviderStatus, TranscriptResult, TranscriptionInput,
 };
 use crate::session::{HotkeyBindings, SessionStore};
+use crate::stability::RendererHealth;
 use crate::storage::{
     AppShellPreferences, DictationAudioArtifact, DictationRecordDraftV1, DictationRecordUpdateV1,
     DictationRecordV1, ExportedDictationAudio, LocalDictationRecordStore, LocalSettingsStore,
@@ -15,6 +16,7 @@ use crate::storage::{
     VoiceCapsulePlacement,
 };
 use crate::windowing;
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const SPEECH_PROVIDER_CHANGED_EVENT: &str = "vaak://speech-provider-changed";
@@ -23,9 +25,61 @@ const MICROPHONE_SELECTION_CHANGED_EVENT: &str = "vaak://microphone-selection-ch
 const MAX_RECENT_RECORD_LIMIT: usize = 200;
 const MAX_RECENT_RECORD_OFFSET: usize = 10_000;
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsLocations {
+    pub log_dir: String,
+    pub config_dir: String,
+}
+
 #[tauri::command]
 pub fn get_focused_field() -> Result<FocusedFieldInfo, PlatformError> {
     platform::get_focused_field()
+}
+
+#[tauri::command]
+pub fn record_renderer_heartbeat(window_label: String, health: State<'_, RendererHealth>) {
+    health.record_heartbeat(&window_label);
+}
+
+#[tauri::command]
+pub fn record_renderer_error(
+    window_label: String,
+    message: String,
+    source: Option<String>,
+    line: Option<u32>,
+    column: Option<u32>,
+) {
+    log::error!(
+        "renderer_error window={} message={} source={} line={:?} column={:?}",
+        window_label,
+        message,
+        source.as_deref().unwrap_or("unknown"),
+        line,
+        column
+    );
+}
+
+#[tauri::command]
+pub fn get_diagnostics_locations(app: AppHandle) -> Result<DiagnosticsLocations, ProviderError> {
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+
+    std::fs::create_dir_all(&log_dir)
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+
+    Ok(DiagnosticsLocations {
+        log_dir: log_dir.to_string_lossy().to_string(),
+        config_dir: config_dir.to_string_lossy().to_string(),
+    })
 }
 
 #[tauri::command]

@@ -14,12 +14,17 @@ const providerApi = vi.hoisted(() => ({
   saveSpeechProviderSetup: vi.fn(),
   testSpeechProvider: vi.fn(),
   isTauriRuntime: vi.fn(),
+  listenToTauriEvent: vi.fn(),
   getMicrophoneSelection: vi.fn(),
   saveMicrophoneSelection: vi.fn(),
   getHotkeyBindings: vi.fn(),
   saveDictationHotkey: vi.fn(),
   getSystemSettings: vi.fn(),
   saveSystemSettings: vi.fn(),
+  getDiagnosticsLocations: vi.fn(),
+}));
+const openerApi = vi.hoisted(() => ({
+  revealItemInDir: vi.fn(),
 }));
 const analyticsApi = vi.hoisted(() => ({
   analytics: {
@@ -30,7 +35,9 @@ const analyticsApi = vi.hoisted(() => ({
 
 vi.mock("@/lib/tauri", () => ({
   ...providerApi,
+  MICROPHONE_SELECTION_CHANGED_EVENT: "vaak://microphone-selection-changed",
 }));
+vi.mock("@tauri-apps/plugin-opener", () => openerApi);
 vi.mock("@/lib/analytics/browser", () => analyticsApi);
 
 type MockMediaDevice = {
@@ -100,6 +107,7 @@ describe("SettingsPanel provider setup", () => {
     });
 
     providerApi.isTauriRuntime.mockReturnValue(false);
+    providerApi.listenToTauriEvent.mockResolvedValue(() => {});
     providerApi.getMicrophoneSelection.mockResolvedValue({ mode: "system" });
     providerApi.saveMicrophoneSelection.mockImplementation((selection) =>
       Promise.resolve(selection),
@@ -119,6 +127,10 @@ describe("SettingsPanel provider setup", () => {
     providerApi.saveSystemSettings.mockImplementation((settings) =>
       Promise.resolve(settings),
     );
+    providerApi.getDiagnosticsLocations.mockResolvedValue({
+      logDir: "C:\\Users\\nikhi\\AppData\\Local\\ai.vaak.desktop\\logs",
+      configDir: "C:\\Users\\nikhi\\AppData\\Roaming\\ai.vaak.desktop",
+    });
     providerApi.getProviderStatus.mockImplementation((providerId: string) => {
       if (providerId === "azure-openai") {
         return Promise.resolve(azureReadyStatus());
@@ -483,5 +495,28 @@ describe("SettingsPanel provider setup", () => {
         status: "failed",
       },
     );
+  });
+
+  it("keeps diagnostics local and opens the log folder for manual sharing", async () => {
+    providerApi.isTauriRuntime.mockReturnValue(true);
+    const user = userEvent.setup();
+    renderApp(<SettingsPanel />);
+
+    expect(
+      await screen.findByText("Crash reports are not sent automatically"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/attach the relevant logs to a GitHub issue or support thread/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Open logs" }));
+
+    await waitFor(() => {
+      expect(providerApi.getDiagnosticsLocations).toHaveBeenCalled();
+    });
+    expect(openerApi.revealItemInDir).toHaveBeenCalledWith(
+      "C:\\Users\\nikhi\\AppData\\Local\\ai.vaak.desktop\\logs",
+    );
+    expect(screen.getByText(/Log folder:/)).toBeInTheDocument();
   });
 });
