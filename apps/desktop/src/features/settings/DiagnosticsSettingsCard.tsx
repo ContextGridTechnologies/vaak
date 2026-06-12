@@ -61,7 +61,7 @@ export function DiagnosticsSettingsCard() {
           />
           <div className="flex min-w-0 flex-col gap-1">
             <p className="text-sm font-medium text-foreground">
-              Crash reports are not sent automatically
+              Local logs are not sent automatically
             </p>
             <p className="text-xs leading-5 text-muted-foreground">
               Vaak keeps diagnostics on this computer. If you choose to share

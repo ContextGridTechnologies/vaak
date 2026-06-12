@@ -52,6 +52,7 @@ impl SpeechProvider for OpenAiSpeechProvider {
             )
         })
         .await?;
+        let timing = response.timing.clone();
 
         let payload = response.json::<OpenAiTranscriptionResponse>().await?;
         if payload.text.trim().is_empty() {
@@ -63,6 +64,8 @@ impl SpeechProvider for OpenAiSpeechProvider {
             model,
             text: payload.text,
             duration_ms: None,
+            provider_request_started_at: Some(timing.started_at),
+            provider_response_received_at: Some(timing.completed_at),
         })
     }
 }

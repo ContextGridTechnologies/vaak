@@ -135,6 +135,8 @@ describe("useDictationLoop", () => {
     transcribeRecording.mockResolvedValue({
       durationMs: 1200,
       model: "gpt-4o-mini-transcribe",
+      providerRequestStartedAt: "2026-05-02T08:30:04.100Z",
+      providerResponseReceivedAt: "2026-05-02T08:30:05.300Z",
       providerId: "openai",
       text: "hello",
     });
@@ -288,6 +290,30 @@ describe("useDictationLoop", () => {
           streamAcquisitionMs: 0,
           transcriptionMs: expect.any(Number),
         }),
+        timeline: expect.objectContaining({
+          recordingStartedAt: "2026-05-02T08:30:01.000Z",
+          recordingStoppedAt: "2026-05-02T08:30:04.000Z",
+          processingStartedAt: expect.any(String),
+          audioAnalysisCompletedAt: expect.any(String),
+          transcriptionStartedAt: expect.any(String),
+          providerRequestStartedAt: "2026-05-02T08:30:04.100Z",
+          providerResponseReceivedAt: "2026-05-02T08:30:05.300Z",
+          transcriptionCompletedAt: expect.any(String),
+          insertionStartedAt: expect.any(String),
+          insertionCompletedAt: expect.any(String),
+          recordPersistedAt: expect.any(String),
+          providerRequests: [
+            {
+              segmentIndex: 0,
+              startedAt: "2026-05-02T08:30:04.100Z",
+              completedAt: "2026-05-02T08:30:05.300Z",
+              providerId: "openai",
+              modelId: "gpt-4o-mini-transcribe",
+              status: "succeeded",
+              errorCode: null,
+            },
+          ],
+        }),
         audio: {
           relativePath: "recordings/2026/05/02/recording.webm",
           mimeType: "audio/webm",
@@ -392,6 +418,14 @@ describe("useDictationLoop", () => {
     expect(transcribeRecording).not.toHaveBeenCalled();
     expect(saveDictationRecord).toHaveBeenCalledWith(
       expect.objectContaining({
+        timeline: expect.objectContaining({
+          recordingStartedAt: "2026-05-02T08:30:01.000Z",
+          recordingStoppedAt: "2026-05-02T08:30:04.000Z",
+          processingStartedAt: expect.any(String),
+          audioAnalysisCompletedAt: expect.any(String),
+          recordPersistedAt: expect.any(String),
+          providerRequests: [],
+        }),
         insertion: {
           errorCode: "speech_unclear",
           errorMessage: "Speech unclear. Try again closer to the mic.",
@@ -536,6 +570,98 @@ describe("useDictationLoop", () => {
       audioBlob: secondSegment,
       language: "en",
     });
+  });
+
+  it("saves all settled segmented transcription timings on failure", async () => {
+    const audioBlob = recordingBlob();
+    const firstSegment = new Blob(["failed"], { type: "audio/wav" });
+    const secondSegment = new Blob(["completed"], { type: "audio/wav" });
+    transcribeRecording.mockImplementation(async () => {
+      if (transcribeRecording.mock.calls.length === 1) {
+        return Promise.reject({
+          code: "provider_upstream_failed",
+          message: "upstream failed",
+          providerRequestStartedAt: "2026-05-02T08:30:04.100Z",
+          providerResponseReceivedAt: "2026-05-02T08:30:04.900Z",
+        });
+      }
+
+      return {
+        durationMs: 500,
+        model: "gpt-4o-mini-transcribe",
+        providerRequestStartedAt: "2026-05-02T08:30:04.200Z",
+        providerResponseReceivedAt: "2026-05-02T08:30:05.300Z",
+        providerId: "openai",
+        text: "world",
+      };
+    });
+
+    const { result } = renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "ready",
+            reason: null,
+            metrics: {
+              voicedMs: 1800,
+              leadingTrimMs: 110,
+              trailingTrimMs: 150,
+              longestPauseMs: 940,
+              estimatedSnrDb: 18,
+              averageDbfs: -19,
+              peakDbfs: -7,
+            },
+            processedAudio: new Blob(["processed"], { type: "audio/wav" }),
+            transcriptionSegments: [firstSegment, secondSegment],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(transcribeRecording).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(persistDictationAudio).toHaveBeenCalled();
+    }, { timeout: 3000 });
+    await waitFor(() => {
+      expect(result.current.state).not.toBe("transcribing");
+    }, { timeout: 3000 });
+    expect(saveDictationRecord).toHaveBeenCalled();
+    expect(result.current.error?.kind).toBe("transcription");
+
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeline: expect.objectContaining({
+          providerRequestStartedAt: "2026-05-02T08:30:04.100Z",
+          providerResponseReceivedAt: "2026-05-02T08:30:05.300Z",
+          providerRequests: expect.arrayContaining([
+            expect.objectContaining({
+              segmentIndex: 0,
+              startedAt: "2026-05-02T08:30:04.100Z",
+              completedAt: "2026-05-02T08:30:04.900Z",
+              providerId: "openai",
+              modelId: null,
+              status: "failed",
+              errorCode: "provider_upstream_failed",
+            }),
+            expect.objectContaining({
+              segmentIndex: 1,
+              startedAt: "2026-05-02T08:30:04.200Z",
+              completedAt: "2026-05-02T08:30:05.300Z",
+              providerId: "openai",
+              modelId: "gpt-4o-mini-transcribe",
+              status: "succeeded",
+              errorCode: null,
+            }),
+          ]),
+        }),
+        insertion: expect.objectContaining({
+          errorCode: "transcription_failed",
+        }),
+      }),
+    );
   });
 
   it("ignores blank provider responses from individual segments and inserts the remaining transcript", async () => {
@@ -833,7 +959,12 @@ describe("useDictationLoop", () => {
 
   it("surfaces transcription errors", async () => {
     const audioBlob = recordingBlob();
-    transcribeRecording.mockRejectedValue(new Error("provider unavailable"));
+    transcribeRecording.mockRejectedValue({
+      code: "provider_upstream_failed",
+      message: "provider unavailable",
+      providerRequestStartedAt: "2026-05-02T08:30:04.100Z",
+      providerResponseReceivedAt: "2026-05-02T08:30:05.300Z",
+    });
 
     const { result } = renderHook(() =>
       useDictationLoop(session({ audioBlob })),
@@ -844,8 +975,36 @@ describe("useDictationLoop", () => {
     });
 
     expect(result.current.state).toBe("error");
-    expect(result.current.message).toBe("OpenAI: provider unavailable");
+    expect(result.current.message).toBe(
+      "OpenAI: provider_upstream_failed: provider unavailable",
+    );
     expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeline: expect.objectContaining({
+          providerRequestStartedAt: "2026-05-02T08:30:04.100Z",
+          providerResponseReceivedAt: "2026-05-02T08:30:05.300Z",
+          transcriptionStartedAt: expect.any(String),
+          transcriptionCompletedAt: expect.any(String),
+          recordPersistedAt: expect.any(String),
+          providerRequests: [
+            {
+              segmentIndex: 0,
+              startedAt: "2026-05-02T08:30:04.100Z",
+              completedAt: "2026-05-02T08:30:05.300Z",
+              providerId: "openai",
+              modelId: null,
+              status: "failed",
+              errorCode: "provider_upstream_failed",
+            },
+          ],
+        }),
+        insertion: expect.objectContaining({
+          errorCode: "transcription_failed",
+          status: "failed",
+        }),
+      }),
+    );
   });
 
   it("uses the Deepgram display label in transcription errors", async () => {
@@ -878,6 +1037,21 @@ describe("useDictationLoop", () => {
 
     expect(insertIntoActiveTarget).toHaveBeenCalledTimes(1);
     expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello");
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeline: expect.objectContaining({
+          providerRequestStartedAt: "2026-05-02T08:30:04.100Z",
+          providerResponseReceivedAt: "2026-05-02T08:30:05.300Z",
+          insertionStartedAt: expect.any(String),
+          insertionCompletedAt: expect.any(String),
+          recordPersistedAt: expect.any(String),
+        }),
+        insertion: expect.objectContaining({
+          errorCode: "insertion_failed",
+          status: "failed",
+        }),
+      }),
+    );
     expect(result.current.state).toBe("error");
     expect(result.current.message).toBe("Insertion failed: target changed");
   });

@@ -773,6 +773,26 @@ describe("HomePanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a storage error instead of the empty state when activity loading fails", async () => {
+    getRecentDictationRecords.mockRejectedValue(
+      new Error(
+        "settings_store_failed: dictation records database schema version 4 is newer than supported version 1",
+      ),
+    );
+
+    renderApp(<HomePanel />);
+
+    expect(await screen.findByText("Activity unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "settings_store_failed: dictation records database schema version 4 is newer than supported version 1",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Recent activity will appear here"),
+    ).not.toBeInTheDocument();
+  });
+
   it("centers the voice activity column without a fake top-bar offset", async () => {
     getRecentDictationRecords.mockResolvedValue([]);
 

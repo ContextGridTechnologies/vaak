@@ -13,6 +13,8 @@ import {
   targetSnapshotFromFocusedField,
   transcribeRecording,
   type DictationRecordDraft,
+  type DictationProviderRequestTiming,
+  type DictationTimeline,
   type SpeechProviderId,
   type TextInsertResult,
 } from "@/lib/tauri";
@@ -57,6 +59,11 @@ type CaptureAnalysis = {
   processedAudio: Blob | null;
   transcriptionSegments: Blob[];
 };
+
+type SegmentTranscriptionResult =
+  | Awaited<ReturnType<typeof transcribeRecording>>
+  | null
+  | { error: unknown };
 
 export type DictationLoopSession = {
   audioBlob: Blob | null;
@@ -194,9 +201,16 @@ export function useDictationLoop(
     const label = providerLabels[providerId] ?? providerId;
 
     const runLoop = async () => {
-      const processingStartedAt = now();
+      const processingStartedAt = isoNow();
+      const processingStartedMark = now();
       let transcriptionMs = 0;
       let insertionMs = 0;
+      const timeline: DictationTimeline = {
+        recordingStartedAt: session.recordingStartedAt,
+        recordingStoppedAt: session.recordingEndedAt,
+        processingStartedAt,
+        providerRequests: [],
+      };
 
       setLoopState({
         error: null,
@@ -212,6 +226,7 @@ export function useDictationLoop(
         captureAnalysis,
         audioBlob,
       );
+      timeline.audioAnalysisCompletedAt = isoNow();
       if (captureAnalysis && shouldSkipBeforeTranscription(captureAnalysis)) {
         const message = captureMessage(captureAnalysis.reason);
         await persistDraft({
@@ -224,12 +239,13 @@ export function useDictationLoop(
           recording: buildRecordingDiagnostics(
             session.recordingMetrics,
             {
-              postProcessingMs: elapsedMs(processingStartedAt),
+              postProcessingMs: elapsedMs(processingStartedMark),
               transcriptionMs,
               insertionMs,
             },
           ),
           session,
+          timeline,
           transcript: {
             characterCount: 0,
             finalText: "",
@@ -265,25 +281,54 @@ export function useDictationLoop(
           }
         | undefined;
       try {
+        timeline.transcriptionStartedAt = isoNow();
         const transcriptionStartedAt = now();
-        const transcriptionResults = await Promise.all(
-          transcriptionSegments.map(async (segmentBlob) => {
+        const transcriptionAttempts = await Promise.all(
+          transcriptionSegments.map(async (segmentBlob, segmentIndex) => {
             try {
-              return await transcribeRecording({
+              const result = await transcribeRecording({
                 providerId,
                 audioBlob: segmentBlob,
                 language: "en",
               });
+              const requestTiming = providerRequestTimingFromResult(
+                result,
+                segmentIndex,
+              );
+              if (requestTiming) {
+                timeline.providerRequests.push(requestTiming);
+              }
+              return result;
             } catch (err) {
               if (isBlankProviderTranscription(err)) {
                 return null;
               }
 
-              throw err;
+              const requestTiming = providerRequestTimingFromError(
+                err,
+                segmentIndex,
+                providerId,
+              );
+              if (requestTiming) {
+                timeline.providerRequests.push(requestTiming);
+                applyProviderRequestAggregate(timeline);
+              } else {
+                applyProviderErrorAggregate(timeline, err);
+              }
+              return { error: err };
             }
           }),
         );
         transcriptionMs = elapsedMs(transcriptionStartedAt);
+        timeline.transcriptionCompletedAt = isoNow();
+        applyProviderRequestAggregate(timeline);
+        const failedAttempt = transcriptionAttempts.find(isFailedSegmentResult);
+        if (failedAttempt) {
+          throw failedAttempt.error;
+        }
+        const transcriptionResults = transcriptionAttempts.filter(
+          isTranscriptSegmentResult,
+        );
         const firstTranscriptionResult =
           transcriptionResults.find((result) => result !== null) ?? null;
         transcriptionContext = {
@@ -309,12 +354,17 @@ export function useDictationLoop(
           recording: buildRecordingDiagnostics(
             session.recordingMetrics,
             {
-              postProcessingMs: elapsedMs(processingStartedAt),
+              postProcessingMs: elapsedMs(processingStartedMark),
               transcriptionMs,
               insertionMs,
             },
           ),
           session,
+          timeline: {
+            ...timeline,
+            transcriptionCompletedAt:
+              timeline.transcriptionCompletedAt ?? isoNow(),
+          },
           transcript: {
             characterCount: 0,
             finalText: "",
@@ -357,12 +407,17 @@ export function useDictationLoop(
           recording: buildRecordingDiagnostics(
             session.recordingMetrics,
             {
-              postProcessingMs: elapsedMs(processingStartedAt),
+              postProcessingMs: elapsedMs(processingStartedMark),
               transcriptionMs,
               insertionMs,
             },
           ),
           session,
+          timeline: {
+            ...timeline,
+            transcriptionCompletedAt:
+              timeline.transcriptionCompletedAt ?? isoNow(),
+          },
           transcript: {
             characterCount: 0,
             finalText: text,
@@ -394,9 +449,11 @@ export function useDictationLoop(
       });
 
       try {
+        timeline.insertionStartedAt = isoNow();
         const insertionStartedAt = now();
         const insertResult = await insertIntoActiveTarget(text);
         insertionMs = elapsedMs(insertionStartedAt);
+        timeline.insertionCompletedAt = isoNow();
         await persistDraft({
           audioBlob,
           processedAudioBlob: captureAnalysis?.processedAudio ?? null,
@@ -407,12 +464,13 @@ export function useDictationLoop(
           recording: buildRecordingDiagnostics(
             session.recordingMetrics,
             {
-              postProcessingMs: elapsedMs(processingStartedAt),
+              postProcessingMs: elapsedMs(processingStartedMark),
               transcriptionMs,
               insertionMs,
             },
           ),
           session,
+          timeline,
           transcript: {
             characterCount: text.length,
             finalText: text,
@@ -436,6 +494,7 @@ export function useDictationLoop(
         }
       } catch (err) {
         const message = `Insertion failed: ${normalizeError(err)}`;
+        timeline.insertionCompletedAt = isoNow();
         await persistDraft({
           audioBlob,
           processedAudioBlob: captureAnalysis?.processedAudio ?? null,
@@ -446,12 +505,13 @@ export function useDictationLoop(
           recording: buildRecordingDiagnostics(
             session.recordingMetrics,
             {
-              postProcessingMs: elapsedMs(processingStartedAt),
+              postProcessingMs: elapsedMs(processingStartedMark),
               transcriptionMs,
               insertionMs,
             },
           ),
           session,
+          timeline,
           transcript: {
             characterCount: text.length,
             finalText: text,
@@ -595,6 +655,125 @@ function isBlankProviderTranscription(error: unknown) {
   );
 }
 
+function isFailedSegmentResult(
+  result: SegmentTranscriptionResult,
+): result is { error: unknown } {
+  return typeof result === "object" && result !== null && "error" in result;
+}
+
+function isTranscriptSegmentResult(
+  result: SegmentTranscriptionResult,
+): result is Awaited<ReturnType<typeof transcribeRecording>> | null {
+  return !isFailedSegmentResult(result);
+}
+
+function providerRequestTimingFromResult(
+  result: Awaited<ReturnType<typeof transcribeRecording>>,
+  segmentIndex: number,
+): DictationProviderRequestTiming | null {
+  if (!result.providerRequestStartedAt || !result.providerResponseReceivedAt) {
+    return null;
+  }
+
+  return {
+    segmentIndex,
+    startedAt: result.providerRequestStartedAt,
+    completedAt: result.providerResponseReceivedAt,
+    providerId: result.providerId,
+    modelId: result.model,
+    status: "succeeded",
+    errorCode: null,
+  };
+}
+
+function providerRequestTimingFromError(
+  error: unknown,
+  segmentIndex: number,
+  providerId: string,
+): DictationProviderRequestTiming | null {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("providerRequestStartedAt" in error) ||
+    !("providerResponseReceivedAt" in error)
+  ) {
+    return null;
+  }
+
+  const providerRequestStartedAt = (error as {
+    providerRequestStartedAt?: unknown;
+  }).providerRequestStartedAt;
+  const providerResponseReceivedAt = (error as {
+    providerResponseReceivedAt?: unknown;
+  }).providerResponseReceivedAt;
+
+  if (
+    typeof providerRequestStartedAt !== "string" ||
+    typeof providerResponseReceivedAt !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    segmentIndex,
+    startedAt: providerRequestStartedAt,
+    completedAt: providerResponseReceivedAt,
+    providerId,
+    modelId: null,
+    status: "failed",
+    errorCode: providerErrorCode(error),
+  };
+}
+
+function providerErrorCode(error: unknown) {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return null;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
+}
+
+function applyProviderRequestAggregate(timeline: DictationTimeline) {
+  if (timeline.providerRequests.length === 0) {
+    return;
+  }
+
+  const sortedByStart = [...timeline.providerRequests].sort((left, right) =>
+    left.startedAt.localeCompare(right.startedAt),
+  );
+  const sortedByCompletion = [...timeline.providerRequests].sort((left, right) =>
+    left.completedAt.localeCompare(right.completedAt),
+  );
+
+  timeline.providerRequestStartedAt = sortedByStart[0]?.startedAt ?? null;
+  timeline.providerResponseReceivedAt =
+    sortedByCompletion[sortedByCompletion.length - 1]?.completedAt ?? null;
+}
+
+function applyProviderErrorAggregate(
+  timeline: DictationTimeline,
+  error: unknown,
+) {
+  if (typeof error !== "object" || error === null) {
+    return;
+  }
+
+  const providerRequestStartedAt = (error as {
+    providerRequestStartedAt?: unknown;
+  }).providerRequestStartedAt;
+  const providerResponseReceivedAt = (error as {
+    providerResponseReceivedAt?: unknown;
+  }).providerResponseReceivedAt;
+
+  if (typeof providerRequestStartedAt === "string") {
+    timeline.providerRequestStartedAt = providerRequestStartedAt;
+  }
+  if (typeof providerResponseReceivedAt === "string") {
+    timeline.providerResponseReceivedAt = providerResponseReceivedAt;
+  }
+}
+
 function captureMessage(reason: CaptureReason): string {
   switch (reason) {
     case "no_speech":
@@ -615,6 +794,7 @@ async function persistDraft(input: {
   provider: DictationRecordDraft["provider"];
   recording?: DictationRecordDraft["recording"];
   session: DictationLoopSession;
+  timeline?: DictationTimeline | null;
   transcript: DictationRecordDraft["transcript"];
   insertion: DictationRecordDraft["insertion"];
 }) {
@@ -674,6 +854,13 @@ async function persistDraft(input: {
       provider: input.provider,
       transcript: input.transcript,
       insertion: input.insertion,
+      timeline: input.timeline
+        ? {
+            ...input.timeline,
+            providerRequests: input.timeline.providerRequests ?? [],
+            recordPersistedAt: isoNow(),
+          }
+        : null,
     });
   } catch (err) {
     console.error("Failed to save dictation record", err);
@@ -737,6 +924,10 @@ function buildRecordingDiagnostics(
 
 function now() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+function isoNow() {
+  return new Date().toISOString();
 }
 
 function elapsedMs(startedAt: number) {

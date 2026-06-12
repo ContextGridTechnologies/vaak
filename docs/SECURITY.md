@@ -81,3 +81,4 @@ These controls are part of profitability, not optional infrastructure polish.
 - Keep provider interfaces understandable.
 - Avoid hidden telemetry.
 - Make telemetry opt-in if added.
+- Keep usage analytics and crash reports independently controllable.

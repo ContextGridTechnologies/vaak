@@ -129,7 +129,7 @@ Exit criteria:
 
 ### Phase 4: macOS Native Completion
 
-Status: in progress.
+Status: implementation complete; real-device validation pending.
 
 Implement the Mac-specific native pieces needed for real dictation workflows.
 
@@ -164,7 +164,8 @@ Likely areas:
 - Completed: macOS structured focus/insertion diagnostics now log selected
   targets, insertion strategy attempts, strategy success/failure, and target
   mismatch payloads with the same operation-id pattern as Windows.
-- Platform-specific error messages where native permissions are denied.
+- Completed: Platform-specific permission denial messages are exposed for
+  macOS Accessibility and Input Monitoring requirements.
 
 Implementation status:
 
@@ -203,6 +204,21 @@ Exit criteria:
 
 The known macOS backend module gaps tracked in this plan are now implemented.
 Remaining work is real-device validation and any follow-up issues found there.
+
+### Next Remaining Steps
+
+1. Run the `macOS Preview Build` workflow and download the unsigned `.app` and
+   `.dmg` artifacts.
+2. Validate the unsigned build on a real Apple Silicon Mac.
+3. Validate on an Intel Mac if one is available; if not, document Apple Silicon
+   as the initial preview support target.
+4. Complete the runtime checklist in Phase 3, including microphone prompts,
+   provider key storage, BYO transcription, focused target capture, text
+   insertion into real apps, capsule behavior, and app lifecycle behavior.
+5. File or document any Mac-only blockers found during validation.
+6. Decide whether preview artifacts stay as workflow artifacts or attach to
+   tagged releases.
+7. After unsigned validation passes, proceed to signing and notarization.
 
 ### Phase 5: Signing and Notarization
 

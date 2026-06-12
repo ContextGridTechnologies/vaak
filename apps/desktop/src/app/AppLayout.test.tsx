@@ -65,6 +65,17 @@ describe("AppLayout", () => {
     expect(screen.getByText("Home content")).toBeInTheDocument();
   });
 
+  it("shows the analytics navigation item in development builds", () => {
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+        <TabsContent value="analytics">Analytics content</TabsContent>
+      </AppLayout>,
+    );
+
+    expect(screen.getByRole("button", { name: "Analytics" })).toBeInTheDocument();
+  });
+
   it("keeps the sidebar pinned on the left with an icon collapse model", () => {
     renderLayout(
       <AppLayout>

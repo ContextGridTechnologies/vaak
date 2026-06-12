@@ -93,6 +93,7 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
             )
         })
         .await?;
+        let timing = response.timing.clone();
 
         let body = response.text().await?;
         let payload = parse_transcription_response(&body)?;
@@ -105,6 +106,8 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
             model: self.deployment_id.clone(),
             text: payload.text,
             duration_ms: None,
+            provider_request_started_at: Some(timing.started_at),
+            provider_response_received_at: Some(timing.completed_at),
         })
     }
 }

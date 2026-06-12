@@ -33,6 +33,31 @@ export type DictationInsertionOutcome = {
   errorMessage: string | null;
 };
 
+export type DictationProviderRequestTiming = {
+  segmentIndex: number;
+  startedAt: string;
+  completedAt: string;
+  providerId: string;
+  modelId: string | null;
+  status?: "succeeded" | "failed" | null;
+  errorCode?: string | null;
+};
+
+export type DictationTimeline = {
+  recordingStartedAt?: string | null;
+  recordingStoppedAt?: string | null;
+  processingStartedAt?: string | null;
+  audioAnalysisCompletedAt?: string | null;
+  transcriptionStartedAt?: string | null;
+  providerRequestStartedAt?: string | null;
+  providerResponseReceivedAt?: string | null;
+  transcriptionCompletedAt?: string | null;
+  insertionStartedAt?: string | null;
+  insertionCompletedAt?: string | null;
+  recordPersistedAt?: string | null;
+  providerRequests: DictationProviderRequestTiming[];
+};
+
 export type DictationRecordingDiagnostics = {
   startupMs: number;
   streamAcquisitionMs: number;
@@ -63,6 +88,7 @@ export type DictationRecordDraft = {
   provider: DictationProviderContext | null;
   transcript: DictationTranscript;
   insertion: DictationInsertionOutcome;
+  timeline?: DictationTimeline | null;
 };
 
 export type DictationRecord = DictationRecordDraft & {

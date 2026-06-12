@@ -30,6 +30,10 @@ pub struct ProviderError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_after_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_request_started_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_response_received_at: Option<String>,
 }
 
 impl ProviderError {
@@ -38,11 +42,23 @@ impl ProviderError {
             code: code.into(),
             message: message.into(),
             retry_after_ms: None,
+            provider_request_started_at: None,
+            provider_response_received_at: None,
         }
     }
 
     pub fn with_retry_after_ms(mut self, retry_after_ms: Option<u64>) -> Self {
         self.retry_after_ms = retry_after_ms;
+        self
+    }
+
+    pub fn with_provider_timing(
+        mut self,
+        started_at: Option<String>,
+        completed_at: Option<String>,
+    ) -> Self {
+        self.provider_request_started_at = started_at;
+        self.provider_response_received_at = completed_at;
         self
     }
 }

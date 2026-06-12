@@ -3,6 +3,7 @@ import type { AppEnvironment } from "@/config/app-env";
 export type AnalyticsEventName =
   | "app_installed_or_first_run"
   | "app_opened"
+  | "error_captured"
   | "onboarding_started"
   | "onboarding_completed"
   | "provider_configured"
@@ -16,6 +17,13 @@ export type AnalyticsEventName =
   | "app_version_seen";
 
 export type AnalyticsProperties = Record<string, unknown>;
+
+export type ErrorTelemetryProperties = {
+  code: string;
+  handled: boolean;
+  providerId?: string;
+  stage: string;
+};
 
 type PostHogClient = {
   capture: (eventName: string, properties?: AnalyticsProperties) => void;
@@ -44,8 +52,13 @@ export type Analytics = {
     properties?: AnalyticsProperties,
   ) => void;
   captureAppOpened: () => void;
+  captureError: (error: unknown, properties: ErrorTelemetryProperties) => void;
   enabled: boolean;
+  errorTelemetryEnabled: boolean;
+  setErrorTelemetryEnabled: (enabled: boolean) => void;
   setTelemetryEnabled: (enabled: boolean) => void;
+  setUsageAnalyticsEnabled: (enabled: boolean) => void;
+  usageAnalyticsEnabled: boolean;
 };
 
 type CreateAnalyticsOptions = {
@@ -55,7 +68,8 @@ type CreateAnalyticsOptions = {
   storage: Storage;
 };
 
-const TELEMETRY_ENABLED_KEY = "vaak.telemetry.enabled";
+const USAGE_ANALYTICS_ENABLED_KEY = "vaak.telemetry.usage.enabled";
+const ERROR_TELEMETRY_ENABLED_KEY = "vaak.telemetry.errors.enabled";
 const FIRST_RUN_CAPTURED_KEY = "vaak.analytics.firstRunCaptured";
 const MAX_ANALYTICS_STRING_LENGTH = 160;
 const SECRET_VALUE_PATTERN =
@@ -65,15 +79,26 @@ const WINDOWS_PATH_PATTERN =
 const UNIX_PATH_PATTERN =
   /(?<!\w)\/(?:Users|home|var|tmp|private|Volumes)\/[^\s"'<>]+/g;
 
-export function getTelemetryEnabledPreference(storage: Storage): boolean {
-  return storage.getItem(TELEMETRY_ENABLED_KEY) !== "false";
+export function getUsageAnalyticsEnabledPreference(storage: Storage): boolean {
+  return storage.getItem(USAGE_ANALYTICS_ENABLED_KEY) === "true";
 }
 
-export function setTelemetryEnabledPreference(
+export function setUsageAnalyticsEnabledPreference(
   storage: Storage,
   enabled: boolean,
 ): void {
-  storage.setItem(TELEMETRY_ENABLED_KEY, enabled ? "true" : "false");
+  storage.setItem(USAGE_ANALYTICS_ENABLED_KEY, enabled ? "true" : "false");
+}
+
+export function getErrorTelemetryEnabledPreference(storage: Storage): boolean {
+  return storage.getItem(ERROR_TELEMETRY_ENABLED_KEY) === "true";
+}
+
+export function setErrorTelemetryEnabledPreference(
+  storage: Storage,
+  enabled: boolean,
+): void {
+  storage.setItem(ERROR_TELEMETRY_ENABLED_KEY, enabled ? "true" : "false");
 }
 
 export function createAnalytics({
@@ -82,9 +107,12 @@ export function createAnalytics({
   posthog,
   storage,
 }: CreateAnalyticsOptions): Analytics {
-  let enabled =
+  let usageAnalyticsEnabled =
     environment.posthogPublicKey !== null &&
-    getTelemetryEnabledPreference(storage);
+    getUsageAnalyticsEnabledPreference(storage);
+  let errorTelemetryEnabled =
+    environment.posthogPublicKey !== null &&
+    getErrorTelemetryEnabledPreference(storage);
   let initialized = false;
   const baseProperties = {
     app_env: environment.appEnv,
@@ -113,7 +141,7 @@ export function createAnalytics({
     });
   }
 
-  if (enabled) {
+  if (isAnyTelemetryEnabled()) {
     initializePostHog();
     tryPostHogCall(() => {
       posthog.opt_in_capturing();
@@ -128,7 +156,7 @@ export function createAnalytics({
     eventName: AnalyticsEventName,
     properties: AnalyticsProperties = {},
   ): void {
-    if (!enabled) {
+    if (!usageAnalyticsEnabled) {
       return;
     }
 
@@ -141,7 +169,7 @@ export function createAnalytics({
   }
 
   function captureAppOpened(): void {
-    if (!enabled) {
+    if (!usageAnalyticsEnabled) {
       return;
     }
 
@@ -153,13 +181,49 @@ export function createAnalytics({
     capture("app_opened");
   }
 
-  function setTelemetryEnabled(enabledPreference: boolean): void {
-    setTelemetryEnabledPreference(storage, enabledPreference);
-    enabled =
-      environment.posthogPublicKey !== null &&
-      getTelemetryEnabledPreference(storage);
+  function captureError(
+    error: unknown,
+    properties: ErrorTelemetryProperties,
+  ): void {
+    if (!errorTelemetryEnabled) {
+      return;
+    }
 
-    if (enabled) {
+    const errorMessage = normalizeAnalyticsErrorMessage(error);
+    tryPostHogCall(() => {
+      posthog.capture("error_captured", {
+        ...sanitizeAnalyticsProperties(baseProperties),
+        ...sanitizeAnalyticsProperties({
+          error_code: properties.code,
+          error_message: errorMessage,
+          error_stage: properties.stage,
+          handled: properties.handled,
+          provider_id: properties.providerId ?? null,
+        }),
+      });
+    });
+  }
+
+  function setUsageAnalyticsEnabled(enabledPreference: boolean): void {
+    setUsageAnalyticsEnabledPreference(storage, enabledPreference);
+    usageAnalyticsEnabled =
+      environment.posthogPublicKey !== null &&
+      getUsageAnalyticsEnabledPreference(storage);
+
+    syncPostHogCaptureState();
+  }
+
+  function setErrorTelemetryEnabled(enabledPreference: boolean): void {
+    setErrorTelemetryEnabledPreference(storage, enabledPreference);
+    errorTelemetryEnabled =
+      environment.posthogPublicKey !== null &&
+      getErrorTelemetryEnabledPreference(storage);
+
+    syncPostHogCaptureState();
+  }
+
+  function syncPostHogCaptureState(): void {
+    if (isAnyTelemetryEnabled()) {
       initializePostHog();
       tryPostHogCall(() => {
         posthog.opt_in_capturing();
@@ -172,13 +236,26 @@ export function createAnalytics({
     });
   }
 
+  function isAnyTelemetryEnabled(): boolean {
+    return usageAnalyticsEnabled || errorTelemetryEnabled;
+  }
+
   return {
     capture,
     captureAppOpened,
+    captureError,
     get enabled() {
-      return enabled;
+      return isAnyTelemetryEnabled();
     },
-    setTelemetryEnabled,
+    get errorTelemetryEnabled() {
+      return errorTelemetryEnabled;
+    },
+    setErrorTelemetryEnabled,
+    setTelemetryEnabled: setUsageAnalyticsEnabled,
+    setUsageAnalyticsEnabled,
+    get usageAnalyticsEnabled() {
+      return usageAnalyticsEnabled;
+    },
   };
 }
 
@@ -216,4 +293,19 @@ function sanitizeAnalyticsString(value: string): string {
     .replace(WINDOWS_PATH_PATTERN, "[redacted_path]")
     .replace(UNIX_PATH_PATTERN, "[redacted_path]")
     .slice(0, MAX_ANALYTICS_STRING_LENGTH);
+}
+
+function normalizeAnalyticsErrorMessage(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error && typeof error === "object") {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === "string") {
+      return maybeMessage;
+    }
+  }
+
+  return "Unknown error";
 }

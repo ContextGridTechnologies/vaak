@@ -21,6 +21,11 @@ import {
 
 import { StatusBadge } from "@/components/app";
 import { appScreenContentClassName } from "@/components/app/AppScreen";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -114,6 +119,7 @@ export function HomePanel() {
   const [showSkippedTranscripts, setShowSkippedTranscripts] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasLoadedAllRecords, setHasLoadedAllRecords] = useState(false);
+  const [activityLoadError, setActivityLoadError] = useState<string | null>(null);
   const [retryingRecordIds, setRetryingRecordIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -147,6 +153,7 @@ export function HomePanel() {
         }
 
         setRecords((current) => mergeRecentRecords(current, recent));
+        setActivityLoadError(null);
         setHasLoadedAllRecords((current) =>
           current || recent.length < INITIAL_VISIBLE_COUNT,
         );
@@ -154,6 +161,7 @@ export function HomePanel() {
       } catch (error) {
         if (!disposed) {
           console.error("Failed to load dictation records", error);
+          setActivityLoadError(normalizeError(error));
           setRecords([]);
           setHasLoadedAllRecords(true);
           setIsLoadingMore(false);
@@ -377,6 +385,13 @@ export function HomePanel() {
             </div>
           </div>
 
+          {activityLoadError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Activity unavailable</AlertTitle>
+              <AlertDescription>{activityLoadError}</AlertDescription>
+            </Alert>
+          ) : null}
+
           {activities.length > 0 ? (
             <div className="overflow-hidden rounded-lg border-y border-border/80 bg-card shadow-xs">
               {visibleActivities.map((activity) => (
@@ -396,7 +411,7 @@ export function HomePanel() {
                 />
               ) : null}
             </div>
-          ) : (
+          ) : activityLoadError ? null : (
             <Card className="border-border/70 bg-card shadow-sm">
               <Empty className="min-h-[24rem] rounded-xl border-0">
                 <EmptyHeader>

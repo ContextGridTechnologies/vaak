@@ -18,6 +18,8 @@ export type TranscriptResult = {
   model: string;
   text: string;
   durationMs: number | null;
+  providerRequestStartedAt?: string | null;
+  providerResponseReceivedAt?: string | null;
 };
 
 export type SpeechProviderId =

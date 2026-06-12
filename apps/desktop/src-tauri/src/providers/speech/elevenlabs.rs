@@ -65,6 +65,7 @@ impl SpeechProvider for ElevenLabsSpeechProvider {
             build_transcription_request(&client, &api_key, &input.audio, &input.mime_type, &request)
         })
         .await?;
+        let timing = response.timing.clone();
 
         let payload = response.json::<ElevenLabsTranscriptionResponse>().await?;
         if payload.text.trim().is_empty() {
@@ -76,6 +77,8 @@ impl SpeechProvider for ElevenLabsSpeechProvider {
             model: request.model_id,
             text: payload.text,
             duration_ms: None,
+            provider_request_started_at: Some(timing.started_at),
+            provider_response_received_at: Some(timing.completed_at),
         })
     }
 }

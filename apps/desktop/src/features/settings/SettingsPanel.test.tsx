@@ -29,7 +29,9 @@ const openerApi = vi.hoisted(() => ({
 const analyticsApi = vi.hoisted(() => ({
   analytics: {
     capture: vi.fn(),
-    setTelemetryEnabled: vi.fn(),
+    captureError: vi.fn(),
+    setErrorTelemetryEnabled: vi.fn(),
+    setUsageAnalyticsEnabled: vi.fn(),
   },
 }));
 
@@ -254,7 +256,7 @@ describe("SettingsPanel provider setup", () => {
     expect(within(shortcutCard!).getByText("Win")).toBeInTheDocument();
   });
 
-  it("keeps usage analytics inside the system setting card", async () => {
+  it("keeps optional telemetry controls inside the system setting card", async () => {
     const user = userEvent.setup();
     renderApp(<SettingsPanel />);
 
@@ -267,23 +269,37 @@ describe("SettingsPanel provider setup", () => {
     const toggle = within(systemCard!).getByRole("switch", {
       name: "Share privacy-safe usage analytics",
     });
-    expect(toggle).toBeChecked();
+    expect(toggle).not.toBeChecked();
 
     await user.click(toggle);
 
-    expect(toggle).not.toBeChecked();
-    expect(analyticsApi.analytics.setTelemetryEnabled).toHaveBeenCalledWith(false);
+    expect(toggle).toBeChecked();
+    expect(analyticsApi.analytics.setUsageAnalyticsEnabled).toHaveBeenCalledWith(true);
     expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
       "setting_changed",
       {
-        enabled: false,
+        enabled: true,
         setting_id: "usage_analytics",
       },
     );
-    const captureCallOrder =
-      analyticsApi.analytics.capture.mock.invocationCallOrder;
-    expect(captureCallOrder[captureCallOrder.length - 1]).toBeLessThan(
-      analyticsApi.analytics.setTelemetryEnabled.mock.invocationCallOrder[0],
+
+    const crashReportsToggle = within(systemCard!).getByRole("switch", {
+      name: "Send sanitized crash reports",
+    });
+    expect(crashReportsToggle).not.toBeChecked();
+
+    await user.click(crashReportsToggle);
+
+    expect(crashReportsToggle).toBeChecked();
+    expect(analyticsApi.analytics.setErrorTelemetryEnabled).toHaveBeenCalledWith(
+      true,
+    );
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "setting_changed",
+      {
+        enabled: true,
+        setting_id: "error_diagnostics",
+      },
     );
     expect(screen.getAllByText("System setting")).toHaveLength(1);
   });
@@ -319,6 +335,43 @@ describe("SettingsPanel provider setup", () => {
       {
         enabled: false,
         setting_id: "launch_on_startup",
+      },
+    );
+  });
+
+  it("captures handled telemetry when a system setting save fails", async () => {
+    providerApi.saveSystemSettings.mockRejectedValue({
+      code: "settings_save_failed",
+      message: "could not update startup preference",
+    });
+    const user = userEvent.setup();
+    renderApp(<SettingsPanel />);
+
+    const systemCard = (await screen.findByText("System setting")).closest(
+      '[data-slot="card"]',
+    ) as HTMLElement | null;
+    expect(systemCard).not.toBeNull();
+
+    await user.click(
+      within(systemCard!).getByRole("switch", {
+        name: "Start Vaak on startup",
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        "settings_save_failed: could not update startup preference",
+      ),
+    ).toBeInTheDocument();
+    expect(analyticsApi.analytics.captureError).toHaveBeenCalledWith(
+      {
+        code: "settings_save_failed",
+        message: "could not update startup preference",
+      },
+      {
+        code: "settings_save_failed",
+        handled: true,
+        stage: "settings",
       },
     );
   });
@@ -495,6 +548,18 @@ describe("SettingsPanel provider setup", () => {
         status: "failed",
       },
     );
+    expect(analyticsApi.analytics.captureError).toHaveBeenCalledWith(
+      {
+        code: "missing_provider_config",
+        message: "provider configuration is incomplete",
+      },
+      {
+        code: "missing_provider_config",
+        handled: true,
+        providerId: "azure-openai",
+        stage: "provider_configuration",
+      },
+    );
   });
 
   it("keeps diagnostics local and opens the log folder for manual sharing", async () => {
@@ -503,7 +568,7 @@ describe("SettingsPanel provider setup", () => {
     renderApp(<SettingsPanel />);
 
     expect(
-      await screen.findByText("Crash reports are not sent automatically"),
+      await screen.findByText("Local logs are not sent automatically"),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/attach the relevant logs to a GitHub issue or support thread/i),

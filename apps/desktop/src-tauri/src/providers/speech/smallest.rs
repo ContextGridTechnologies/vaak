@@ -56,10 +56,14 @@ impl SpeechProvider for SmallestSpeechProvider {
             )
         })
         .await?;
+        let timing = response.timing.clone();
 
         let body = response.text().await?;
         let payload = parse_transcription_response(&body)?;
-        resolve_transcription_response(payload, &model)
+        let mut result = resolve_transcription_response(payload, &model)?;
+        result.provider_request_started_at = Some(timing.started_at);
+        result.provider_response_received_at = Some(timing.completed_at);
+        Ok(result)
     }
 }
 
@@ -146,6 +150,8 @@ fn resolve_transcription_response(
         model: model.to_string(),
         text,
         duration_ms: payload.audio_length.and_then(seconds_to_millis),
+        provider_request_started_at: None,
+        provider_response_received_at: None,
     })
 }
 

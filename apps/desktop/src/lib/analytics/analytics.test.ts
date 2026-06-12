@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createAnalytics,
-  getTelemetryEnabledPreference,
-  setTelemetryEnabledPreference,
+  getErrorTelemetryEnabledPreference,
+  getUsageAnalyticsEnabledPreference,
+  setErrorTelemetryEnabledPreference,
+  setUsageAnalyticsEnabledPreference,
 } from "./analytics";
 
 function storageWith(values: Record<string, string> = {}): Storage {
@@ -28,16 +30,21 @@ describe("analytics", () => {
     vi.clearAllMocks();
   });
 
-  it("defaults telemetry preference to enabled until the user changes it", () => {
+  it("defaults telemetry preferences to disabled until the user opts in", () => {
     const storage = storageWith();
 
-    expect(getTelemetryEnabledPreference(storage)).toBe(true);
+    expect(getUsageAnalyticsEnabledPreference(storage)).toBe(false);
+    expect(getErrorTelemetryEnabledPreference(storage)).toBe(false);
 
-    setTelemetryEnabledPreference(storage, false);
-    expect(getTelemetryEnabledPreference(storage)).toBe(false);
+    setUsageAnalyticsEnabledPreference(storage, true);
+    setErrorTelemetryEnabledPreference(storage, true);
+    expect(getUsageAnalyticsEnabledPreference(storage)).toBe(true);
+    expect(getErrorTelemetryEnabledPreference(storage)).toBe(true);
 
-    setTelemetryEnabledPreference(storage, true);
-    expect(getTelemetryEnabledPreference(storage)).toBe(true);
+    setUsageAnalyticsEnabledPreference(storage, false);
+    setErrorTelemetryEnabledPreference(storage, false);
+    expect(getUsageAnalyticsEnabledPreference(storage)).toBe(false);
+    expect(getErrorTelemetryEnabledPreference(storage)).toBe(false);
   });
 
   it("does not initialize PostHog without a public key", () => {
@@ -59,7 +66,7 @@ describe("analytics", () => {
         posthogPublicKey: null,
       },
       posthog,
-      storage: storageWith(),
+      storage: storageWith({ "vaak.telemetry.usage.enabled": "true" }),
     });
 
     expect(analytics.enabled).toBe(false);
@@ -87,7 +94,7 @@ describe("analytics", () => {
         posthogPublicKey: "phc_public_project_key",
       },
       posthog,
-      storage: storageWith(),
+      storage: storageWith({ "vaak.telemetry.usage.enabled": "true" }),
     });
 
     expect(analytics.enabled).toBe(true);
@@ -111,7 +118,7 @@ describe("analytics", () => {
       opt_in_capturing: vi.fn(),
       opt_out_capturing: vi.fn(),
     };
-    const storage = storageWith();
+    const storage = storageWith({ "vaak.telemetry.usage.enabled": "true" });
     const environment = {
       appEnv: "production" as const,
       cloudBaseUrl: null,
@@ -152,7 +159,7 @@ describe("analytics", () => {
       opt_in_capturing: vi.fn(),
       opt_out_capturing: vi.fn(),
     };
-    const storage = storageWith();
+    const storage = storageWith({ "vaak.telemetry.usage.enabled": "true" });
     const analytics = createAnalytics({
       appVersion: "0.1.0",
       environment: {
@@ -168,13 +175,13 @@ describe("analytics", () => {
     });
 
     analytics.capture("app_opened");
-    analytics.setTelemetryEnabled(false);
+    analytics.setUsageAnalyticsEnabled(false);
     analytics.capture("app_version_seen");
-    analytics.setTelemetryEnabled(true);
+    analytics.setUsageAnalyticsEnabled(true);
     analytics.capture("app_version_seen");
 
     expect(analytics.enabled).toBe(true);
-    expect(getTelemetryEnabledPreference(storage)).toBe(true);
+    expect(getUsageAnalyticsEnabledPreference(storage)).toBe(true);
     expect(posthog.opt_out_capturing).toHaveBeenCalledTimes(1);
     expect(posthog.opt_in_capturing).toHaveBeenCalledTimes(2);
     expect(posthog.capture).toHaveBeenCalledTimes(2);
@@ -206,7 +213,7 @@ describe("analytics", () => {
         posthogPublicKey: "phc_public_project_key",
       },
       posthog,
-      storage: storageWith(),
+      storage: storageWith({ "vaak.telemetry.usage.enabled": "true" }),
     });
 
     analytics.capture(
@@ -250,7 +257,7 @@ describe("analytics", () => {
         posthogPublicKey: "phc_public_project_key",
       },
       posthog,
-      storage: storageWith(),
+      storage: storageWith({ "vaak.telemetry.usage.enabled": "true" }),
     });
 
     analytics.capture("dictation_failed", {
@@ -292,12 +299,12 @@ describe("analytics", () => {
       storage,
     });
 
-    analytics.setTelemetryEnabled(false);
-    analytics.setTelemetryEnabled(true);
+    analytics.setUsageAnalyticsEnabled(false);
+    analytics.setUsageAnalyticsEnabled(true);
     analytics.capture("app_opened");
 
     expect(analytics.enabled).toBe(false);
-    expect(getTelemetryEnabledPreference(storage)).toBe(true);
+    expect(getUsageAnalyticsEnabledPreference(storage)).toBe(true);
     expect(posthog.init).not.toHaveBeenCalled();
     expect(posthog.capture).not.toHaveBeenCalled();
     expect(posthog.opt_in_capturing).not.toHaveBeenCalled();
@@ -331,12 +338,89 @@ describe("analytics", () => {
           posthogPublicKey: "phc_public_project_key",
         },
         posthog,
-        storage: storageWith(),
+        storage: storageWith({ "vaak.telemetry.usage.enabled": "true" }),
       });
 
       analytics.capture("app_opened");
-      analytics.setTelemetryEnabled(false);
-      analytics.setTelemetryEnabled(true);
+      analytics.setUsageAnalyticsEnabled(false);
+      analytics.setUsageAnalyticsEnabled(true);
     }).not.toThrow();
+  });
+
+  it("captures sanitized handled errors only when error telemetry is enabled", () => {
+    const posthog = {
+      capture: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+    };
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: "phc_public_project_key",
+      },
+      posthog,
+      storage: storageWith({ "vaak.telemetry.errors.enabled": "true" }),
+    });
+
+    analytics.capture("app_opened");
+    analytics.captureError(
+      new Error(
+        "OpenAI key sk-test-secret failed at C:\\Users\\nikhi\\Desktop\\Projects\\vaak\\audio.wav",
+      ),
+      {
+        code: "provider_auth_failed",
+        handled: true,
+        providerId: "openai",
+        stage: "transcription",
+      },
+    );
+
+    expect(posthog.capture).toHaveBeenCalledTimes(1);
+    expect(posthog.capture).toHaveBeenCalledWith("error_captured", {
+      app_env: "production",
+      app_version: "0.1.0",
+      error_code: "provider_auth_failed",
+      error_message:
+        "OpenAI key [redacted_secret] failed at [redacted_path]",
+      error_stage: "transcription",
+      handled: true,
+      provider_id: "openai",
+    });
+  });
+
+  it("does not capture handled errors when error telemetry is disabled", () => {
+    const posthog = {
+      capture: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+    };
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: "phc_public_project_key",
+      },
+      posthog,
+      storage: storageWith(),
+    });
+
+    analytics.captureError("failed", {
+      code: "unknown_error",
+      handled: true,
+      stage: "app_runtime",
+    });
+
+    expect(posthog.capture).not.toHaveBeenCalled();
   });
 });

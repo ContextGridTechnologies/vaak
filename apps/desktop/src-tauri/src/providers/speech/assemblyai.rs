@@ -59,11 +59,18 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
 
         let client = build_http_client()?;
         let model = resolve_model(input.model.as_deref()).to_string();
+        let mut provider_request_started_at: Option<String> = None;
+        let mut provider_response_received_at: Option<String> = None;
 
         let upload_response = send_provider_request_with_retry(&client, "AssemblyAI", || {
             build_upload_request(&client, &api_key, &input.audio, &input.mime_type)
         })
         .await?;
+        merge_timing(
+            &mut provider_request_started_at,
+            &mut provider_response_received_at,
+            &upload_response.timing,
+        );
 
         let upload_payload = upload_response.json::<UploadResponse>().await?;
         let audio_url = upload_payload.upload_url.trim();
@@ -81,6 +88,11 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
             )
         })
         .await?;
+        merge_timing(
+            &mut provider_request_started_at,
+            &mut provider_response_received_at,
+            &create_response.timing,
+        );
 
         let create_payload = create_response.json::<CreateTranscriptResponse>().await?;
         let transcript_id = create_payload.id.trim();
@@ -97,9 +109,16 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
                 build_poll_request(&client, &api_key, transcript_id)
             })
             .await?;
+            merge_timing(
+                &mut provider_request_started_at,
+                &mut provider_response_received_at,
+                &poll_response.timing,
+            );
 
             let payload = poll_response.json::<TranscriptStatusResponse>().await?;
-            if let Some(result) = resolve_poll_response(payload, &model)? {
+            if let Some(mut result) = resolve_poll_response(payload, &model)? {
+                result.provider_request_started_at = provider_request_started_at;
+                result.provider_response_received_at = provider_response_received_at;
                 return Ok(result);
             }
         }
@@ -108,6 +127,28 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
             "AssemblyAI transcription did not complete before the polling timeout".to_string(),
         )
         .into())
+    }
+}
+
+fn merge_timing(
+    first_started_at: &mut Option<String>,
+    last_completed_at: &mut Option<String>,
+    timing: &crate::providers::ProviderRequestTiming,
+) {
+    if first_started_at
+        .as_deref()
+        .map(|current| timing.started_at.as_str() < current)
+        .unwrap_or(true)
+    {
+        *first_started_at = Some(timing.started_at.clone());
+    }
+
+    if last_completed_at
+        .as_deref()
+        .map(|current| timing.completed_at.as_str() > current)
+        .unwrap_or(true)
+    {
+        *last_completed_at = Some(timing.completed_at.clone());
     }
 }
 
@@ -210,6 +251,8 @@ fn resolve_poll_response(
                 duration_ms: payload
                     .audio_duration
                     .and_then(|seconds| seconds.checked_mul(1000)),
+                provider_request_started_at: None,
+                provider_response_received_at: None,
             }))
         }
         "error" => Err(ProviderFailure::Request(

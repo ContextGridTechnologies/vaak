@@ -542,6 +542,12 @@ export function SpeechProviderSettings({
         ...current,
         [providerId]: normalizeProviderError(providerId, err),
       }));
+      analytics.captureError(err, {
+        code: errorCodeFromUnknown(err),
+        handled: true,
+        providerId,
+        stage: "provider_configuration",
+      });
       analytics.capture("provider_test_completed", {
         duration_bucket: durationBucket(elapsedMs(startedAt)),
         error_code: errorCodeFromUnknown(err),

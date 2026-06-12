@@ -63,6 +63,9 @@ public project key for packaged builds and leave it blank to disable analytics.
 Use `VITE_POSTHOG_HOST` for the selected PostHog region, for example
 `https://us.i.posthog.com` or `https://eu.i.posthog.com`.
 
+When a PostHog key is bundled, Vaak still defaults usage analytics and crash
+reports to off until the user opts in from Settings.
+
 Production-safe defaults:
 
 ```powershell

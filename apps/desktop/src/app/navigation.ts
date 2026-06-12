@@ -1,12 +1,15 @@
 import {
   AudioLinesIcon,
+  ChartNoAxesCombinedIcon,
   InfoIcon,
   SlidersHorizontalIcon,
   type LucideIcon,
 } from "lucide-react";
 
+import { appEnvironment, type AppEnvironment } from "@/config/app-env";
+
 type AppSectionConfig = {
-  value: "home" | "settings" | "info";
+  value: "home" | "analytics" | "settings" | "info";
   label: string;
   icon: LucideIcon;
 };
@@ -32,6 +35,23 @@ export const utilitySections: readonly AppSectionConfig[] = [
   },
 ] as const;
 
-export const appSections = [...primarySections, ...utilitySections] as const;
+export function getAppSections(
+  environment: Pick<AppEnvironment, "appEnv"> = appEnvironment,
+): readonly AppSectionConfig[] {
+  const developerSections: readonly AppSectionConfig[] =
+    environment.appEnv === "development"
+      ? [
+          {
+            value: "analytics",
+            label: "Analytics",
+            icon: ChartNoAxesCombinedIcon,
+          },
+        ]
+      : [];
+
+  return [...primarySections, ...developerSections, ...utilitySections];
+}
+
+export const appSections = getAppSections();
 
 export type AppSection = (typeof appSections)[number]["value"];

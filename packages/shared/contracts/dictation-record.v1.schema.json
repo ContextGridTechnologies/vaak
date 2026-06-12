@@ -87,6 +87,22 @@
         },
         "reusedWarmStream": {
           "type": "boolean"
+        },
+        "analysisMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transcriptionMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "insertionMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "postProcessingMs": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -231,6 +247,99 @@
         },
         "errorMessage": {
           "type": ["string", "null"]
+        }
+      }
+    },
+    "timeline": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["providerRequests"],
+      "properties": {
+        "recordingStartedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "recordingStoppedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "processingStartedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "audioAnalysisCompletedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "transcriptionStartedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "providerRequestStartedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "providerResponseReceivedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "transcriptionCompletedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "insertionStartedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "insertionCompletedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "recordPersistedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "providerRequests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "segmentIndex",
+              "startedAt",
+              "completedAt",
+              "providerId",
+              "modelId"
+            ],
+            "properties": {
+              "segmentIndex": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "startedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "completedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "providerId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "modelId": {
+                "type": ["string", "null"]
+              },
+              "status": {
+                "type": ["string", "null"],
+                "enum": ["succeeded", "failed", null]
+              },
+              "errorCode": {
+                "type": ["string", "null"]
+              }
+            }
+          }
         }
       }
     }

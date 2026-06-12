@@ -10,30 +10,20 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
-  getTelemetryEnabledPreference,
+  getUsageAnalyticsEnabledPreference,
 } from "@/lib/analytics";
 import { analytics } from "@/lib/analytics/browser";
 
 export function UsageAnalyticsSettingsCard() {
   const [enabled, setEnabled] = useState(() =>
-    getTelemetryEnabledPreference(window.localStorage),
+    getUsageAnalyticsEnabledPreference(window.localStorage),
   );
 
   function handleEnabledChange(nextEnabled: boolean) {
-    if (!nextEnabled) {
-      analytics.capture("setting_changed", {
-        enabled: false,
-        setting_id: "usage_analytics",
-      });
-      analytics.setTelemetryEnabled(false);
-      setEnabled(false);
-      return;
-    }
-
-    analytics.setTelemetryEnabled(true);
+    analytics.setUsageAnalyticsEnabled(nextEnabled);
     setEnabled(nextEnabled);
     analytics.capture("setting_changed", {
-      enabled: true,
+      enabled: nextEnabled,
       setting_id: "usage_analytics",
     });
   }

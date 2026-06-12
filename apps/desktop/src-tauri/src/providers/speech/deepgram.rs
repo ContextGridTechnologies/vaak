@@ -63,9 +63,13 @@ impl SpeechProvider for DeepgramSpeechProvider {
             )
         })
         .await?;
+        let timing = response.timing.clone();
 
         let payload = response.json::<DeepgramListenResponse>().await?;
-        resolve_listen_response(payload, &model)
+        let mut result = resolve_listen_response(payload, &model)?;
+        result.provider_request_started_at = Some(timing.started_at);
+        result.provider_response_received_at = Some(timing.completed_at);
+        Ok(result)
     }
 }
 
@@ -134,6 +138,8 @@ fn resolve_listen_response(
             .metadata
             .and_then(|metadata| metadata.duration)
             .and_then(seconds_to_millis),
+        provider_request_started_at: None,
+        provider_response_received_at: None,
     })
 }
 

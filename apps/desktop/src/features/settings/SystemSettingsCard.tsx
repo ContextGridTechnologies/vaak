@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { PermissionCallout, SectionPanel } from "@/components/app";
 import { Switch } from "@/components/ui/switch";
 import {
-  getTelemetryEnabledPreference,
+  getErrorTelemetryEnabledPreference,
+  getUsageAnalyticsEnabledPreference,
 } from "@/lib/analytics";
 import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
@@ -17,7 +18,10 @@ export function SystemSettingsCard() {
   const [launchOnStartup, setLaunchOnStartup] = useState(true);
   const [showSkippedTranscripts, setShowSkippedTranscripts] = useState(false);
   const [analyticsEnabled, setAnalyticsEnabled] = useState(() =>
-    getTelemetryEnabledPreference(window.localStorage),
+    getUsageAnalyticsEnabledPreference(window.localStorage),
+  );
+  const [errorTelemetryEnabled, setErrorTelemetryEnabled] = useState(() =>
+    getErrorTelemetryEnabledPreference(window.localStorage),
   );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +71,11 @@ export function SystemSettingsCard() {
     } catch (err) {
       setLaunchOnStartup(previousValue);
       setError(normalizeError(err));
+      analytics.captureError(err, {
+        code: errorCodeFromUnknown(err, "settings_save_failed"),
+        handled: true,
+        stage: "settings",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -92,27 +101,31 @@ export function SystemSettingsCard() {
     } catch (err) {
       setShowSkippedTranscripts(previousValue);
       setError(normalizeError(err));
+      analytics.captureError(err, {
+        code: errorCodeFromUnknown(err, "settings_save_failed"),
+        handled: true,
+        stage: "settings",
+      });
     } finally {
       setIsSaving(false);
     }
   }
 
   function handleAnalyticsChange(nextValue: boolean) {
-    if (!nextValue) {
-      analytics.capture("setting_changed", {
-        enabled: false,
-        setting_id: "usage_analytics",
-      });
-      analytics.setTelemetryEnabled(false);
-      setAnalyticsEnabled(false);
-      return;
-    }
-
-    analytics.setTelemetryEnabled(true);
+    analytics.setUsageAnalyticsEnabled(nextValue);
     setAnalyticsEnabled(nextValue);
     analytics.capture("setting_changed", {
-      enabled: true,
+      enabled: nextValue,
       setting_id: "usage_analytics",
+    });
+  }
+
+  function handleErrorTelemetryChange(nextValue: boolean) {
+    analytics.setErrorTelemetryEnabled(nextValue);
+    setErrorTelemetryEnabled(nextValue);
+    analytics.capture("setting_changed", {
+      enabled: nextValue,
+      setting_id: "error_diagnostics",
     });
   }
 
@@ -175,6 +188,24 @@ export function SystemSettingsCard() {
         />
       </div>
 
+      <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/60 p-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-sm font-medium text-foreground">
+            Crash reports
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Send sanitized handled errors with app version, error code, and
+            stage. Audio, transcripts, API keys, and provider responses are
+            never collected.
+          </p>
+        </div>
+        <Switch
+          aria-label="Send sanitized crash reports"
+          checked={errorTelemetryEnabled}
+          onCheckedChange={handleErrorTelemetryChange}
+        />
+      </div>
+
       {error ? (
         <PermissionCallout tone="warning" title="Startup setting failed">
           {error}
@@ -182,4 +213,15 @@ export function SystemSettingsCard() {
       ) : null}
     </SectionPanel>
   );
+}
+
+function errorCodeFromUnknown(err: unknown, fallback: string): string {
+  if (err && typeof err === "object") {
+    const maybeCode = (err as { code?: unknown }).code;
+    if (typeof maybeCode === "string" && maybeCode.trim().length > 0) {
+      return maybeCode;
+    }
+  }
+
+  return fallback;
 }

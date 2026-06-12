@@ -47,6 +47,8 @@ Current status:
 - Environment parsing supports `VITE_POSTHOG_PUBLIC_KEY` and
   `VITE_POSTHOG_HOST`.
 - Usage analytics can be toggled in Settings.
+- Crash reports can be toggled separately in Settings.
+- Usage analytics and crash reports default to off until the user opts in.
 - The Settings telemetry toggle now takes effect during the current app
   session.
 - Analytics capture now sanitizes unsupported property values before sending
@@ -72,12 +74,15 @@ Current privacy posture:
 - Pageview capture is disabled.
 - Session recording is disabled.
 - Analytics are disabled when `VITE_POSTHOG_PUBLIC_KEY` is missing.
+- Error diagnostics are limited to sanitized handled errors. Global exception
+  capture, stack traces, and session replay are not enabled.
 
 Current gaps:
 
 - Onboarding telemetry is planned but not wired yet.
 - Dictation telemetry is planned but not wired yet.
-- There is no centralized handled-error capture API.
+- Handled-error capture is wired for system setting save failures and provider
+  test failures, but not yet for all recoverable errors.
 - There is no release/source-map workflow for production error debugging.
 
 ## Privacy Rules
@@ -250,7 +255,8 @@ Use stable error codes where possible:
 ## Error Tracking Strategy
 
 Start with manual handled-error capture before enabling global exception
-autocapture.
+autocapture. Current implementation uses `analytics.captureError(...)` for
+sanitized handled errors.
 
 Recommended API shape:
 
@@ -365,16 +371,20 @@ Exit criteria:
 
 ### Phase 4: Handled Error Capture
 
+Status: partially complete.
+
 Goal: add safe error visibility for recoverable failures.
 
 Tasks:
 
-- Add `captureError` to the analytics wrapper.
-- Add redaction and message length caps.
-- Map common Tauri/provider/UI errors to stable codes.
+- Add `captureError` to the analytics wrapper. Completed.
+- Add redaction and message length caps. Completed.
+- Map common Tauri/provider/UI errors to stable codes. Partially complete.
 - Capture handled errors in settings saves, provider tests, dictation loop
-  failures, and local record load failures.
-- Add tests for redaction and disabled telemetry behavior.
+  failures, and local record load failures. Partially complete for settings
+  saves and provider tests.
+- Add tests for redaction and disabled telemetry behavior. Completed for the
+  analytics wrapper and current settings/provider failure wiring.
 
 Exit criteria:
 

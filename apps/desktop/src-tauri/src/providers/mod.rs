@@ -26,6 +26,40 @@ pub struct TranscriptResult {
     pub model: String,
     pub text: String,
     pub duration_ms: Option<u64>,
+    pub provider_request_started_at: Option<String>,
+    pub provider_response_received_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderRequestTiming {
+    pub started_at: String,
+    pub completed_at: String,
+}
+
+#[derive(Debug)]
+pub struct TimedProviderResponse {
+    response: reqwest::Response,
+    pub timing: ProviderRequestTiming,
+}
+
+impl TimedProviderResponse {
+    #[cfg(test)]
+    #[must_use]
+    pub fn status(&self) -> reqwest::StatusCode {
+        self.response.status()
+    }
+
+    pub async fn json<T>(self) -> Result<T, reqwest::Error>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        self.response.json::<T>().await
+    }
+
+    pub async fn text(self) -> Result<String, reqwest::Error> {
+        self.response.text().await
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -171,16 +205,38 @@ pub async fn send_provider_request_with_retry(
     client: &reqwest::Client,
     provider_name: &str,
     mut build_request: impl FnMut() -> Result<reqwest::Request, ProviderError>,
-) -> Result<reqwest::Response, ProviderError> {
+) -> Result<TimedProviderResponse, ProviderError> {
+    let mut first_started_at: Option<String> = None;
+
     for attempt in 0..MAX_PROVIDER_HTTP_ATTEMPTS {
         let request = build_request()?;
-        let response = client.execute(request).await?;
+        let started_at = current_utc_timestamp();
+        if first_started_at.is_none() {
+            first_started_at = Some(started_at.clone());
+        }
+        let response_result = client.execute(request).await;
+        let completed_at = current_utc_timestamp();
+        let response = match response_result {
+            Ok(response) => response,
+            Err(err) => {
+                return Err(ProviderError::from(err)
+                    .with_provider_timing(first_started_at, Some(completed_at)));
+            }
+        };
         if response.status().is_success() {
-            return Ok(response);
+            return Ok(TimedProviderResponse {
+                response,
+                timing: ProviderRequestTiming {
+                    started_at: first_started_at.unwrap_or(started_at),
+                    completed_at,
+                },
+            });
         }
 
         if attempt + 1 >= MAX_PROVIDER_HTTP_ATTEMPTS || !is_retryable_status(response.status()) {
-            return Err(request_failure_from_response(provider_name, response).await);
+            return Err(request_failure_from_response(provider_name, response)
+                .await
+                .with_provider_timing(first_started_at, Some(completed_at)));
         }
 
         let delay = retry_delay(response.headers(), response.status());
@@ -188,6 +244,10 @@ pub async fn send_provider_request_with_retry(
     }
 
     Err(ProviderFailure::Request(format!("{provider_name} request failed")).into())
+}
+
+fn current_utc_timestamp() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 pub async fn request_failure_from_response(
@@ -638,9 +698,11 @@ mod tests {
         ));
 
         assert_eq!(
-            response.expect("retry succeeds").status(),
+            response.as_ref().expect("retry succeeds").status(),
             reqwest::StatusCode::OK
         );
+        let timing = response.expect("retry succeeds").timing;
+        assert!(timing.started_at <= timing.completed_at);
         assert_eq!(request_builds.load(Ordering::SeqCst), 2);
         assert_eq!(server.requests(), 2);
     }
@@ -661,10 +723,9 @@ mod tests {
             },
         ));
 
-        assert_eq!(
-            response.expect("retry succeeds").status(),
-            reqwest::StatusCode::OK
-        );
+        let response = response.expect("retry succeeds");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert!(response.timing.started_at <= response.timing.completed_at);
         assert_eq!(server.requests(), 2);
     }
 
@@ -691,6 +752,8 @@ mod tests {
                 err.message,
                 format!("Test Provider returned {status} {}", status_text(status))
             );
+            assert!(err.provider_request_started_at.is_some());
+            assert!(err.provider_response_received_at.is_some());
             assert_eq!(server.requests(), 1);
         }
     }
@@ -719,6 +782,8 @@ mod tests {
         assert_eq!(err.code, "provider_rate_limited");
         assert_eq!(err.message, "Test Provider returned 429 Too Many Requests");
         assert_eq!(err.retry_after_ms, Some(7_000));
+        assert!(err.provider_request_started_at.is_some());
+        assert!(err.provider_response_received_at.is_some());
         assert_eq!(server.requests(), 2);
     }
 
