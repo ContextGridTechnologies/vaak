@@ -1,6 +1,7 @@
 import { expect, vi } from "vitest";
 
 type InvokeArgs = Record<string, unknown> | undefined;
+type CommandResolver = (args: InvokeArgs, callIndex: number) => unknown;
 
 type TauriCommandCall = {
   command: string;
@@ -40,7 +41,12 @@ export function createTauriCommandHarness(): TauriCommandHarness {
       return Promise.reject(rejected.get(command));
     }
     if (resolved.has(command)) {
-      return Promise.resolve(resolved.get(command));
+      const value = resolved.get(command);
+      return Promise.resolve(
+        typeof value === "function"
+          ? (value as CommandResolver)(args, calls.length - 1)
+          : value,
+      );
     }
 
     return Promise.reject(new Error(`Unhandled Tauri command: ${command}`));

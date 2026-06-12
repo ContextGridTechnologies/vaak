@@ -15,6 +15,7 @@ vi.mock("./retryAudioProcessing", () => ({
 }));
 
 const {
+  getAllRecentDictationRecords,
   getRecentDictationRecords,
   getSystemSettings,
   persistDictationAudio,
@@ -26,6 +27,7 @@ const {
   loadSavedDictationAudio,
   sanitizeTargetControlName,
 } = vi.hoisted(() => ({
+  getAllRecentDictationRecords: vi.fn(),
   getRecentDictationRecords: vi.fn(),
   getSystemSettings: vi.fn(),
   persistDictationAudio: vi.fn(),
@@ -40,6 +42,7 @@ const {
 
 vi.mock("@/lib/tauri", () => ({
   exportSavedDictationAudio,
+  getAllRecentDictationRecords,
   getRecentDictationRecords,
   getSystemSettings,
   persistDictationAudio,
@@ -110,6 +113,7 @@ describe("HomePanel", () => {
     globalThis.IntersectionObserver =
       MockIntersectionObserver as unknown as typeof IntersectionObserver;
     isTauriRuntime.mockReturnValue(true);
+    getAllRecentDictationRecords.mockResolvedValue([]);
     getSystemSettings.mockResolvedValue({
       launchOnStartup: true,
       showSkippedTranscripts: false,
@@ -244,6 +248,7 @@ describe("HomePanel", () => {
     });
 
     expect(getRecentDictationRecords).toHaveBeenCalledWith(15, 0);
+    expect(getAllRecentDictationRecords).toHaveBeenCalled();
     expect(screen.queryByText("Activity overview")).not.toBeInTheDocument();
     expect(screen.queryByText("Recent records")).not.toBeInTheDocument();
     expect(screen.queryByText("Successful inserts")).not.toBeInTheDocument();
@@ -279,6 +284,36 @@ describe("HomePanel", () => {
     expect(screen.getByText("OpenAI · gpt-4o-mini-transcribe")).toBeInTheDocument();
     expect(screen.queryByText("Capture record")).not.toBeInTheDocument();
     expect(screen.queryByText("Versioned record")).not.toBeInTheDocument();
+  });
+
+  it("calculates the top productivity hero from all local records, not only visible feed rows", async () => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    getRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "visible-record",
+        capturedAt: today.toISOString(),
+        finalText: "Visible feed transcript",
+      }),
+    ]);
+    getAllRecentDictationRecords.mockResolvedValue([
+      makeRecord({
+        recordId: "stats-record-1",
+        capturedAt: today.toISOString(),
+        finalText: "First full history productivity transcript",
+      }),
+      makeRecord({
+        recordId: "stats-record-2",
+        capturedAt: yesterday.toISOString(),
+        finalText: "Second full history productivity transcript",
+      }),
+    ]);
+
+    renderApp(<HomePanel />);
+
+    expect(await screen.findByText("2 active days")).toBeInTheDocument();
+    expect(screen.getByText("1 inserted")).toBeInTheDocument();
   });
 
   it("keeps inserted rows quiet while showing fresh time copy", async () => {
@@ -807,7 +842,8 @@ describe("HomePanel", () => {
       "lg:pt-[6.075rem]",
     );
     expect(content).toHaveClass("py-5", "lg:py-6");
-    expect(shell).toHaveClass("mx-auto", "w-full", "max-w-[56rem]");
+    expect(shell).toHaveClass("w-full");
+    expect(shell).not.toHaveClass("max-w-[56rem]");
   });
 
   it("replaces editor accessibility placeholder text with a clean target label", async () => {

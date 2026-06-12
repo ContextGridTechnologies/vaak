@@ -6,16 +6,19 @@ import { renderApp } from "@/test/render";
 import { AnalyticsPanel } from "./AnalyticsPanel";
 
 const {
+  getAllRecentDictationRecords,
   getDiagnosticsLocations,
   getRecentDictationRecords,
   isTauriRuntime,
 } = vi.hoisted(() => ({
+  getAllRecentDictationRecords: vi.fn(),
   getDiagnosticsLocations: vi.fn(),
   getRecentDictationRecords: vi.fn(),
   isTauriRuntime: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
+  getAllRecentDictationRecords,
   getDiagnosticsLocations,
   getRecentDictationRecords,
   isTauriRuntime,
@@ -37,7 +40,7 @@ describe("AnalyticsPanel", () => {
   });
 
   it("renders user-facing local dictation analytics", async () => {
-    getRecentDictationRecords.mockResolvedValue([
+    getAllRecentDictationRecords.mockResolvedValue([
       createRecord({
         recordId: "record-1",
         status: "inserted",
@@ -102,10 +105,11 @@ describe("AnalyticsPanel", () => {
       ).toBeInTheDocument(),
     );
     expect(getRecentDictationRecords).not.toHaveBeenCalled();
+    expect(getAllRecentDictationRecords).not.toHaveBeenCalled();
   });
 
   it("normalizes local app labels for the most-used apps list", async () => {
-    getRecentDictationRecords.mockResolvedValue([
+    getAllRecentDictationRecords.mockResolvedValue([
       createRecord({
         recordId: "record-1",
         status: "inserted",
@@ -128,7 +132,7 @@ describe("AnalyticsPanel", () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-06-12T12:00:00.000Z").getTime(),
     );
-    getRecentDictationRecords.mockResolvedValue([
+    getAllRecentDictationRecords.mockResolvedValue([
       ...Array.from({ length: 7 }, (_, index) => {
         const day = String(12 - index).padStart(2, "0");
 

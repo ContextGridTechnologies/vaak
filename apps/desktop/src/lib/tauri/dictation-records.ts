@@ -1,6 +1,8 @@
 import { type FocusedFieldInfo } from "./focus";
 import { invokeTauri } from "./runtime";
 
+const DICTATION_RECORDS_PAGE_SIZE = 100;
+
 export type DictationTargetSnapshot = {
   stableId: string;
   windowTitle: string;
@@ -124,6 +126,25 @@ export async function getRecentDictationRecords(
   offset = 0,
 ): Promise<DictationRecord[]> {
   return invokeTauri("get_recent_dictation_records", { limit, offset });
+}
+
+export async function getAllRecentDictationRecords(): Promise<DictationRecord[]> {
+  const records: DictationRecord[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await getRecentDictationRecords(
+      DICTATION_RECORDS_PAGE_SIZE,
+      offset,
+    );
+    records.push(...page);
+
+    if (page.length < DICTATION_RECORDS_PAGE_SIZE) {
+      return records;
+    }
+
+    offset += page.length;
+  }
 }
 
 export async function persistDictationAudio(input: {

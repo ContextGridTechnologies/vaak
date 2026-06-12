@@ -7,6 +7,7 @@ import {
 
 import {
   exportSavedDictationAudio,
+  getAllRecentDictationRecords,
   getRecentDictationRecords,
   loadSavedDictationAudio,
   persistDictationAudio,
@@ -185,6 +186,27 @@ describe("dictation record Tauri API", () => {
         mode: "dictation",
         trigger: "hotkey",
       }),
+    });
+  });
+
+  it("loads all recent dictation records by paging through backend history", async () => {
+    const tauri = createTauriCommandHarness();
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
+      createDictationRecord(`record-${index + 1}`),
+    );
+    const secondPage = [createDictationRecord("record-101")];
+    tauri.resolveCommand("get_recent_dictation_records", (args: { offset?: number }) => {
+      return args?.offset === 100 ? secondPage : firstPage;
+    });
+
+    await expect(getAllRecentDictationRecords()).resolves.toHaveLength(101);
+    expectTauriCommand(tauri, "get_recent_dictation_records", {
+      limit: 100,
+      offset: 0,
+    });
+    expectTauriCommand(tauri, "get_recent_dictation_records", {
+      limit: 100,
+      offset: 100,
     });
   });
 
@@ -377,3 +399,47 @@ describe("dictation record Tauri API", () => {
     expect(snapshot.controlName).toBe("Editor");
   });
 });
+
+function createDictationRecord(recordId: string) {
+  return {
+    schemaVersion: 1,
+    recordId,
+    userId: "user-1",
+    installationId: "installation-1",
+    deviceId: "device-1",
+    sessionId: "session-1",
+    mode: "dictation",
+    trigger: "hotkey",
+    platform: "windows",
+    capturedAt: "2026-05-02T08:30:00Z",
+    startedAt: null,
+    endedAt: null,
+    recording: null,
+    audio: null,
+    target: {
+      stableId: "target-1",
+      windowTitle: "Discord",
+      controlName: "Message",
+      controlType: "Edit",
+      controlTypeId: 50004,
+      automationId: "message-input",
+      frameworkId: "Win32",
+      className: "Chrome_WidgetWin_1",
+      nativeWindowHandle: 42,
+      inputKind: "text",
+      currentValue: null,
+    },
+    provider: null,
+    transcript: {
+      rawText: "hello",
+      finalText: "hello",
+      characterCount: 5,
+    },
+    insertion: {
+      status: "inserted",
+      method: "send_input",
+      errorCode: null,
+      errorMessage: null,
+    },
+  };
+}

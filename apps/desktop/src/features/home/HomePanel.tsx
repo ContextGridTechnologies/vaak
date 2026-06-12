@@ -31,6 +31,7 @@ import {
   Card,
 } from "@/components/ui/card";
 import { appEnvironment } from "@/config/app-env";
+import { TimeSavedHero, buildAnalyticsSummary } from "@/features/analytics";
 import { normalizeError } from "@/lib/errors";
 import {
   Empty,
@@ -40,6 +41,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import {
+  getAllRecentDictationRecords,
   getRecentDictationRecords,
   getSystemSettings,
   isTauriRuntime,
@@ -116,6 +118,7 @@ const appIcon: Record<string, LucideIcon> = {
 
 export function HomePanel() {
   const [records, setRecords] = useState<DictationRecord[]>([]);
+  const [productivityRecords, setProductivityRecords] = useState<DictationRecord[]>([]);
   const [showSkippedTranscripts, setShowSkippedTranscripts] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasLoadedAllRecords, setHasLoadedAllRecords] = useState(false);
@@ -147,12 +150,16 @@ export function HomePanel() {
 
     const loadRecords = async () => {
       try {
-        const recent = await getRecentDictationRecords(INITIAL_VISIBLE_COUNT, 0);
+        const [recent, allRecords] = await Promise.all([
+          getRecentDictationRecords(INITIAL_VISIBLE_COUNT, 0),
+          getAllRecentDictationRecords(),
+        ]);
         if (disposed) {
           return;
         }
 
         setRecords((current) => mergeRecentRecords(current, recent));
+        setProductivityRecords(allRecords);
         setActivityLoadError(null);
         setHasLoadedAllRecords((current) =>
           current || recent.length < INITIAL_VISIBLE_COUNT,
@@ -194,6 +201,10 @@ export function HomePanel() {
   const activityOverview = useMemo(
     () => buildActivityOverview(activities),
     [activities],
+  );
+  const productivitySummary = useMemo(
+    () => buildAnalyticsSummary(productivityRecords),
+    [productivityRecords],
   );
   const visibleActivities = activities;
   const hasMoreActivities =
@@ -344,12 +355,19 @@ export function HomePanel() {
         data-testid="app-screen-content"
         className={cn(
           appScreenContentClassName,
-          "max-w-[74rem] gap-4",
+          "max-w-[86rem] gap-4",
         )}
       >
         <section
+          data-testid="voice-productivity-hero"
+          className="w-full"
+        >
+          <TimeSavedHero summary={productivitySummary} />
+        </section>
+
+        <section
           data-testid="voice-activity-shell"
-          className="mx-auto mt-2 w-full max-w-[56rem] lg:mt-4"
+          className="mt-2 w-full lg:mt-4"
         >
           <div className="flex flex-col gap-2.5">
           <div className="flex flex-col gap-2 pb-2 lg:flex-row lg:items-end lg:justify-between">

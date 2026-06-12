@@ -33,17 +33,16 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import {
-  getRecentDictationRecords,
+  getAllRecentDictationRecords,
   isTauriRuntime,
   type DictationRecord,
 } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
-const ANALYTICS_RECORD_LIMIT = 100;
 const TREND_BUCKET_COUNT = 7;
 const TYPING_WORDS_PER_MINUTE = 40;
 
-type AnalyticsSummary = {
+export type AnalyticsSummary = {
   activeDays: number;
   appRows: AppRow[];
   bestDay: TrendRow | null;
@@ -56,14 +55,14 @@ type AnalyticsSummary = {
   words: number;
 };
 
-type TrendRow = {
+export type TrendRow = {
   key: string;
   label: string;
   dateLabel: string;
   minutesSaved: number;
 };
 
-type AppRow = {
+export type AppRow = {
   label: string;
   count: number;
   share: number;
@@ -85,7 +84,7 @@ export function AnalyticsPanel() {
     setError(null);
 
     try {
-      setRecords(await getRecentDictationRecords(ANALYTICS_RECORD_LIMIT, 0));
+      setRecords(await getAllRecentDictationRecords());
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -206,7 +205,7 @@ export function AnalyticsPanel() {
   );
 }
 
-function TimeSavedHero({ summary }: { summary: AnalyticsSummary }) {
+export function TimeSavedHero({ summary }: { summary: AnalyticsSummary }) {
   return (
     <section className="overflow-hidden rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/10">
       <div className="grid gap-0 lg:grid-cols-[minmax(0,22rem)_1fr]">
@@ -438,7 +437,7 @@ function MiniTrendLine({ rows }: { rows: TrendRow[] }) {
   );
 }
 
-function buildAnalyticsSummary(records: DictationRecord[]): AnalyticsSummary {
+export function buildAnalyticsSummary(records: DictationRecord[]): AnalyticsSummary {
   const trendRows = buildTrendRows(records);
   const trendKeys = new Set(trendRows.map((row) => row.key));
   const successfulRecords = records.filter((record) => {
