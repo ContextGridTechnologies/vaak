@@ -21,6 +21,11 @@ const providerApi = vi.hoisted(() => ({
   saveDictationHotkey: vi.fn(),
   getSystemSettings: vi.fn(),
   saveSystemSettings: vi.fn(),
+  getAppShellPreferences: vi.fn(),
+  restartVoiceCapsule: vi.fn(),
+  resetVoiceCapsulePosition: vi.fn(),
+  disableVoiceCapsule: vi.fn(),
+  enableVoiceCapsule: vi.fn(),
   getDiagnosticsLocations: vi.fn(),
 }));
 const openerApi = vi.hoisted(() => ({
@@ -129,6 +134,22 @@ describe("SettingsPanel provider setup", () => {
     providerApi.saveSystemSettings.mockImplementation((settings) =>
       Promise.resolve(settings),
     );
+    providerApi.getAppShellPreferences.mockResolvedValue({
+      sidebarCollapsed: false,
+      voiceCapsuleEnabled: true,
+    });
+    providerApi.restartVoiceCapsule.mockResolvedValue(undefined);
+    providerApi.resetVoiceCapsulePosition.mockResolvedValue({
+      anchor: "bottomCenter",
+    });
+    providerApi.disableVoiceCapsule.mockResolvedValue({
+      sidebarCollapsed: false,
+      voiceCapsuleEnabled: false,
+    });
+    providerApi.enableVoiceCapsule.mockResolvedValue({
+      sidebarCollapsed: false,
+      voiceCapsuleEnabled: true,
+    });
     providerApi.getDiagnosticsLocations.mockResolvedValue({
       logDir: "C:\\Users\\nikhi\\AppData\\Local\\ai.vaak.desktop\\logs",
       configDir: "C:\\Users\\nikhi\\AppData\\Roaming\\ai.vaak.desktop",
@@ -431,6 +452,70 @@ describe("SettingsPanel provider setup", () => {
     });
     expect(within(shortcutCard!).getByText("Ctrl")).toBeInTheDocument();
     expect(within(shortcutCard!).getByText("Shift")).toBeInTheDocument();
+  });
+
+  it("provides voice capsule restart, reset, and disable controls", async () => {
+    providerApi.isTauriRuntime.mockReturnValue(true);
+    const user = userEvent.setup();
+    renderApp(<SettingsPanel />);
+
+    const voiceCapsuleCard = (await screen.findByText("Voice capsule")).closest(
+      '[data-slot="card"]',
+    ) as HTMLElement | null;
+    expect(voiceCapsuleCard).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(voiceCapsuleCard!).getByRole("switch", {
+          name: "Show voice capsule",
+        }),
+      ).toBeChecked();
+    });
+
+    await user.click(
+      within(voiceCapsuleCard!).getByRole("button", {
+        name: "Restart capsule",
+      }),
+    );
+    await waitFor(() => {
+      expect(providerApi.restartVoiceCapsule).toHaveBeenCalled();
+    });
+    expect(
+      await within(voiceCapsuleCard!).findByText("Voice capsule restarted."),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(voiceCapsuleCard!).getByRole("button", {
+        name: "Reset position",
+      }),
+    );
+    await waitFor(() => {
+      expect(providerApi.resetVoiceCapsulePosition).toHaveBeenCalled();
+    });
+    expect(
+      await within(voiceCapsuleCard!).findByText("Voice capsule position reset."),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(voiceCapsuleCard!).getByRole("switch", {
+        name: "Show voice capsule",
+      }),
+    );
+    await waitFor(() => {
+      expect(providerApi.disableVoiceCapsule).toHaveBeenCalled();
+    });
+    expect(
+      within(voiceCapsuleCard!).getByRole("switch", {
+        name: "Show voice capsule",
+      }),
+    ).not.toBeChecked();
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "setting_changed",
+      {
+        enabled: false,
+        setting_id: "voice_capsule_enabled",
+      },
+    );
   });
 
   it("validates first-time Azure setup locally before calling Tauri", async () => {

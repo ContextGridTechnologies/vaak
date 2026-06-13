@@ -1,8 +1,9 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderApp } from "@/test/render";
+import { resetAnalyticsSnapshotCacheForTests } from "@/features/analytics/AnalyticsPanel";
 
 import { HomePanel } from "./HomePanel";
 
@@ -85,6 +86,7 @@ describe("HomePanel", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    resetAnalyticsSnapshotCacheForTests();
     playSpy = vi
       .spyOn(HTMLMediaElement.prototype, "play")
       .mockResolvedValue(undefined);
@@ -174,6 +176,10 @@ describe("HomePanel", () => {
     sanitizeTargetControlName.mockImplementation(({ controlName, controlType }) =>
       controlName || controlType,
     );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("renders a production activity overview with summary cards and feed rows", async () => {
@@ -314,6 +320,59 @@ describe("HomePanel", () => {
 
     expect(await screen.findByText("2 active days")).toBeInTheDocument();
     expect(screen.getByText("1 inserted")).toBeInTheDocument();
+  });
+
+  it("refreshes the productivity hero when activity polling finds new local records", async () => {
+    let pollActivity: (() => void) | null = null;
+    const originalSetInterval = window.setInterval.bind(window);
+    type IntervalId = ReturnType<typeof setInterval>;
+    vi.spyOn(window, "setInterval").mockImplementation(
+      (handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+        if (timeout === 3_000 && typeof handler === "function") {
+          pollActivity = handler as () => void;
+          return 1 as unknown as IntervalId;
+        }
+
+        return originalSetInterval(handler, timeout, ...args) as unknown as IntervalId;
+      },
+    );
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const firstRecord = makeRecord({
+      recordId: "stats-record-1",
+      capturedAt: today.toISOString(),
+      finalText: "First local productivity transcript",
+    });
+    const secondRecord = makeRecord({
+      recordId: "stats-record-2",
+      capturedAt: yesterday.toISOString(),
+      finalText: "Second local productivity transcript from yesterday",
+    });
+
+    getRecentDictationRecords
+      .mockResolvedValueOnce([firstRecord])
+      .mockResolvedValueOnce([secondRecord, firstRecord]);
+    getAllRecentDictationRecords
+      .mockResolvedValueOnce([firstRecord])
+      .mockResolvedValueOnce([secondRecord, firstRecord]);
+
+    renderApp(<HomePanel />);
+
+    expect(await screen.findByText("1 active days")).toBeInTheDocument();
+    expect(screen.getByText("1 inserted")).toBeInTheDocument();
+    expect(getAllRecentDictationRecords).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(pollActivity).not.toBeNull());
+
+    await act(async () => {
+      pollActivity?.();
+    });
+
+    await waitFor(() =>
+      expect(getRecentDictationRecords).toHaveBeenCalledTimes(2),
+    );
+    expect(await screen.findByText("2 active days")).toBeInTheDocument();
+    expect(getAllRecentDictationRecords).toHaveBeenCalledTimes(2);
   });
 
   it("keeps inserted rows quiet while showing fresh time copy", async () => {

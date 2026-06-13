@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderApp } from "@/test/render";
 
-import { AnalyticsPanel } from "./AnalyticsPanel";
+import {
+  AnalyticsPanel,
+  resetAnalyticsSnapshotCacheForTests,
+} from "./AnalyticsPanel";
 
 const {
   getAllRecentDictationRecords,
@@ -27,6 +30,7 @@ vi.mock("@/lib/tauri", () => ({
 describe("AnalyticsPanel", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    resetAnalyticsSnapshotCacheForTests();
     isTauriRuntime.mockReturnValue(true);
     getDiagnosticsLocations.mockResolvedValue({
       appDataDir: "C:\\Users\\nikhi\\AppData\\Roaming\\Vaak",
@@ -92,6 +96,32 @@ describe("AnalyticsPanel", () => {
     expect(screen.queryByText("Recent activity")).not.toBeInTheDocument();
     expect(screen.queryByText("Recent dictations")).not.toBeInTheDocument();
     expect(screen.queryByText("Insertion target rejected text.")).not.toBeInTheDocument();
+  });
+
+  it("reuses the loaded analytics snapshot across remounts", async () => {
+    getAllRecentDictationRecords.mockResolvedValue([
+      createRecord({
+        recordId: "record-1",
+        status: "inserted",
+        providerId: "openai",
+        modelId: "gpt-4o-transcribe",
+        capturedAt: "2026-06-12T09:00:00.000Z",
+        startedAt: "2026-06-12T09:00:00.000Z",
+        endedAt: "2026-06-12T09:00:02.000Z",
+        windowTitle: "Visual Studio Code",
+      }),
+    ]);
+
+    const { unmount } = renderApp(<AnalyticsPanel />);
+
+    await waitFor(() => expect(screen.getByText("1 of 7")).toBeInTheDocument());
+    expect(getAllRecentDictationRecords).toHaveBeenCalledTimes(1);
+
+    unmount();
+    renderApp(<AnalyticsPanel />);
+
+    expect(await screen.findByText("1 of 7")).toBeInTheDocument();
+    expect(getAllRecentDictationRecords).toHaveBeenCalledTimes(1);
   });
 
   it("shows a desktop-runtime error outside Tauri", async () => {

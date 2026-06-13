@@ -376,7 +376,7 @@ describe("OnboardingGate", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps setup visible when onboarding state cannot be loaded", async () => {
+  it("shows setup load recovery when onboarding state cannot be loaded", async () => {
     const tauri = createTauriCommandHarness();
     tauri.rejectCommand("get_onboarding_state", new Error("settings failed"));
 
@@ -386,7 +386,13 @@ describe("OnboardingGate", () => {
       </OnboardingGate>,
     );
 
+    expect(
+      await screen.findByRole("heading", { name: "Setup needs attention" }),
+    ).toBeInTheDocument();
     expect(await screen.findByText("settings failed")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Choose how to use Vaak" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
   });
 
@@ -408,5 +414,34 @@ describe("OnboardingGate", () => {
       await screen.findByRole("heading", { name: "Choose how to use Vaak" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
+  });
+
+  it("records onboarding bootstrap checkpoints for completed users", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("record_startup_checkpoint", undefined);
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: true,
+      currentStep: "hotkeyReadiness",
+      selectedMode: "local",
+    });
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    expect(await screen.findByText("Voice app shell")).toBeInTheDocument();
+    await waitFor(() => {
+      expectTauriCommand(tauri, "record_startup_checkpoint", {
+        windowLabel: "main",
+        checkpoint: "onboarding_state_requested",
+      });
+    });
+    expectTauriCommand(tauri, "record_startup_checkpoint", {
+      windowLabel: "main",
+      checkpoint: "onboarding_state_loaded",
+      detail: "completed",
+    });
   });
 });

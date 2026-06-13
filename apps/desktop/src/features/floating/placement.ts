@@ -38,7 +38,8 @@ export function resolvePlacementPosition({
   const topY = workArea.y + offsetY;
   const bottomY = workArea.y + workArea.height - windowSize.height - offsetY;
 
-  switch (placement.anchor) {
+  const position = (() => {
+    switch (placement.anchor) {
     case "bottomCenter":
       return {
         x: centeredX + offsetX,
@@ -69,7 +70,10 @@ export function resolvePlacementPosition({
         x: centeredX + offsetX,
         y: topY,
       };
-  }
+    }
+  })();
+
+  return clampPositionToWorkArea(position, windowSize, workArea);
 }
 
 export function createSnapPlacementFromPosition({
@@ -170,4 +174,26 @@ function defaultOffsetY(anchor: VoiceCapsuleAnchor): number {
 
 function roundToTwo(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function clampPositionToWorkArea(
+  position: CapsulePosition,
+  windowSize: CapsuleWindowSize,
+  workArea: WorkAreaRect,
+): CapsulePosition {
+  const maxX = workArea.x + Math.max(0, workArea.width - windowSize.width);
+  const maxY = workArea.y + Math.max(0, workArea.height - windowSize.height);
+
+  return {
+    x: clampFinite(position.x, workArea.x, maxX),
+    y: clampFinite(position.y, workArea.y, maxY),
+  };
+}
+
+function clampFinite(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+
+  return Math.min(Math.max(value, min), max);
 }

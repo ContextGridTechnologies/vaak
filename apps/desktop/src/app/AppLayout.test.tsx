@@ -173,7 +173,10 @@ describe("AppLayout", () => {
     );
     await waitFor(() =>
       expectTauriCommand(tauri, "save_app_shell_preferences", {
-        preferences: { sidebarCollapsed: true },
+        preferences: {
+          sidebarCollapsed: true,
+          voiceCapsuleEnabled: true,
+        },
       }),
     );
     expectTauriCommand(tauri, "get_app_shell_preferences", undefined);
@@ -183,6 +186,7 @@ describe("AppLayout", () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("get_app_shell_preferences", {
       sidebarCollapsed: false,
+      voiceCapsuleEnabled: true,
       voiceCapsulePlacement: {
         anchor: "bottomRight",
         offsetX: 32,
@@ -191,6 +195,7 @@ describe("AppLayout", () => {
     });
     tauri.resolveCommand("save_app_shell_preferences", {
       sidebarCollapsed: true,
+      voiceCapsuleEnabled: true,
       voiceCapsulePlacement: {
         anchor: "bottomRight",
         offsetX: 32,
@@ -213,6 +218,7 @@ describe("AppLayout", () => {
       expectTauriCommand(tauri, "save_app_shell_preferences", {
         preferences: {
           sidebarCollapsed: true,
+          voiceCapsuleEnabled: true,
           voiceCapsulePlacement: {
             anchor: "bottomRight",
             offsetX: 32,
@@ -268,6 +274,32 @@ describe("AppLayout", () => {
       configurable: true,
       writable: true,
       value: originalWidth,
+    });
+  });
+
+  it("records app-shell preference checkpoints on mount", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("record_startup_checkpoint", undefined);
+    tauri.resolveCommand("get_app_shell_preferences", {
+      sidebarCollapsed: false,
+    });
+
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+      </AppLayout>,
+    );
+
+    await waitFor(() => {
+      expectTauriCommand(tauri, "record_startup_checkpoint", {
+        windowLabel: "main",
+        checkpoint: "app_shell_preferences_requested",
+      });
+    });
+    expectTauriCommand(tauri, "record_startup_checkpoint", {
+      windowLabel: "main",
+      checkpoint: "app_shell_preferences_loaded",
+      detail: "sidebarCollapsed=false",
     });
   });
 });

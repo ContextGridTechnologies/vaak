@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import {
   ActivityIcon,
   CalendarDaysIcon,
@@ -69,34 +69,7 @@ export type AppRow = {
 };
 
 export function AnalyticsPanel() {
-  const [records, setRecords] = useState<DictationRecord[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  const summary = useMemo(() => buildAnalyticsSummary(records), [records]);
-
-  async function loadAnalytics() {
-    if (!isTauriRuntime()) {
-      setRecords([]);
-      setError("Analytics reads local activity only in the desktop runtime.");
-      return;
-    }
-
-    setError(null);
-
-    try {
-      setRecords(await getAllRecentDictationRecords());
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Failed to load local analytics.",
-      );
-    }
-  }
-
-  useEffect(() => {
-    void loadAnalytics();
-  }, []);
+  const { records, summary, error } = useAnalyticsSnapshot();
 
   return (
     <div className="min-h-full bg-background text-foreground">
@@ -203,6 +176,127 @@ export function AnalyticsPanel() {
       </main>
     </div>
   );
+}
+
+type AnalyticsSnapshotState = {
+  error: string | null;
+  records: DictationRecord[];
+  status: "idle" | "loading" | "loaded" | "error";
+  summary: AnalyticsSummary;
+};
+
+const emptyAnalyticsSummary = buildAnalyticsSummary([]);
+
+let analyticsSnapshotState: AnalyticsSnapshotState = {
+  error: null,
+  records: [],
+  status: "idle",
+  summary: emptyAnalyticsSummary,
+};
+let analyticsSnapshotLoadPromise: Promise<void> | null = null;
+const analyticsSnapshotListeners = new Set<() => void>();
+
+export function useAnalyticsSnapshot(): AnalyticsSnapshotState {
+  const snapshot = useSyncExternalStore(
+    subscribeToAnalyticsSnapshot,
+    getAnalyticsSnapshot,
+    getAnalyticsSnapshot,
+  );
+
+  useEffect(() => {
+    void loadAnalyticsSnapshot({ force: false });
+  }, []);
+
+  return snapshot;
+}
+
+export function refreshAnalyticsSnapshot() {
+  return loadAnalyticsSnapshot({ force: true });
+}
+
+export function resetAnalyticsSnapshotCacheForTests() {
+  analyticsSnapshotLoadPromise = null;
+  analyticsSnapshotState = {
+    error: null,
+    records: [],
+    status: "idle",
+    summary: emptyAnalyticsSummary,
+  };
+  emitAnalyticsSnapshotChange();
+}
+
+function subscribeToAnalyticsSnapshot(listener: () => void) {
+  analyticsSnapshotListeners.add(listener);
+
+  return () => {
+    analyticsSnapshotListeners.delete(listener);
+  };
+}
+
+function getAnalyticsSnapshot() {
+  return analyticsSnapshotState;
+}
+
+function emitAnalyticsSnapshotChange() {
+  for (const listener of analyticsSnapshotListeners) {
+    listener();
+  }
+}
+
+function setAnalyticsSnapshotState(nextState: AnalyticsSnapshotState) {
+  analyticsSnapshotState = nextState;
+  emitAnalyticsSnapshotChange();
+}
+
+async function loadAnalyticsSnapshot({ force }: { force: boolean }) {
+  if (
+    (!force && analyticsSnapshotState.status === "loaded") ||
+    analyticsSnapshotState.status === "loading"
+  ) {
+    return analyticsSnapshotLoadPromise;
+  }
+
+  if (!isTauriRuntime()) {
+    setAnalyticsSnapshotState({
+      error: "Analytics reads local activity only in the desktop runtime.",
+      records: [],
+      status: "error",
+      summary: emptyAnalyticsSummary,
+    });
+    return null;
+  }
+
+  setAnalyticsSnapshotState({
+    ...analyticsSnapshotState,
+    error: null,
+    status: "loading",
+  });
+
+  analyticsSnapshotLoadPromise = getAllRecentDictationRecords()
+    .then((records) => {
+      setAnalyticsSnapshotState({
+        error: null,
+        records,
+        status: "loaded",
+        summary: buildAnalyticsSummary(records),
+      });
+    })
+    .catch((loadError: unknown) => {
+      setAnalyticsSnapshotState({
+        error:
+          loadError instanceof Error
+            ? loadError.message
+            : "Failed to load local analytics.",
+        records: [],
+        status: "error",
+        summary: emptyAnalyticsSummary,
+      });
+    })
+    .finally(() => {
+      analyticsSnapshotLoadPromise = null;
+    });
+
+  return analyticsSnapshotLoadPromise;
 }
 
 export function TimeSavedHero({ summary }: { summary: AnalyticsSummary }) {

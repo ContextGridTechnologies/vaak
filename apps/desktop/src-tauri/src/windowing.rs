@@ -1,4 +1,4 @@
-use crate::storage::{VoiceCapsuleAnchor, VoiceCapsulePlacement};
+use crate::storage::{VoiceCapsuleAnchor, VoiceCapsuleMonitorMetadata, VoiceCapsulePlacement};
 use tauri::window::Color;
 use tauri::{LogicalPosition, LogicalSize, Size, WebviewWindow};
 
@@ -31,6 +31,7 @@ pub struct MonitorWorkArea {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+    pub scale_factor: f64,
 }
 
 pub fn prepare_main_window<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
@@ -272,6 +273,32 @@ pub fn apply_voice_capsule_placement(
     window.set_logical_position(position.x, position.y)
 }
 
+pub fn placement_with_current_monitor_metadata(
+    window: &impl VoiceCapsuleWindow,
+    placement: VoiceCapsulePlacement,
+) -> Result<VoiceCapsulePlacement, String> {
+    let Some(work_area) = window.current_monitor_work_area()? else {
+        return Ok(placement);
+    };
+
+    Ok(placement_with_monitor_metadata(placement, work_area))
+}
+
+pub fn placement_with_monitor_metadata(
+    mut placement: VoiceCapsulePlacement,
+    work_area: MonitorWorkArea,
+) -> VoiceCapsulePlacement {
+    let work_area = sanitize_monitor_work_area(work_area);
+    placement.monitor = Some(VoiceCapsuleMonitorMetadata {
+        work_area_x: work_area.x,
+        work_area_y: work_area.y,
+        work_area_width: work_area.width,
+        work_area_height: work_area.height,
+        scale_factor: Some(work_area.scale_factor),
+    });
+    placement
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CapsulePosition {
     pub x: f64,
@@ -282,6 +309,7 @@ pub fn resolve_voice_capsule_position(
     work_area: MonitorWorkArea,
     placement: &VoiceCapsulePlacement,
 ) -> CapsulePosition {
+    let work_area = sanitize_monitor_work_area(work_area);
     let offset_x = placement
         .offset_x
         .unwrap_or_else(|| default_offset_x(placement.anchor));
@@ -294,7 +322,7 @@ pub fn resolve_voice_capsule_position(
     let top_y = work_area.y + offset_y;
     let bottom_y = work_area.y + work_area.height - VOICE_CAPSULE_HEIGHT - offset_y;
 
-    match placement.anchor {
+    let position = match placement.anchor {
         VoiceCapsuleAnchor::BottomCenter => CapsulePosition {
             x: centered_x + offset_x,
             y: bottom_y,
@@ -319,7 +347,9 @@ pub fn resolve_voice_capsule_position(
             x: centered_x + offset_x,
             y: top_y,
         },
-    }
+    };
+
+    clamp_voice_capsule_position(work_area, position)
 }
 
 pub fn show_voice_capsule_window(window: &impl VoiceCapsuleWindow) -> Result<(), String> {
@@ -343,6 +373,53 @@ fn default_offset_y(anchor: VoiceCapsuleAnchor) -> f64 {
         | VoiceCapsuleAnchor::BottomLeft
         | VoiceCapsuleAnchor::BottomRight
         | VoiceCapsuleAnchor::TopCenter => DEFAULT_EDGE_OFFSET,
+    }
+}
+
+fn clamp_voice_capsule_position(
+    work_area: MonitorWorkArea,
+    position: CapsulePosition,
+) -> CapsulePosition {
+    let max_x = work_area.x + (work_area.width - VOICE_CAPSULE_WIDTH).max(0.0);
+    let max_y = work_area.y + (work_area.height - VOICE_CAPSULE_HEIGHT).max(0.0);
+
+    CapsulePosition {
+        x: clamp_finite(position.x, work_area.x, max_x),
+        y: clamp_finite(position.y, work_area.y, max_y),
+    }
+}
+
+fn sanitize_monitor_work_area(work_area: MonitorWorkArea) -> MonitorWorkArea {
+    MonitorWorkArea {
+        x: finite_or_default(work_area.x, 0.0),
+        y: finite_or_default(work_area.y, 0.0),
+        width: finite_positive_or_default(work_area.width, VOICE_CAPSULE_WIDTH),
+        height: finite_positive_or_default(work_area.height, VOICE_CAPSULE_HEIGHT),
+        scale_factor: finite_positive_or_default(work_area.scale_factor, 1.0),
+    }
+}
+
+fn clamp_finite(value: f64, min: f64, max: f64) -> f64 {
+    if !value.is_finite() {
+        return min;
+    }
+
+    value.max(min).min(max)
+}
+
+fn finite_or_default(value: f64, fallback: f64) -> f64 {
+    if value.is_finite() {
+        value
+    } else {
+        fallback
+    }
+}
+
+fn finite_positive_or_default(value: f64, fallback: f64) -> f64 {
+    if value.is_finite() && value > 0.0 {
+        value
+    } else {
+        fallback
     }
 }
 
@@ -383,6 +460,7 @@ impl<R: tauri::Runtime> VoiceCapsuleWindow for WebviewWindow<R> {
                 y: f64::from(work_area.position.y) / scale_factor,
                 width: f64::from(work_area.size.width) / scale_factor,
                 height: f64::from(work_area.size.height) / scale_factor,
+                scale_factor,
             }
         }))
     }
@@ -461,6 +539,7 @@ mod tests {
                     y: 0.0,
                     width: 1440.0,
                     height: 860.0,
+                    scale_factor: 1.0,
                 }),
             }
         }
@@ -548,6 +627,7 @@ mod tests {
                 y: 0.0,
                 width: 1440.0,
                 height: 860.0,
+                scale_factor: 1.0,
             }),
         };
 
@@ -575,6 +655,7 @@ mod tests {
                 y: 0.0,
                 width: 1440.0,
                 height: 860.0,
+                scale_factor: 1.0,
             },
             &VoiceCapsulePlacement::default(),
         );
@@ -597,11 +678,86 @@ mod tests {
                 y: 0.0,
                 width: 1440.0,
                 height: 860.0,
+                scale_factor: 1.0,
             },
             &placement,
         );
 
         assert_eq!(position, CapsulePosition { x: 692.0, y: 24.0 });
+    }
+
+    #[test]
+    fn keeps_resolved_voice_capsule_position_inside_the_monitor_work_area() {
+        let placement: VoiceCapsulePlacement = serde_json::from_str(
+            r#"{
+  "anchor": "bottomRight",
+  "offsetX": 5000.0,
+  "offsetY": -200.0
+}"#,
+        )
+        .unwrap();
+
+        let position = resolve_voice_capsule_position(
+            MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 860.0,
+                scale_factor: 1.0,
+            },
+            &placement,
+        );
+
+        assert_eq!(position, CapsulePosition { x: 0.0, y: 824.0 });
+    }
+
+    #[test]
+    fn invalid_monitor_work_area_resolves_to_a_finite_safe_position() {
+        let position = resolve_voice_capsule_position(
+            MonitorWorkArea {
+                x: f64::NAN,
+                y: f64::INFINITY,
+                width: -100.0,
+                height: f64::NAN,
+                scale_factor: f64::NAN,
+            },
+            &VoiceCapsulePlacement {
+                anchor: VoiceCapsuleAnchor::BottomRight,
+                offset_x: Some(f64::INFINITY),
+                offset_y: Some(f64::NAN),
+                monitor: None,
+            },
+        );
+
+        assert_eq!(position, CapsulePosition { x: 0.0, y: 0.0 });
+    }
+
+    #[test]
+    fn saved_voice_capsule_placement_records_current_monitor_metadata() {
+        let placement = VoiceCapsulePlacement {
+            anchor: VoiceCapsuleAnchor::BottomRight,
+            offset_x: Some(24.0),
+            offset_y: Some(32.0),
+            monitor: None,
+        };
+
+        let enriched = placement_with_monitor_metadata(
+            placement,
+            MonitorWorkArea {
+                x: 10.0,
+                y: 20.0,
+                width: 1200.0,
+                height: 800.0,
+                scale_factor: 1.25,
+            },
+        );
+        let metadata = enriched.monitor.unwrap();
+
+        assert_eq!(metadata.work_area_x, 10.0);
+        assert_eq!(metadata.work_area_y, 20.0);
+        assert_eq!(metadata.work_area_width, 1200.0);
+        assert_eq!(metadata.work_area_height, 800.0);
+        assert_eq!(metadata.scale_factor, Some(1.25));
     }
 
     #[test]

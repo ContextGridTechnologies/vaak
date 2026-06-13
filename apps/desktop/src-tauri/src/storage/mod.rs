@@ -10,5 +10,5 @@ pub use dictation_records::{
 };
 pub use local_settings::{
     AppShellPreferences, LocalSettingsStore, MicrophoneSelection, OnboardingState, SystemSettings,
-    VoiceCapsuleAnchor, VoiceCapsulePlacement,
+    VoiceCapsuleAnchor, VoiceCapsuleMonitorMetadata, VoiceCapsulePlacement,
 };

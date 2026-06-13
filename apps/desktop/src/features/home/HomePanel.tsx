@@ -31,7 +31,11 @@ import {
   Card,
 } from "@/components/ui/card";
 import { appEnvironment } from "@/config/app-env";
-import { TimeSavedHero, buildAnalyticsSummary } from "@/features/analytics";
+import {
+  TimeSavedHero,
+  refreshAnalyticsSnapshot,
+  useAnalyticsSnapshot,
+} from "@/features/analytics";
 import { normalizeError } from "@/lib/errors";
 import {
   Empty,
@@ -41,7 +45,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import {
-  getAllRecentDictationRecords,
   getRecentDictationRecords,
   getSystemSettings,
   isTauriRuntime,
@@ -118,7 +121,6 @@ const appIcon: Record<string, LucideIcon> = {
 
 export function HomePanel() {
   const [records, setRecords] = useState<DictationRecord[]>([]);
-  const [productivityRecords, setProductivityRecords] = useState<DictationRecord[]>([]);
   const [showSkippedTranscripts, setShowSkippedTranscripts] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasLoadedAllRecords, setHasLoadedAllRecords] = useState(false);
@@ -128,6 +130,8 @@ export function HomePanel() {
   );
   const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const hasLoadedInitialActivityRef = useRef(false);
+  const { summary: productivitySummary } = useAnalyticsSnapshot();
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -150,16 +154,22 @@ export function HomePanel() {
 
     const loadRecords = async () => {
       try {
-        const [recent, allRecords] = await Promise.all([
-          getRecentDictationRecords(INITIAL_VISIBLE_COUNT, 0),
-          getAllRecentDictationRecords(),
-        ]);
+        const recent = await getRecentDictationRecords(INITIAL_VISIBLE_COUNT, 0);
         if (disposed) {
           return;
         }
 
-        setRecords((current) => mergeRecentRecords(current, recent));
-        setProductivityRecords(allRecords);
+        setRecords((current) => {
+          const nextRecords = mergeRecentRecords(current, recent);
+          if (
+            hasLoadedInitialActivityRef.current &&
+            hasRecordSetChanged(current, nextRecords)
+          ) {
+            void refreshAnalyticsSnapshot();
+          }
+          hasLoadedInitialActivityRef.current = true;
+          return nextRecords;
+        });
         setActivityLoadError(null);
         setHasLoadedAllRecords((current) =>
           current || recent.length < INITIAL_VISIBLE_COUNT,
@@ -201,10 +211,6 @@ export function HomePanel() {
   const activityOverview = useMemo(
     () => buildActivityOverview(activities),
     [activities],
-  );
-  const productivitySummary = useMemo(
-    () => buildAnalyticsSummary(productivityRecords),
-    [productivityRecords],
   );
   const visibleActivities = activities;
   const hasMoreActivities =
@@ -334,6 +340,7 @@ export function HomePanel() {
       });
 
       setRecords((current) => replaceRecord(current, retryRecord));
+      void refreshAnalyticsSnapshot();
       setRetryErrors((current) => ({ ...current, [activity.recordId]: "" }));
     } catch (error) {
       setRetryErrors((current) => ({
@@ -915,6 +922,26 @@ function replaceRecord(
   });
 
   return replaced ? nextRecords : [updatedRecord, ...currentRecords];
+}
+
+function hasRecordSetChanged(
+  currentRecords: DictationRecord[],
+  nextRecords: DictationRecord[],
+) {
+  if (currentRecords.length !== nextRecords.length) {
+    return true;
+  }
+
+  return nextRecords.some((nextRecord, index) => {
+    const currentRecord = currentRecords[index];
+    return (
+      !currentRecord ||
+      currentRecord.recordId !== nextRecord.recordId ||
+      currentRecord.capturedAt !== nextRecord.capturedAt ||
+      currentRecord.insertion.status !== nextRecord.insertion.status ||
+      currentRecord.transcript.finalText !== nextRecord.transcript.finalText
+    );
+  });
 }
 
 function mapRecordToActivity(

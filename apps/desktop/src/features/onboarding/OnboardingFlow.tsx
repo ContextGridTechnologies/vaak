@@ -1,9 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { RefreshCwIcon } from "lucide-react";
 
+import { PermissionCallout } from "@/components/app";
+import { Button } from "@/components/ui/button";
 import {
   completeOnboarding,
   getOnboardingState,
   isTauriRuntime,
+  recordStartupCheckpoint,
   saveOnboardingMode,
   saveOnboardingStep,
   type OnboardingMode,
@@ -15,6 +19,7 @@ import { HotkeyReadinessStep } from "./HotkeyReadinessStep";
 import { OnboardingLoadingScreen } from "./OnboardingLoadingScreen";
 import { OnboardingModeChoice } from "./OnboardingModeChoice";
 import { ProviderSetupStep } from "./ProviderSetupStep";
+import { OnboardingShell } from "./components/OnboardingShell";
 
 type OnboardingGateProps = {
   children: ReactNode;
@@ -25,6 +30,7 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
   const [loading, setLoading] = useState(() => isTauriRuntime());
   const [error, setError] = useState<string | null>(null);
   const [savingMode, setSavingMode] = useState<OnboardingMode | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -34,16 +40,32 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
 
     let active = true;
     setLoading(true);
+    void recordStartupCheckpoint({
+      windowLabel: "main",
+      checkpoint: "onboarding_state_requested",
+    }).catch(() => {});
     getOnboardingState()
       .then((loadedState) => {
         if (active) {
+          void recordStartupCheckpoint({
+            windowLabel: "main",
+            checkpoint: "onboarding_state_loaded",
+            detail: onboardingCheckpointDetail(loadedState),
+          }).catch(() => {});
           setState(loadedState);
           setError(null);
         }
       })
       .catch((err: unknown) => {
         if (active) {
-          setError(err instanceof Error ? err.message : "Unable to load setup state.");
+          const message =
+            err instanceof Error ? err.message : "Unable to load setup state.";
+          void recordStartupCheckpoint({
+            windowLabel: "main",
+            checkpoint: "onboarding_state_failed",
+            detail: message,
+          }).catch(() => {});
+          setError(message);
         }
       })
       .finally(() => {
@@ -55,6 +77,12 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
     return () => {
       active = false;
     };
+  }, [loadAttempt]);
+
+  const handleSetupRetry = useCallback(() => {
+    setError(null);
+    setLoading(true);
+    setLoadAttempt((attempt) => attempt + 1);
   }, []);
 
   async function handleModeSelect(mode: OnboardingMode) {
@@ -109,6 +137,10 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
     return children;
   }
 
+  if (!state && error) {
+    return <OnboardingLoadError error={error} onRetry={handleSetupRetry} />;
+  }
+
   if (!state || state.currentStep === "modeChoice") {
     return (
       <OnboardingModeChoice
@@ -155,5 +187,56 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
       savingMode={savingMode}
       onSelectMode={handleModeSelect}
     />
+  );
+}
+
+function onboardingCheckpointDetail(state: OnboardingState): string {
+  if (state.completed) {
+    return "completed";
+  }
+
+  return `incomplete:${state.currentStep}`;
+}
+
+function OnboardingLoadError({
+  error,
+  onRetry,
+}: {
+  error: string;
+  onRetry: () => void;
+}) {
+  return (
+    <OnboardingShell
+      header={
+        <header className="mx-auto flex w-full max-w-2xl flex-col items-center gap-3 text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+            Vaak setup
+          </p>
+          <div className="flex flex-col gap-2">
+            <h1 className="text-balance text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
+              Setup needs attention
+            </h1>
+            <p className="mx-auto max-w-xl text-balance text-sm text-muted-foreground sm:text-[0.95rem]">
+              Vaak could not confirm your saved setup state.
+            </p>
+          </div>
+        </header>
+      }
+    >
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
+        <PermissionCallout
+          tone="error"
+          title="Unable to load setup state"
+          action={
+            <Button type="button" variant="outline" onClick={onRetry}>
+              <RefreshCwIcon aria-hidden="true" />
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </PermissionCallout>
+      </div>
+    </OnboardingShell>
   );
 }

@@ -7,6 +7,7 @@ type TauriCommandCall = {
   command: string;
   args: InvokeArgs;
 };
+type TauriEventHandler = (event: { payload: unknown }) => void | Promise<void>;
 
 const invokeMock = vi.fn();
 const listenMock = vi.fn();
@@ -23,17 +24,29 @@ export type TauriCommandHarness = {
   calls: TauriCommandCall[];
   resolveCommand: (command: string, value: unknown) => void;
   rejectCommand: (command: string, error: unknown) => void;
+  emitEvent: (event: string, payload?: unknown) => Promise<void>;
+  listenerCount: (event: string) => number;
 };
 
 export function createTauriCommandHarness(): TauriCommandHarness {
   const calls: TauriCommandCall[] = [];
   const resolved = new Map<string, unknown>();
   const rejected = new Map<string, unknown>();
+  const eventListeners = new Map<string, Set<TauriEventHandler>>();
 
   setTauriRuntimeAvailable();
   invokeMock.mockReset();
   listenMock.mockReset();
-  listenMock.mockResolvedValue(() => {});
+  listenMock.mockImplementation(
+    (event: string, handler: TauriEventHandler) => {
+      const listeners = eventListeners.get(event) ?? new Set<TauriEventHandler>();
+      listeners.add(handler);
+      eventListeners.set(event, listeners);
+      return Promise.resolve(() => {
+        listeners.delete(handler);
+      });
+    },
+  );
   invokeMock.mockImplementation((command: string, args?: InvokeArgs) => {
     calls.push({ command, args });
 
@@ -60,6 +73,13 @@ export function createTauriCommandHarness(): TauriCommandHarness {
     rejectCommand(command, error) {
       rejected.set(command, error);
     },
+    async emitEvent(event, payload) {
+      const listeners = [...(eventListeners.get(event) ?? [])];
+      await Promise.all(listeners.map((listener) => listener({ payload })));
+    },
+    listenerCount(event) {
+      return eventListeners.get(event)?.size ?? 0;
+    },
   };
 }
 
@@ -68,7 +88,20 @@ export function expectTauriCommand(
   command: string,
   args: InvokeArgs,
 ): void {
-  expect(harness.calls).toContainEqual({ command, args });
+  expect(
+    harness.calls.map((call) => ({
+      command: call.command,
+      args: normalizeInvokeArgs(call.args),
+    })),
+  ).toContainEqual({ command, args: normalizeInvokeArgs(args) });
+}
+
+function normalizeInvokeArgs(args: InvokeArgs): InvokeArgs {
+  if (args && Object.keys(args).length === 0) {
+    return undefined;
+  }
+
+  return args;
 }
 
 export function setTauriRuntimeAvailable(): void {

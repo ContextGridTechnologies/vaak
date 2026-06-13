@@ -24,13 +24,61 @@ export async function invokeTauri<T>(
   }
 
   const { invoke } = await import("@tauri-apps/api/core");
+  if (args === undefined) {
+    return invoke<T>(command);
+  }
+
   return invoke<T>(command, args);
 }
 
 export async function recordRendererHeartbeat(
   windowLabel: string,
+  rendererInstanceId?: string,
 ): Promise<void> {
-  return invokeTauri("record_renderer_heartbeat", { windowLabel });
+  return invokeTauri("record_renderer_heartbeat", {
+    windowLabel,
+    ...(rendererInstanceId === undefined ? {} : { rendererInstanceId }),
+  });
+}
+
+export async function recordStartupCheckpoint(input: {
+  windowLabel: string;
+  checkpoint: string;
+  detail?: string;
+}): Promise<void> {
+  const args =
+    input.detail === undefined
+      ? {
+          windowLabel: input.windowLabel,
+          checkpoint: input.checkpoint,
+        }
+      : input;
+
+  return invokeTauri("record_startup_checkpoint", args);
+}
+
+export type VoiceCapsuleReadyChallenge = {
+  runId: string;
+  attemptId: string;
+  nonce: string;
+};
+
+export async function getVoiceCapsuleReadyChallenge(
+  rendererInstanceId: string,
+): Promise<VoiceCapsuleReadyChallenge> {
+  return invokeTauri("get_voice_capsule_ready_challenge", {
+    rendererInstanceId,
+  });
+}
+
+export async function recordVoiceCapsuleReady(input: {
+  runId: string;
+  attemptId: string;
+  nonce: string;
+  rendererInstanceId: string;
+  sessionEnabled: boolean;
+}): Promise<void> {
+  return invokeTauri("record_voice_capsule_ready", input);
 }
 
 export async function recordRendererError(input: {

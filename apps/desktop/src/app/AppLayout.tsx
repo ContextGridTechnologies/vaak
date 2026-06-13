@@ -23,6 +23,7 @@ import { Tabs } from "@/components/ui/tabs";
 import {
   getAppShellPreferences,
   isTauriRuntime,
+  recordStartupCheckpoint,
   saveAppShellPreferences,
   type AppShellPreferences,
 } from "@/lib/tauri";
@@ -35,6 +36,10 @@ type AppLayoutProps = {
 };
 
 const COMPACT_VIEWPORT_MAX_WIDTH = 960;
+const DEFAULT_APP_SHELL_PREFERENCES: AppShellPreferences = {
+  sidebarCollapsed: false,
+  voiceCapsuleEnabled: true,
+};
 
 export function AppLayout({ notice, children }: AppLayoutProps) {
   const [activeSection, setActiveSection] = useState<AppSection>("home");
@@ -42,9 +47,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
     isCompactViewport(),
   );
   const [appShellPreferences, setAppShellPreferences] =
-    useState<AppShellPreferences>({
-      sidebarCollapsed: false,
-    });
+    useState<AppShellPreferences>(DEFAULT_APP_SHELL_PREFERENCES);
   const [sidebarPreferenceOpen, setSidebarPreferenceOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(() => !isCompactViewport());
 
@@ -68,14 +71,40 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
       return;
     }
 
+    void recordStartupCheckpoint({
+      windowLabel: "main",
+      checkpoint: "app_shell_mounted",
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    void recordStartupCheckpoint({
+      windowLabel: "main",
+      checkpoint: "app_shell_preferences_requested",
+    }).catch(() => {});
     void getAppShellPreferences()
       .then((preferences) => {
-        const preferredOpen = !preferences.sidebarCollapsed;
-        setAppShellPreferences(preferences);
+        const loadedPreferences = normalizeAppShellPreferences(preferences);
+        const preferredOpen = !loadedPreferences.sidebarCollapsed;
+        void recordStartupCheckpoint({
+          windowLabel: "main",
+          checkpoint: "app_shell_preferences_loaded",
+          detail: sidebarCheckpointDetail(loadedPreferences),
+        }).catch(() => {});
+        setAppShellPreferences(loadedPreferences);
         setSidebarPreferenceOpen(preferredOpen);
         setSidebarOpen(isCompactViewport() ? false : preferredOpen);
       })
       .catch((error: unknown) => {
+        void recordStartupCheckpoint({
+          windowLabel: "main",
+          checkpoint: "app_shell_preferences_failed",
+          detail: error instanceof Error ? error.message : "unknown",
+        }).catch(() => {});
         console.error("Failed to load app shell preferences", error);
       });
   }, []);
@@ -208,6 +237,21 @@ function isCompactViewport() {
   }
 
   return window.innerWidth < COMPACT_VIEWPORT_MAX_WIDTH;
+}
+
+function sidebarCheckpointDetail(preferences: AppShellPreferences): string {
+  return preferences.sidebarCollapsed
+    ? "sidebarCollapsed=true"
+    : "sidebarCollapsed=false";
+}
+
+function normalizeAppShellPreferences(
+  preferences: AppShellPreferences,
+): AppShellPreferences {
+  return {
+    ...DEFAULT_APP_SHELL_PREFERENCES,
+    ...preferences,
+  };
 }
 
 function SidebarDockToggle() {

@@ -9,6 +9,7 @@
     "test": "npm --prefix apps/desktop run test",
     "typecheck": "npm --prefix apps/desktop run typecheck",
     "install:desktop": "npm --prefix apps/desktop install",
+    "startup:preflight": "npm --prefix apps/desktop run startup:preflight --",
     "tauri": "node scripts/run-tauri.mjs",
     "tauri:dev": "npm --prefix apps/desktop run tauri:dev",
     "tauri:build": "npm --prefix apps/desktop run tauri:build"

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -16,6 +17,7 @@ use crate::session::{
 use uuid::Uuid;
 
 const SETTINGS_FILE_NAME: &str = "settings.json";
+const SETTINGS_BACKUP_FILE_NAME: &str = "settings.last-known-good.json";
 const SETTINGS_VERSION: u32 = 1;
 const DEFAULT_SPEECH_PROVIDER: &str = "openai";
 
@@ -67,6 +69,8 @@ pub struct OnboardingState {
 #[serde(rename_all = "camelCase")]
 pub struct AppShellPreferences {
     pub sidebar_collapsed: bool,
+    #[serde(default = "default_voice_capsule_enabled")]
+    pub voice_capsule_enabled: bool,
     #[serde(default = "default_voice_capsule_placement_option")]
     pub voice_capsule_placement: Option<VoiceCapsulePlacement>,
 }
@@ -89,6 +93,19 @@ pub struct VoiceCapsulePlacement {
     pub offset_x: Option<f64>,
     #[serde(default)]
     pub offset_y: Option<f64>,
+    #[serde(default)]
+    pub monitor: Option<VoiceCapsuleMonitorMetadata>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceCapsuleMonitorMetadata {
+    pub work_area_x: f64,
+    pub work_area_y: f64,
+    pub work_area_width: f64,
+    pub work_area_height: f64,
+    #[serde(default)]
+    pub scale_factor: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -129,6 +146,7 @@ impl Default for AppShellPreferences {
     fn default() -> Self {
         Self {
             sidebar_collapsed: false,
+            voice_capsule_enabled: default_voice_capsule_enabled(),
             voice_capsule_placement: default_voice_capsule_placement_option(),
         }
     }
@@ -140,6 +158,7 @@ impl Default for VoiceCapsulePlacement {
             anchor: VoiceCapsuleAnchor::BottomCenter,
             offset_x: None,
             offset_y: None,
+            monitor: None,
         }
     }
 }
@@ -271,7 +290,7 @@ impl LocalSettingsStore {
 
     pub fn onboarding_state(&self) -> Result<OnboardingState, ProviderError> {
         let _guard = self.lock()?;
-        Ok(self.load_unlocked()?.onboarding)
+        self.load_onboarding_unlocked()
     }
 
     pub fn app_shell_preferences(&self) -> Result<AppShellPreferences, ProviderError> {
@@ -288,6 +307,18 @@ impl LocalSettingsStore {
         let _guard = self.lock()?;
         let mut settings = self.load_unlocked()?;
         settings.app_shell = normalize_app_shell_preferences(preferences);
+        self.save_unlocked(&settings)?;
+        Ok(settings.app_shell)
+    }
+
+    pub fn save_voice_capsule_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<AppShellPreferences, ProviderError> {
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        settings.app_shell = normalize_app_shell_preferences(settings.app_shell);
+        settings.app_shell.voice_capsule_enabled = enabled;
         self.save_unlocked(&settings)?;
         Ok(settings.app_shell)
     }
@@ -401,18 +432,48 @@ impl LocalSettingsStore {
             return Ok(LocalSettings::default());
         }
 
-        let raw = fs::read_to_string(&self.settings_path)
-            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
-        let mut settings = serde_json::from_str::<LocalSettings>(&raw)
-            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
-        validate_microphone_selection(&settings.microphone_selection)?;
-        settings.hotkeys.dictation = normalize_dictation_hotkey_label(&settings.hotkeys.dictation)
-            .map_err(ProviderFailure::InvalidRequest)?;
-        settings.onboarding.current_step =
-            normalize_onboarding_step(&settings.onboarding.current_step)
-                .unwrap_or("modeChoice")
-                .to_string();
-        Ok(settings)
+        match self.load_settings_from_path(&self.settings_path) {
+            Ok(settings) => {
+                self.refresh_backup_unlocked(&settings)?;
+                Ok(settings)
+            }
+            Err(primary_err) => {
+                let recovered = self.load_settings_from_path(&self.backup_path());
+                match recovered {
+                    Ok(settings) => {
+                        self.save_unlocked(&settings)?;
+                        Ok(settings)
+                    }
+                    Err(_) => Err(primary_err),
+                }
+            }
+        }
+    }
+
+    fn load_onboarding_unlocked(&self) -> Result<OnboardingState, ProviderError> {
+        if !self.settings_path.exists() {
+            return Ok(OnboardingState::default());
+        }
+
+        match self.load_onboarding_from_path(&self.settings_path) {
+            Ok(onboarding) => {
+                if let Ok(settings) = self.load_settings_from_path(&self.settings_path) {
+                    self.refresh_backup_unlocked(&settings)?;
+                }
+                Ok(onboarding)
+            }
+            Err(primary_err) => {
+                let recovered = self.load_settings_from_path(&self.backup_path());
+                match recovered {
+                    Ok(settings) => {
+                        let onboarding = normalize_onboarding_state(settings.onboarding.clone());
+                        self.save_unlocked(&settings)?;
+                        Ok(onboarding)
+                    }
+                    Err(_) => Err(primary_err),
+                }
+            }
+        }
     }
 
     fn save_unlocked(&self, settings: &LocalSettings) -> Result<(), ProviderError> {
@@ -423,8 +484,45 @@ impl LocalSettingsStore {
 
         let raw = serde_json::to_string_pretty(settings)
             .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
-        fs::write(&self.settings_path, raw)
-            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()).into())
+        let _validated = parse_settings(&raw)?;
+        write_atomic(&self.settings_path, &raw)?;
+        write_atomic(&self.backup_path(), &raw)
+    }
+
+    fn refresh_backup_unlocked(&self, settings: &LocalSettings) -> Result<(), ProviderError> {
+        let backup_path = self.backup_path();
+        if backup_path.exists() && self.load_settings_from_path(&backup_path).is_ok() {
+            return Ok(());
+        }
+
+        let raw = serde_json::to_string_pretty(settings)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        let _validated = parse_settings(&raw)?;
+        write_atomic(&backup_path, &raw)
+    }
+
+    fn backup_path(&self) -> PathBuf {
+        self.settings_path.with_file_name(SETTINGS_BACKUP_FILE_NAME)
+    }
+
+    fn load_settings_from_path(&self, path: &Path) -> Result<LocalSettings, ProviderError> {
+        let raw = fs::read_to_string(path)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        parse_settings(&raw)
+    }
+
+    fn load_onboarding_from_path(&self, path: &Path) -> Result<OnboardingState, ProviderError> {
+        let raw = fs::read_to_string(path)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        let value = serde_json::from_str::<serde_json::Value>(&raw)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        let Some(onboarding_value) = value.get("onboarding") else {
+            return Ok(OnboardingState::default());
+        };
+        let onboarding = serde_json::from_value::<OnboardingState>(onboarding_value.clone())
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+
+        Ok(normalize_onboarding_state(onboarding))
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, ProviderError> {
@@ -450,6 +548,10 @@ fn default_voice_capsule_placement_option() -> Option<VoiceCapsulePlacement> {
     Some(VoiceCapsulePlacement::default())
 }
 
+fn default_voice_capsule_enabled() -> bool {
+    true
+}
+
 fn default_launch_on_startup() -> bool {
     true
 }
@@ -462,6 +564,108 @@ fn normalize_onboarding_step(step: &str) -> Option<&'static str> {
         "providerTest" | "tryDictation" | "hotkeyReadiness" => Some("hotkeyReadiness"),
         _ => None,
     }
+}
+
+fn parse_settings(raw: &str) -> Result<LocalSettings, ProviderError> {
+    let mut settings = serde_json::from_str::<LocalSettings>(raw)
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+    validate_microphone_selection(&settings.microphone_selection)?;
+    settings.hotkeys.dictation = normalize_dictation_hotkey_label(&settings.hotkeys.dictation)
+        .map_err(ProviderFailure::InvalidRequest)?;
+    settings.onboarding = normalize_onboarding_state(settings.onboarding);
+    Ok(settings)
+}
+
+fn write_atomic(path: &Path, raw: &str) -> Result<(), ProviderError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+    }
+
+    let temp_path = temporary_settings_path(path);
+    let write_result = (|| -> Result<(), ProviderError> {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp_path)
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        file.write_all(raw.as_bytes())
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        file.sync_all()
+            .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+        drop(file);
+        replace_file(&temp_path, path)?;
+        if let Some(parent) = path.parent() {
+            sync_parent_dir(parent);
+        }
+        Ok(())
+    })();
+
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    write_result
+}
+
+fn temporary_settings_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("settings.json");
+    path.with_file_name(format!("{file_name}.tmp-{}", Uuid::new_v4()))
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> Result<(), ProviderError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source_wide: Vec<u16> = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let destination_wide: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let moved = unsafe {
+        MoveFileExW(
+            source_wide.as_ptr(),
+            destination_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        return Err(
+            ProviderFailure::SettingsStore(std::io::Error::last_os_error().to_string()).into(),
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, destination: &Path) -> Result<(), ProviderError> {
+    fs::rename(source, destination)
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()).into())
+}
+
+fn sync_parent_dir(parent: &Path) {
+    if let Ok(dir) = File::open(parent) {
+        let _ = dir.sync_all();
+    }
+}
+
+fn normalize_onboarding_state(mut state: OnboardingState) -> OnboardingState {
+    state.current_step = normalize_onboarding_step(&state.current_step)
+        .unwrap_or("modeChoice")
+        .to_string();
+    state
 }
 
 fn build_hotkey_bindings(dictation: &str) -> Result<HotkeyBindings, ProviderError> {
@@ -843,6 +1047,7 @@ mod tests {
         let preferences = store.app_shell_preferences().unwrap();
 
         assert!(!preferences.sidebar_collapsed);
+        assert!(preferences.voice_capsule_enabled);
         assert_eq!(
             preferences.voice_capsule_placement,
             Some(VoiceCapsulePlacement::default())
@@ -895,10 +1100,12 @@ mod tests {
         let saved = store
             .save_app_shell_preferences(AppShellPreferences {
                 sidebar_collapsed: true,
+                voice_capsule_enabled: true,
                 voice_capsule_placement: Some(VoiceCapsulePlacement {
                     anchor: VoiceCapsuleAnchor::BottomRight,
                     offset_x: Some(32.0),
                     offset_y: Some(20.0),
+                    monitor: None,
                 }),
             })
             .unwrap();
@@ -910,6 +1117,7 @@ mod tests {
                 anchor: VoiceCapsuleAnchor::BottomRight,
                 offset_x: Some(32.0),
                 offset_y: Some(20.0),
+                monitor: None,
             })
         );
         assert!(
@@ -917,6 +1125,12 @@ mod tests {
                 .app_shell_preferences()
                 .unwrap()
                 .sidebar_collapsed
+        );
+        assert!(
+            LocalSettingsStore::new(&dir)
+                .app_shell_preferences()
+                .unwrap()
+                .voice_capsule_enabled
         );
         assert_eq!(
             LocalSettingsStore::new(&dir)
@@ -927,6 +1141,7 @@ mod tests {
                 anchor: VoiceCapsuleAnchor::BottomRight,
                 offset_x: Some(32.0),
                 offset_y: Some(20.0),
+                monitor: None,
             })
         );
 
@@ -957,8 +1172,61 @@ mod tests {
                 anchor: VoiceCapsuleAnchor::TopCenter,
                 offset_x: Some(4.0),
                 offset_y: Some(20.0),
+                monitor: None,
             }
         );
+    }
+
+    #[test]
+    fn persists_voice_capsule_enabled_preference() {
+        let dir = temp_config_dir("voice-capsule-enabled");
+        let store = LocalSettingsStore::new(&dir);
+
+        let disabled = store.save_voice_capsule_enabled(false).unwrap();
+        assert!(!disabled.voice_capsule_enabled);
+        assert!(
+            !LocalSettingsStore::new(&dir)
+                .app_shell_preferences()
+                .unwrap()
+                .voice_capsule_enabled
+        );
+
+        let enabled = LocalSettingsStore::new(&dir)
+            .save_voice_capsule_enabled(true)
+            .unwrap();
+        assert!(enabled.voice_capsule_enabled);
+    }
+
+    #[test]
+    fn serializes_voice_capsule_monitor_metadata_without_breaking_v1_placement() {
+        let v1_placement: VoiceCapsulePlacement = serde_json::from_str(
+            r#"{
+  "anchor": "bottomCenter",
+  "offsetX": 0.0,
+  "offsetY": 24.0
+}"#,
+        )
+        .unwrap();
+        assert_eq!(v1_placement.monitor, None);
+
+        let placement = VoiceCapsulePlacement {
+            anchor: VoiceCapsuleAnchor::TopCenter,
+            offset_x: Some(12.0),
+            offset_y: Some(28.0),
+            monitor: Some(VoiceCapsuleMonitorMetadata {
+                work_area_x: 10.0,
+                work_area_y: 20.0,
+                work_area_width: 1200.0,
+                work_area_height: 800.0,
+                scale_factor: Some(1.25),
+            }),
+        };
+
+        let json = serde_json::to_string(&placement).unwrap();
+        let reloaded: VoiceCapsulePlacement = serde_json::from_str(&json).unwrap();
+
+        assert!(json.contains("\"monitor\""));
+        assert_eq!(reloaded, placement);
     }
 
     #[test]
@@ -1021,6 +1289,104 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.code, "invalid_provider_request");
+    }
+
+    #[test]
+    fn onboarding_state_ignores_unrelated_invalid_microphone_selection() {
+        let dir = temp_config_dir("onboarding-invalid-microphone");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("settings.json"),
+            r#"{
+  "version": 1,
+  "selectedSpeechProvider": "openai",
+  "providerConfigs": {},
+  "microphoneSelection": {
+    "mode": "manual",
+    "deviceId": ""
+  },
+  "onboarding": {
+    "completed": true,
+    "currentStep": "hotkeyReadiness",
+    "selectedMode": "local"
+  }
+}"#,
+        )
+        .unwrap();
+
+        let state = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
+
+        assert!(state.completed);
+        assert_eq!(state.current_step, "hotkeyReadiness");
+        assert_eq!(state.selected_mode.as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn truncated_primary_recovers_completed_onboarding_from_last_known_good_backup() {
+        let dir = temp_config_dir("truncated-primary");
+        let store = LocalSettingsStore::new(&dir);
+
+        store.save_onboarding_mode("local").unwrap();
+        let completed = store.complete_onboarding().unwrap();
+        assert!(completed.completed);
+        assert!(dir.join(SETTINGS_BACKUP_FILE_NAME).exists());
+
+        fs::write(dir.join(SETTINGS_FILE_NAME), "{").unwrap();
+
+        let recovered = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
+        assert!(recovered.completed);
+        assert_eq!(recovered.selected_mode.as_deref(), Some("local"));
+        let repaired_primary = fs::read_to_string(dir.join(SETTINGS_FILE_NAME)).unwrap();
+        serde_json::from_str::<serde_json::Value>(&repaired_primary).unwrap();
+        assert!(repaired_primary.contains("\"completed\": true"));
+    }
+
+    #[test]
+    fn full_settings_read_recovers_from_last_known_good_backup() {
+        let dir = temp_config_dir("full-backup-recovery");
+        let store = LocalSettingsStore::new(&dir);
+        let preferences = AppShellPreferences {
+            sidebar_collapsed: true,
+            voice_capsule_enabled: true,
+            voice_capsule_placement: Some(VoiceCapsulePlacement {
+                anchor: VoiceCapsuleAnchor::TopCenter,
+                offset_x: Some(8.0),
+                offset_y: Some(16.0),
+                monitor: None,
+            }),
+        };
+
+        store
+            .save_app_shell_preferences(preferences.clone())
+            .unwrap();
+        fs::write(dir.join(SETTINGS_FILE_NAME), "{").unwrap();
+
+        let recovered = LocalSettingsStore::new(&dir)
+            .app_shell_preferences()
+            .unwrap();
+
+        assert_eq!(recovered, preferences);
+        let repaired_primary = fs::read_to_string(dir.join(SETTINGS_FILE_NAME)).unwrap();
+        serde_json::from_str::<serde_json::Value>(&repaired_primary).unwrap();
+    }
+
+    #[test]
+    fn valid_primary_refreshes_corrupted_last_known_good_backup() {
+        let dir = temp_config_dir("refresh-corrupt-backup");
+        let store = LocalSettingsStore::new(&dir);
+        store.complete_onboarding().unwrap();
+        fs::write(dir.join(SETTINGS_BACKUP_FILE_NAME), "{").unwrap();
+
+        assert!(
+            LocalSettingsStore::new(&dir)
+                .onboarding_state()
+                .unwrap()
+                .completed
+        );
+
+        let backup = fs::read_to_string(dir.join(SETTINGS_BACKUP_FILE_NAME)).unwrap();
+        serde_json::from_str::<serde_json::Value>(&backup).unwrap();
+        assert!(backup.contains("\"completed\": true"));
     }
 
     fn assert_no_provider_secrets(json: &str, secret_values: &[&str]) {

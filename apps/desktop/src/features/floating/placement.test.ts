@@ -89,4 +89,24 @@ describe("voice capsule placement", () => {
       offsetY: 28,
     });
   });
+
+  it("keeps resolved placement inside the work area when offsets are too large", () => {
+    const position = resolvePlacementPosition({
+      placement: {
+        anchor: "bottomRight",
+        offsetX: 5000,
+        offsetY: -200,
+      },
+      windowSize: {
+        width: 56,
+        height: 36,
+      },
+      workArea,
+    });
+
+    expect(position).toEqual({
+      x: 0,
+      y: 824,
+    });
+  });
 });

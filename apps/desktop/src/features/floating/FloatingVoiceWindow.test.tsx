@@ -13,6 +13,9 @@ const {
   getFloatingWindowStartState,
   getFloatingMonitorWorkArea,
   saveVoiceCapsulePlacement,
+  getVoiceCapsuleReadyChallenge,
+  recordVoiceCapsuleReady,
+  recordStartupCheckpoint,
 } = vi.hoisted(() => ({
   useDictationLoop: vi.fn(),
   useDictationSession: vi.fn(),
@@ -21,6 +24,9 @@ const {
   getFloatingWindowStartState: vi.fn(),
   getFloatingMonitorWorkArea: vi.fn(),
   saveVoiceCapsulePlacement: vi.fn(),
+  getVoiceCapsuleReadyChallenge: vi.fn(),
+  recordVoiceCapsuleReady: vi.fn(),
+  recordStartupCheckpoint: vi.fn(),
 }));
 
 vi.mock("@/features/dictation/hooks/useDictationLoop", () => ({
@@ -34,7 +40,10 @@ vi.mock("@/features/dictation/hooks/useDictationSession", () => ({
 vi.mock("@/lib/tauri", () => ({
   getOnboardingState,
   isTauriRuntime: () => true,
+  getVoiceCapsuleReadyChallenge,
   listenToTauriEvent: vi.fn(async () => () => {}),
+  recordStartupCheckpoint,
+  recordVoiceCapsuleReady,
   saveVoiceCapsulePlacement,
   voiceCapsuleAnchors: [
     "bottomCenter",
@@ -59,6 +68,16 @@ describe("FloatingVoiceWindow", () => {
     Element.prototype.setPointerCapture = vi.fn();
     Element.prototype.releasePointerCapture = vi.fn();
     moveFloatingWindow.mockReset();
+    getVoiceCapsuleReadyChallenge.mockReset();
+    getVoiceCapsuleReadyChallenge.mockResolvedValue({
+      runId: "run-1",
+      attemptId: "attempt-1",
+      nonce: "nonce-1",
+    });
+    recordVoiceCapsuleReady.mockReset();
+    recordVoiceCapsuleReady.mockResolvedValue(undefined);
+    recordStartupCheckpoint.mockReset();
+    recordStartupCheckpoint.mockResolvedValue(undefined);
     saveVoiceCapsulePlacement.mockReset();
     saveVoiceCapsulePlacement.mockResolvedValue({});
     getFloatingWindowStartState.mockReset();
@@ -106,6 +125,55 @@ describe("FloatingVoiceWindow", () => {
     render(<FloatingVoiceWindow />);
 
     expect(useDictationSession).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it("records a typed voice capsule ready ack after onboarding is loaded", async () => {
+    render(<FloatingVoiceWindow />);
+
+    await waitFor(() => {
+      expect(recordVoiceCapsuleReady).toHaveBeenCalledWith({
+        runId: "run-1",
+        attemptId: "attempt-1",
+        nonce: "nonce-1",
+        rendererInstanceId: expect.any(String),
+        sessionEnabled: true,
+      });
+    });
+  });
+
+  it("records a sanitized ready ack failure and retries once for a stale challenge", async () => {
+    getVoiceCapsuleReadyChallenge
+      .mockResolvedValueOnce({
+        runId: "run-1",
+        attemptId: "attempt-old",
+        nonce: "nonce-old",
+      })
+      .mockResolvedValueOnce({
+        runId: "run-1",
+        attemptId: "attempt-new",
+        nonce: "nonce-new",
+      });
+    recordVoiceCapsuleReady
+      .mockRejectedValueOnce(new Error("voice capsule ready ack rejected: stale_attempt"))
+      .mockResolvedValueOnce(undefined);
+
+    render(<FloatingVoiceWindow />);
+
+    await waitFor(() => {
+      expect(recordVoiceCapsuleReady).toHaveBeenCalledTimes(2);
+    });
+    expect(recordVoiceCapsuleReady).toHaveBeenLastCalledWith({
+      runId: "run-1",
+      attemptId: "attempt-new",
+      nonce: "nonce-new",
+      rendererInstanceId: expect.any(String),
+      sessionEnabled: true,
+    });
+    expect(recordStartupCheckpoint).toHaveBeenCalledWith({
+      windowLabel: "voice-capsule",
+      checkpoint: "voice_capsule_ready_ack_send_failed",
+      detail: "category=stale_challenge",
+    });
   });
 
   it("renders a compact record button and starts recording when pressed", async () => {
