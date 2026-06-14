@@ -9,9 +9,11 @@ import {
   disableVoiceCapsule,
   enableVoiceCapsule,
   getAppShellPreferences,
+  openMainWindow,
   resetVoiceCapsulePosition,
   restartVoiceCapsule,
   saveAppShellPreferences,
+  setVoiceCapsuleSizeMode,
   voiceCapsuleAnchors,
 } from "./app-shell";
 
@@ -133,5 +135,27 @@ describe("app shell Tauri API", () => {
     expectTauriCommand(tauri, "reset_voice_capsule_position", undefined);
     expectTauriCommand(tauri, "disable_voice_capsule", undefined);
     expectTauriCommand(tauri, "enable_voice_capsule", undefined);
+  });
+
+  it("exposes capsule popup window commands through backend commands", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("set_voice_capsule_size_mode", {
+      popupPlacement: "above",
+      popupHorizontalPlacement: "right",
+    });
+    tauri.resolveCommand("open_main_window", undefined);
+
+    await expect(
+      setVoiceCapsuleSizeMode("insertionRecoveryOpen"),
+    ).resolves.toEqual({
+      popupPlacement: "above",
+      popupHorizontalPlacement: "right",
+    });
+    await expect(openMainWindow()).resolves.toBeUndefined();
+
+    expectTauriCommand(tauri, "set_voice_capsule_size_mode", {
+      mode: "insertionRecoveryOpen",
+    });
+    expectTauriCommand(tauri, "open_main_window", undefined);
   });
 });

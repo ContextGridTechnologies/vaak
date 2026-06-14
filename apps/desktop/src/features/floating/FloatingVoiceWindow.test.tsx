@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTauriCommandHarness } from "@/test/tauri";
 import { FloatingVoiceWindow } from "./FloatingVoiceWindow";
@@ -13,6 +13,9 @@ const {
   getFloatingWindowStartState,
   getFloatingMonitorWorkArea,
   saveVoiceCapsulePlacement,
+  setVoiceCapsuleSizeMode,
+  insertIntoActiveTarget,
+  openMainWindow,
   getVoiceCapsuleReadyChallenge,
   recordVoiceCapsuleReady,
   recordStartupCheckpoint,
@@ -24,6 +27,9 @@ const {
   getFloatingWindowStartState: vi.fn(),
   getFloatingMonitorWorkArea: vi.fn(),
   saveVoiceCapsulePlacement: vi.fn(),
+  setVoiceCapsuleSizeMode: vi.fn(),
+  insertIntoActiveTarget: vi.fn(),
+  openMainWindow: vi.fn(),
   getVoiceCapsuleReadyChallenge: vi.fn(),
   recordVoiceCapsuleReady: vi.fn(),
   recordStartupCheckpoint: vi.fn(),
@@ -40,11 +46,14 @@ vi.mock("@/features/dictation/hooks/useDictationSession", () => ({
 vi.mock("@/lib/tauri", () => ({
   getOnboardingState,
   isTauriRuntime: () => true,
+  insertIntoActiveTarget,
+  openMainWindow,
   getVoiceCapsuleReadyChallenge,
   listenToTauriEvent: vi.fn(async () => () => {}),
   recordStartupCheckpoint,
   recordVoiceCapsuleReady,
   saveVoiceCapsulePlacement,
+  setVoiceCapsuleSizeMode,
   voiceCapsuleAnchors: [
     "bottomCenter",
     "bottomLeft",
@@ -62,12 +71,25 @@ vi.mock("./window-controller", () => ({
 }));
 
 describe("FloatingVoiceWindow", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     document.documentElement.removeAttribute("data-window");
     document.body.removeAttribute("data-window");
     Element.prototype.setPointerCapture = vi.fn();
     Element.prototype.releasePointerCapture = vi.fn();
     moveFloatingWindow.mockReset();
+    setVoiceCapsuleSizeMode.mockReset();
+    setVoiceCapsuleSizeMode.mockResolvedValue({ popupPlacement: "below" });
+    insertIntoActiveTarget.mockReset();
+    insertIntoActiveTarget.mockResolvedValue({
+      characters: 5,
+      method: "send_input",
+    });
+    openMainWindow.mockReset();
+    openMainWindow.mockResolvedValue(undefined);
     getVoiceCapsuleReadyChallenge.mockReset();
     getVoiceCapsuleReadyChallenge.mockResolvedValue({
       runId: "run-1",
@@ -353,6 +375,283 @@ describe("FloatingVoiceWindow", () => {
     expect(
       screen.getByRole("button", { name: "Start recording" }),
     ).toBeEnabled();
+  });
+
+  it("shows insertion recovery actions and auto-restores the compact capsule after the timeout", async () => {
+    vi.useFakeTimers();
+
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed: target changed" },
+      insertResult: null,
+      message: "Insertion failed: target changed",
+      state: "error",
+      transcript: "hello from voice",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    expect(screen.getByText("Transcript ready")).toBeInTheDocument();
+    expect(screen.queryByText("Could not insert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy transcript" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Retry insertion" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Voice" })).toBeEnabled();
+
+    await Promise.resolve();
+    expect(setVoiceCapsuleSizeMode).toHaveBeenCalledWith(
+      "insertionRecoveryOpen",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(screen.queryByText("Transcript ready")).not.toBeInTheDocument();
+    expect(setVoiceCapsuleSizeMode).toHaveBeenLastCalledWith("compact");
+
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("uses pointer cursors for the clickable recovery surface and actions", async () => {
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed" },
+      insertResult: null,
+      message: "Insertion failed",
+      state: "error",
+      transcript: "clickable text",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    const copyButton = screen.getByRole("button", { name: "Copy transcript" });
+    const openVoiceButton = screen.getByRole("button", { name: "Open Voice" });
+    const capsule = screen.getByRole("button", { name: "Start recording" }).closest("section");
+
+    expect(capsule).toHaveClass("cursor-pointer");
+    expect(copyButton).toHaveClass("cursor-pointer");
+    expect(openVoiceButton).toHaveClass("cursor-pointer");
+  });
+
+  it("renders the recovery tray with app theme tokens and shadcn-style controls", async () => {
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed" },
+      insertResult: null,
+      message: "Insertion failed",
+      state: "error",
+      transcript: "theme aligned text",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    const tray = screen.getByRole("dialog", { name: "Transcript ready" });
+    const copyButton = screen.getByRole("button", { name: "Copy transcript" });
+    const openVoiceButton = screen.getByRole("button", { name: "Open Voice" });
+
+    expect(tray).toHaveClass(
+      "bg-popover",
+      "text-popover-foreground",
+      "ring-border/80",
+    );
+    expect(tray).not.toHaveClass("bg-neutral-950/96", "text-white");
+    expect(screen.getByText("Auto-closes").closest("[data-slot='badge']")).toHaveClass(
+      "bg-secondary",
+      "text-secondary-foreground",
+    );
+    expect(copyButton).toHaveAttribute("data-slot", "button");
+    expect(copyButton).toHaveAttribute("data-variant", "default");
+    expect(screen.queryByRole("button", { name: "Retry insertion" })).not.toBeInTheDocument();
+    expect(openVoiceButton).toHaveAttribute("data-variant", "ghost");
+  });
+
+  it("keeps the bottom capsule compact while the recovery tray is open", async () => {
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed" },
+      insertResult: null,
+      message: "Insertion failed",
+      state: "error",
+      transcript: "compact capsule",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    const capsule = screen.getByRole("button", { name: "Start recording" }).closest("section");
+
+    expect(screen.getByRole("dialog", { name: "Transcript ready" })).toBeInTheDocument();
+    expect(capsule).toHaveClass("h-6", "w-11", "shrink-0");
+    expect(capsule).not.toHaveClass("h-full", "w-full", "w-[12.75rem]");
+  });
+
+  it("renders the recovery tray above the capsule when the resize command chooses above placement", async () => {
+    vi.useFakeTimers();
+    setVoiceCapsuleSizeMode.mockImplementation(async (mode: string) => ({
+      popupPlacement: mode === "insertionRecoveryOpen" ? "above" : "below",
+    }));
+
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed" },
+      insertResult: null,
+      message: "Insertion failed",
+      state: "error",
+      transcript: "bottom edge text",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("dialog", { name: "Transcript ready" })).toHaveAttribute(
+      "data-side",
+      "above",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(setVoiceCapsuleSizeMode).toHaveBeenLastCalledWith(
+      "compactFromRecoveryAbove",
+    );
+  });
+
+  it("right-aligns the compact capsule when the clamped recovery window opens from the right edge", async () => {
+    vi.useFakeTimers();
+    setVoiceCapsuleSizeMode.mockImplementation(async (mode: string) => ({
+      popupPlacement: mode === "insertionRecoveryOpen" ? "above" : "below",
+      popupHorizontalPlacement:
+        mode === "insertionRecoveryOpen" ? "right" : "left",
+    }));
+
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed" },
+      insertResult: null,
+      message: "Insertion failed",
+      state: "error",
+      transcript: "right edge text",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const capsule = screen.getByRole("button", { name: "Start recording" }).closest("section");
+    const main = capsule?.closest("main");
+
+    expect(main).toHaveClass("items-end");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(setVoiceCapsuleSizeMode).toHaveBeenLastCalledWith(
+      "compactFromRecoveryAboveRight",
+    );
+  });
+
+  it("keeps recovery usable when resizing the native popup window fails", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    setVoiceCapsuleSizeMode.mockRejectedValueOnce(new Error("resize failed"));
+
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed" },
+      insertResult: null,
+      message: "Insertion failed",
+      state: "error",
+      transcript: "still copyable",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    expect(
+      await screen.findByText("Could not resize recovery popup."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy transcript" }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("still copyable");
+    });
+  });
+
+  it("copies the failed insertion transcript before the recovery popup closes", async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed" },
+      insertResult: null,
+      message: "Insertion failed",
+      state: "error",
+      transcript: "copy me",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy transcript" }));
+      await Promise.resolve();
+    });
+
+    expect(writeText).toHaveBeenCalledWith("copy me");
+    expect(screen.getByText("Copied")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+
+    await Promise.resolve();
+    expect(setVoiceCapsuleSizeMode).toHaveBeenLastCalledWith("compact");
+
+    vi.useRealTimers();
+  });
+
+  it("does not show retry insertion in the recovery popup", async () => {
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed" },
+      insertResult: null,
+      message: "Insertion failed",
+      state: "error",
+      transcript: "copy instead",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    expect(screen.getByText("Transcript ready")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry insertion" })).not.toBeInTheDocument();
+    expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+  });
+
+  it("opens the main Voice window from the recovery popup", async () => {
+    const user = userEvent.setup();
+
+    useDictationLoop.mockReturnValue({
+      error: { kind: "insertion", message: "Insertion failed" },
+      insertResult: null,
+      message: "Insertion failed",
+      state: "error",
+      transcript: "open me",
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    await user.click(screen.getByRole("button", { name: "Open Voice" }));
+
+    expect(openMainWindow).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(setVoiceCapsuleSizeMode).toHaveBeenLastCalledWith("compact");
+    });
   });
 
   it("does not toggle recording when the press turns into a drag gesture", async () => {

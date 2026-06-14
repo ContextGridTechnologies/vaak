@@ -23,6 +23,10 @@ export function FloatingVoiceWindow() {
   const state = dictation.state;
   const isRecording = state === "recording";
   const isBusy = state === "transcribing" || state === "inserting";
+  const canRecoverInsertion =
+    state === "error" &&
+    dictation.error?.kind === "insertion" &&
+    Boolean(dictation.transcript?.trim());
 
   const handleToggleRecording = () => {
     if (drag.consumeSuppressedClick() || isBusy) {
@@ -40,9 +44,11 @@ export function FloatingVoiceWindow() {
   return (
     <VoiceCapsule
       audioLevel={session.audioLevel ?? 0}
+      canRecoverInsertion={canRecoverInsertion}
       message={drag.movementError ?? dictation.message}
       onToggleRecording={handleToggleRecording}
       state={drag.movementError ? "error" : state}
+      transcript={dictation.transcript}
       {...drag.pointerHandlers}
     />
   );

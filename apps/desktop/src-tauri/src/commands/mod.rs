@@ -19,6 +19,7 @@ use crate::storage::{
     VoiceCapsulePlacement,
 };
 use crate::windowing;
+use crate::windowing::{VoiceCapsuleSizeMode, VoiceCapsuleSizeModeResult};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
@@ -50,6 +51,8 @@ fn command_window_policy(command: &str) -> Option<CommandWindowPolicy> {
         | "get_onboarding_state"
         | "get_voice_capsule_placement"
         | "save_voice_capsule_placement"
+        | "set_voice_capsule_size_mode"
+        | "open_main_window"
         | "get_microphone_selection"
         | "transcribe_recording" => Some(CommandWindowPolicy::CapsuleAllowed),
         "get_diagnostics_locations"
@@ -710,6 +713,42 @@ pub fn enable_voice_capsule(
     )
 }
 
+#[tauri::command]
+pub fn set_voice_capsule_size_mode(
+    window: WebviewWindow,
+    app: AppHandle,
+    mode: VoiceCapsuleSizeMode,
+) -> Result<VoiceCapsuleSizeModeResult, ProviderError> {
+    ensure_command_allowed_for_window("set_voice_capsule_size_mode", window.label())?;
+    let Some(voice_capsule) = app.get_webview_window(VOICE_CAPSULE_LABEL) else {
+        return Ok(VoiceCapsuleSizeModeResult {
+            popup_placement: windowing::VoiceCapsulePopupPlacement::Below,
+            popup_horizontal_placement: windowing::VoiceCapsulePopupHorizontalPlacement::Left,
+        });
+    };
+    Ok(windowing::set_voice_capsule_size_mode(&voice_capsule, mode)
+        .map_err(ProviderFailure::SettingsStore)?)
+}
+
+#[tauri::command]
+pub fn open_main_window(window: WebviewWindow, app: AppHandle) -> Result<(), ProviderError> {
+    ensure_command_allowed_for_window("open_main_window", window.label())?;
+    let Some(main_window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return Err(ProviderFailure::SettingsStore("main window was not found".to_string()).into());
+    };
+
+    main_window
+        .show()
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+    main_window
+        .unminimize()
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+    main_window
+        .set_focus()
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+    Ok(())
+}
+
 pub fn restart_voice_capsule_for_app<R: tauri::Runtime>(
     app: &AppHandle<R>,
     settings: &LocalSettingsStore,
@@ -993,6 +1032,8 @@ mod tests {
             "persist_dictation_audio",
             "save_dictation_record",
             "save_voice_capsule_placement",
+            "set_voice_capsule_size_mode",
+            "open_main_window",
         ] {
             assert!(
                 ensure_command_allowed_for_window(command, VOICE_CAPSULE_LABEL).is_ok(),

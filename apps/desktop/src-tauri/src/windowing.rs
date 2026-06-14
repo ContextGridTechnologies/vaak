@@ -1,4 +1,5 @@
 use crate::storage::{VoiceCapsuleAnchor, VoiceCapsuleMonitorMetadata, VoiceCapsulePlacement};
+use serde::{Deserialize, Serialize};
 use tauri::window::Color;
 use tauri::{LogicalPosition, LogicalSize, Size, WebviewWindow};
 
@@ -6,8 +7,12 @@ const APP_BACKGROUND_COLORREF: u32 = colorref_from_rgb(0xF8, 0xFA, 0xFC);
 const APP_TITLE_TEXT_COLORREF: u32 = colorref_from_rgb(0x20, 0x27, 0x2F);
 const APP_DARK_BACKGROUND_COLORREF: u32 = colorref_from_rgb(0x0F, 0x14, 0x1B);
 const APP_DARK_TITLE_TEXT_COLORREF: u32 = colorref_from_rgb(0xEA, 0xED, 0xF0);
-const VOICE_CAPSULE_WIDTH: f64 = 56.0;
-const VOICE_CAPSULE_HEIGHT: f64 = 36.0;
+pub const VOICE_CAPSULE_WIDTH: f64 = 56.0;
+pub const VOICE_CAPSULE_HEIGHT: f64 = 36.0;
+const VOICE_CAPSULE_INSERTION_ERROR_WIDTH: f64 = 210.0;
+const VOICE_CAPSULE_INSERTION_ERROR_HEIGHT: f64 = 44.0;
+const VOICE_CAPSULE_RECOVERY_WIDTH: f64 = 320.0;
+const VOICE_CAPSULE_RECOVERY_HEIGHT: f64 = 190.0;
 const DEFAULT_EDGE_OFFSET: f64 = 24.0;
 #[cfg(any(target_os = "macos", test))]
 const APP_BACKGROUND_RGB: (u8, u8, u8) = (0xF8, 0xFA, 0xFC);
@@ -21,8 +26,47 @@ pub trait VoiceCapsuleWindow {
     fn prepare_native_voice_capsule(&self) -> Result<(), String>;
     fn set_logical_size(&self, width: f64, height: f64) -> Result<(), String>;
     fn current_monitor_work_area(&self) -> Result<Option<MonitorWorkArea>, String>;
+    fn current_logical_position(&self) -> Result<Option<CapsulePosition>, String>;
     fn set_logical_position(&self, x: f64, y: f64) -> Result<(), String>;
     fn show(&self) -> Result<(), String>;
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum VoiceCapsuleSizeMode {
+    Compact,
+    CompactFromRecoveryAbove,
+    CompactFromRecoveryRight,
+    CompactFromRecoveryAboveRight,
+    InsertionErrorCollapsed,
+    InsertionRecoveryOpen,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VoiceCapsulePopupPlacement {
+    Above,
+    Below,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VoiceCapsulePopupHorizontalPlacement {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceCapsuleSizeModeResult {
+    pub popup_placement: VoiceCapsulePopupPlacement,
+    pub popup_horizontal_placement: VoiceCapsulePopupHorizontalPlacement,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VoiceCapsuleSize {
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -273,6 +317,153 @@ pub fn apply_voice_capsule_placement(
     window.set_logical_position(position.x, position.y)
 }
 
+pub fn set_voice_capsule_size_mode(
+    window: &impl VoiceCapsuleWindow,
+    mode: VoiceCapsuleSizeMode,
+) -> Result<VoiceCapsuleSizeModeResult, String> {
+    let size = voice_capsule_size_for_mode(mode);
+    let (Some(work_area), Some(position)) = (
+        window.current_monitor_work_area()?,
+        window.current_logical_position()?,
+    ) else {
+        window.set_logical_size(size.width, size.height)?;
+        return Ok(VoiceCapsuleSizeModeResult {
+            popup_placement: VoiceCapsulePopupPlacement::Below,
+            popup_horizontal_placement: VoiceCapsulePopupHorizontalPlacement::Left,
+        });
+    };
+    let popup_placement = popup_placement_for_position(work_area, position, size);
+    let popup_horizontal_placement =
+        popup_horizontal_placement_for_position(work_area, position, size);
+    let position = position_for_size_mode(
+        mode,
+        position,
+        size,
+        popup_placement,
+        popup_horizontal_placement,
+    );
+    let position = clamp_voice_capsule_position_for_size(work_area, position, size);
+
+    window.set_logical_size(size.width, size.height)?;
+    window.set_logical_position(position.x, position.y)?;
+
+    Ok(VoiceCapsuleSizeModeResult {
+        popup_placement,
+        popup_horizontal_placement,
+    })
+}
+
+pub fn voice_capsule_size_for_mode(mode: VoiceCapsuleSizeMode) -> VoiceCapsuleSize {
+    match mode {
+        VoiceCapsuleSizeMode::Compact => VoiceCapsuleSize {
+            width: VOICE_CAPSULE_WIDTH,
+            height: VOICE_CAPSULE_HEIGHT,
+        },
+        VoiceCapsuleSizeMode::CompactFromRecoveryAbove => VoiceCapsuleSize {
+            width: VOICE_CAPSULE_WIDTH,
+            height: VOICE_CAPSULE_HEIGHT,
+        },
+        VoiceCapsuleSizeMode::CompactFromRecoveryRight => VoiceCapsuleSize {
+            width: VOICE_CAPSULE_WIDTH,
+            height: VOICE_CAPSULE_HEIGHT,
+        },
+        VoiceCapsuleSizeMode::CompactFromRecoveryAboveRight => VoiceCapsuleSize {
+            width: VOICE_CAPSULE_WIDTH,
+            height: VOICE_CAPSULE_HEIGHT,
+        },
+        VoiceCapsuleSizeMode::InsertionErrorCollapsed => VoiceCapsuleSize {
+            width: VOICE_CAPSULE_INSERTION_ERROR_WIDTH,
+            height: VOICE_CAPSULE_INSERTION_ERROR_HEIGHT,
+        },
+        VoiceCapsuleSizeMode::InsertionRecoveryOpen => VoiceCapsuleSize {
+            width: VOICE_CAPSULE_RECOVERY_WIDTH,
+            height: VOICE_CAPSULE_RECOVERY_HEIGHT,
+        },
+    }
+}
+
+fn popup_placement_for_position(
+    work_area: MonitorWorkArea,
+    position: CapsulePosition,
+    size: VoiceCapsuleSize,
+) -> VoiceCapsulePopupPlacement {
+    if size.height <= VOICE_CAPSULE_HEIGHT {
+        return VoiceCapsulePopupPlacement::Below;
+    }
+
+    let work_area = sanitize_monitor_work_area(work_area);
+    let work_area_bottom = work_area.y + work_area.height;
+    let space_below = work_area_bottom - position.y;
+    let space_above = position.y + VOICE_CAPSULE_HEIGHT - work_area.y;
+
+    if space_below >= size.height {
+        VoiceCapsulePopupPlacement::Below
+    } else if space_above >= size.height || space_above > space_below {
+        VoiceCapsulePopupPlacement::Above
+    } else {
+        VoiceCapsulePopupPlacement::Below
+    }
+}
+
+fn popup_horizontal_placement_for_position(
+    work_area: MonitorWorkArea,
+    position: CapsulePosition,
+    size: VoiceCapsuleSize,
+) -> VoiceCapsulePopupHorizontalPlacement {
+    if size.width <= VOICE_CAPSULE_WIDTH {
+        return VoiceCapsulePopupHorizontalPlacement::Left;
+    }
+
+    let work_area = sanitize_monitor_work_area(work_area);
+    let work_area_right = work_area.x + work_area.width;
+    let space_right = work_area_right - position.x;
+    let space_left = position.x + VOICE_CAPSULE_WIDTH - work_area.x;
+
+    if space_right >= size.width {
+        VoiceCapsulePopupHorizontalPlacement::Left
+    } else if space_left >= size.width || space_left > space_right {
+        VoiceCapsulePopupHorizontalPlacement::Right
+    } else {
+        VoiceCapsulePopupHorizontalPlacement::Left
+    }
+}
+
+fn position_for_size_mode(
+    mode: VoiceCapsuleSizeMode,
+    position: CapsulePosition,
+    size: VoiceCapsuleSize,
+    popup_placement: VoiceCapsulePopupPlacement,
+    popup_horizontal_placement: VoiceCapsulePopupHorizontalPlacement,
+) -> CapsulePosition {
+    let x = match mode {
+        VoiceCapsuleSizeMode::CompactFromRecoveryRight
+        | VoiceCapsuleSizeMode::CompactFromRecoveryAboveRight => {
+            position.x + VOICE_CAPSULE_RECOVERY_WIDTH - VOICE_CAPSULE_WIDTH
+        }
+        VoiceCapsuleSizeMode::InsertionRecoveryOpen
+            if popup_horizontal_placement == VoiceCapsulePopupHorizontalPlacement::Right =>
+        {
+            position.x + VOICE_CAPSULE_WIDTH - size.width
+        }
+        _ => position.x,
+    };
+
+    let y = match mode {
+        VoiceCapsuleSizeMode::CompactFromRecoveryAbove
+        | VoiceCapsuleSizeMode::CompactFromRecoveryAboveRight => {
+            position.y + VOICE_CAPSULE_RECOVERY_HEIGHT - VOICE_CAPSULE_HEIGHT
+        }
+        VoiceCapsuleSizeMode::InsertionRecoveryOpen
+            if popup_placement == VoiceCapsulePopupPlacement::Above =>
+        {
+            position.y + VOICE_CAPSULE_HEIGHT - size.height
+        }
+        _ => position.y,
+    };
+
+    CapsulePosition { x, y }
+}
+
 pub fn placement_with_current_monitor_metadata(
     window: &impl VoiceCapsuleWindow,
     placement: VoiceCapsulePlacement,
@@ -380,8 +571,23 @@ fn clamp_voice_capsule_position(
     work_area: MonitorWorkArea,
     position: CapsulePosition,
 ) -> CapsulePosition {
-    let max_x = work_area.x + (work_area.width - VOICE_CAPSULE_WIDTH).max(0.0);
-    let max_y = work_area.y + (work_area.height - VOICE_CAPSULE_HEIGHT).max(0.0);
+    clamp_voice_capsule_position_for_size(
+        work_area,
+        position,
+        VoiceCapsuleSize {
+            width: VOICE_CAPSULE_WIDTH,
+            height: VOICE_CAPSULE_HEIGHT,
+        },
+    )
+}
+
+fn clamp_voice_capsule_position_for_size(
+    work_area: MonitorWorkArea,
+    position: CapsulePosition,
+    size: VoiceCapsuleSize,
+) -> CapsulePosition {
+    let max_x = work_area.x + (work_area.width - size.width).max(0.0);
+    let max_y = work_area.y + (work_area.height - size.height).max(0.0);
 
     CapsulePosition {
         x: clamp_finite(position.x, work_area.x, max_x),
@@ -465,6 +671,19 @@ impl<R: tauri::Runtime> VoiceCapsuleWindow for WebviewWindow<R> {
         }))
     }
 
+    fn current_logical_position(&self) -> Result<Option<CapsulePosition>, String> {
+        let position = self.outer_position().map_err(|err| err.to_string())?;
+        let scale_factor = self
+            .current_monitor()
+            .map_err(|err| err.to_string())?
+            .map(|monitor| monitor.scale_factor())
+            .unwrap_or(1.0);
+        Ok(Some(CapsulePosition {
+            x: f64::from(position.x) / scale_factor,
+            y: f64::from(position.y) / scale_factor,
+        }))
+    }
+
     fn set_logical_position(&self, x: f64, y: f64) -> Result<(), String> {
         WebviewWindow::set_position(self, LogicalPosition::new(x, y)).map_err(|err| err.to_string())
     }
@@ -528,6 +747,7 @@ mod tests {
     struct FakeVoiceCapsuleWindow {
         operations: RefCell<Vec<Operation>>,
         work_area: Option<MonitorWorkArea>,
+        position: Option<CapsulePosition>,
     }
 
     impl Default for FakeVoiceCapsuleWindow {
@@ -541,6 +761,7 @@ mod tests {
                     height: 860.0,
                     scale_factor: 1.0,
                 }),
+                position: Some(CapsulePosition { x: 692.0, y: 800.0 }),
             }
         }
     }
@@ -583,6 +804,10 @@ mod tests {
 
         fn current_monitor_work_area(&self) -> Result<Option<MonitorWorkArea>, String> {
             Ok(self.work_area)
+        }
+
+        fn current_logical_position(&self) -> Result<Option<CapsulePosition>, String> {
+            Ok(self.position)
         }
 
         fn set_logical_position(&self, x: f64, y: f64) -> Result<(), String> {
@@ -629,6 +854,7 @@ mod tests {
                 height: 860.0,
                 scale_factor: 1.0,
             }),
+            position: Some(CapsulePosition { x: 692.0, y: 800.0 }),
         };
 
         prepare_voice_capsule_window(&window, None).unwrap();
@@ -767,6 +993,195 @@ mod tests {
         show_voice_capsule_window(&window).unwrap();
 
         assert_eq!(*window.operations.borrow(), vec![Operation::Show]);
+    }
+
+    #[test]
+    fn maps_voice_capsule_size_modes_to_explicit_window_sizes() {
+        assert_eq!(
+            voice_capsule_size_for_mode(VoiceCapsuleSizeMode::Compact),
+            VoiceCapsuleSize {
+                width: 56.0,
+                height: 36.0,
+            }
+        );
+        assert_eq!(
+            voice_capsule_size_for_mode(VoiceCapsuleSizeMode::InsertionRecoveryOpen),
+            VoiceCapsuleSize {
+                width: 320.0,
+                height: 190.0,
+            }
+        );
+    }
+
+    #[test]
+    fn recovery_size_mode_opens_above_when_capsule_is_near_bottom_edge() {
+        let window = FakeVoiceCapsuleWindow {
+            operations: RefCell::new(Vec::new()),
+            work_area: Some(MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 860.0,
+                scale_factor: 1.0,
+            }),
+            position: Some(CapsulePosition { x: 692.0, y: 800.0 }),
+        };
+
+        let result =
+            set_voice_capsule_size_mode(&window, VoiceCapsuleSizeMode::InsertionRecoveryOpen)
+                .unwrap();
+
+        assert_eq!(result.popup_placement, VoiceCapsulePopupPlacement::Above);
+        assert_eq!(
+            *window.operations.borrow(),
+            vec![
+                Operation::SetLogicalSize(320.0, 190.0),
+                Operation::SetLogicalPosition(692.0, 646.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn recovery_size_mode_opens_below_when_there_is_room() {
+        let window = FakeVoiceCapsuleWindow {
+            operations: RefCell::new(Vec::new()),
+            work_area: Some(MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 860.0,
+                scale_factor: 1.0,
+            }),
+            position: Some(CapsulePosition { x: 692.0, y: 120.0 }),
+        };
+
+        let result =
+            set_voice_capsule_size_mode(&window, VoiceCapsuleSizeMode::InsertionRecoveryOpen)
+                .unwrap();
+
+        assert_eq!(result.popup_placement, VoiceCapsulePopupPlacement::Below);
+        assert_eq!(
+            *window.operations.borrow(),
+            vec![
+                Operation::SetLogicalSize(320.0, 190.0),
+                Operation::SetLogicalPosition(692.0, 120.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn recovery_size_mode_right_aligns_when_capsule_is_near_right_edge() {
+        let window = FakeVoiceCapsuleWindow {
+            operations: RefCell::new(Vec::new()),
+            work_area: Some(MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 860.0,
+                scale_factor: 1.0,
+            }),
+            position: Some(CapsulePosition {
+                x: 1360.0,
+                y: 120.0,
+            }),
+        };
+
+        let result =
+            set_voice_capsule_size_mode(&window, VoiceCapsuleSizeMode::InsertionRecoveryOpen)
+                .unwrap();
+
+        assert_eq!(result.popup_placement, VoiceCapsulePopupPlacement::Below);
+        assert_eq!(
+            result.popup_horizontal_placement,
+            VoiceCapsulePopupHorizontalPlacement::Right
+        );
+        assert_eq!(
+            *window.operations.borrow(),
+            vec![
+                Operation::SetLogicalSize(320.0, 190.0),
+                Operation::SetLogicalPosition(1096.0, 120.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn compact_from_recovery_above_restores_the_capsules_bottom_anchor() {
+        let window = FakeVoiceCapsuleWindow {
+            operations: RefCell::new(Vec::new()),
+            work_area: Some(MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 860.0,
+                scale_factor: 1.0,
+            }),
+            position: Some(CapsulePosition { x: 692.0, y: 646.0 }),
+        };
+
+        set_voice_capsule_size_mode(&window, VoiceCapsuleSizeMode::CompactFromRecoveryAbove)
+            .unwrap();
+
+        assert_eq!(
+            *window.operations.borrow(),
+            vec![
+                Operation::SetLogicalSize(56.0, 36.0),
+                Operation::SetLogicalPosition(692.0, 800.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn compact_from_recovery_above_right_restores_the_capsules_bottom_right_anchor() {
+        let window = FakeVoiceCapsuleWindow {
+            operations: RefCell::new(Vec::new()),
+            work_area: Some(MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 860.0,
+                scale_factor: 1.0,
+            }),
+            position: Some(CapsulePosition {
+                x: 1096.0,
+                y: 646.0,
+            }),
+        };
+
+        set_voice_capsule_size_mode(&window, VoiceCapsuleSizeMode::CompactFromRecoveryAboveRight)
+            .unwrap();
+
+        assert_eq!(
+            *window.operations.borrow(),
+            vec![
+                Operation::SetLogicalSize(56.0, 36.0),
+                Operation::SetLogicalPosition(1360.0, 800.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn recovery_size_mode_still_clamps_when_popup_is_larger_than_work_area() {
+        let window = FakeVoiceCapsuleWindow {
+            operations: RefCell::new(Vec::new()),
+            work_area: Some(MonitorWorkArea {
+                x: 0.0,
+                y: 0.0,
+                width: 300.0,
+                height: 160.0,
+                scale_factor: 1.0,
+            }),
+            position: Some(CapsulePosition { x: 280.0, y: 150.0 }),
+        };
+
+        set_voice_capsule_size_mode(&window, VoiceCapsuleSizeMode::InsertionRecoveryOpen).unwrap();
+
+        assert_eq!(
+            *window.operations.borrow(),
+            vec![
+                Operation::SetLogicalSize(320.0, 190.0),
+                Operation::SetLogicalPosition(0.0, 0.0),
+            ]
+        );
     }
 
     #[test]

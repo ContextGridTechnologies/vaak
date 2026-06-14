@@ -30,6 +30,19 @@ export type AppShellPreferences = {
   voiceCapsulePlacement?: VoiceCapsulePlacement;
 };
 
+export type VoiceCapsuleSizeMode =
+  | "compact"
+  | "compactFromRecoveryAbove"
+  | "compactFromRecoveryRight"
+  | "compactFromRecoveryAboveRight"
+  | "insertionErrorCollapsed"
+  | "insertionRecoveryOpen";
+
+export type VoiceCapsuleSizeModeResult = {
+  popupPlacement: "above" | "below";
+  popupHorizontalPlacement?: "left" | "right";
+};
+
 export async function getAppShellPreferences(): Promise<AppShellPreferences> {
   return invokeTauri("get_app_shell_preferences");
 }
@@ -64,4 +77,14 @@ export async function disableVoiceCapsule(): Promise<AppShellPreferences> {
 
 export async function enableVoiceCapsule(): Promise<AppShellPreferences> {
   return invokeTauri("enable_voice_capsule");
+}
+
+export async function setVoiceCapsuleSizeMode(
+  mode: VoiceCapsuleSizeMode,
+): Promise<VoiceCapsuleSizeModeResult> {
+  return invokeTauri("set_voice_capsule_size_mode", { mode });
+}
+
+export async function openMainWindow(): Promise<void> {
+  return invokeTauri("open_main_window");
 }

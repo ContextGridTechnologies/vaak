@@ -248,6 +248,8 @@ pub fn run() {
             commands::save_system_settings,
             commands::get_voice_capsule_placement,
             commands::save_voice_capsule_placement,
+            commands::set_voice_capsule_size_mode,
+            commands::open_main_window,
             commands::restart_voice_capsule,
             commands::reset_voice_capsule_position,
             commands::disable_voice_capsule,
