@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import {
   getAppShellPreferences,
   isTauriRuntime,
@@ -178,7 +179,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
         className="vaak-content-surface h-full min-h-full overflow-hidden text-foreground"
         style={
           {
-            "--sidebar-width": "11.75rem",
+            "--sidebar-width": settingsMode ? "14.5rem" : "11.75rem",
           } as React.CSSProperties
         }
       >
@@ -188,16 +189,24 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
           collapsible="icon"
           className="relative border-r border-sidebar-border/60 [&_[data-sidebar=sidebar]]:bg-sidebar [&_[data-sidebar=sidebar]]:shadow-[inset_-1px_0_0_rgb(15_23_42/0.035)]"
         >
-          <SidebarHeader className="px-3 py-3.5">
+          <SidebarHeader className={cn("px-3", settingsMode ? "py-2.5" : "py-3.5")}>
             <div className="flex min-w-0 items-center gap-2">
               <img
                 src={appIconUrl}
                 alt=""
                 aria-hidden="true"
                 data-testid="app-sidebar-brand-mark"
-                className="size-8 shrink-0 rounded-md border border-sidebar-border bg-background shadow-xs"
+                className={cn(
+                  "shrink-0 rounded-md border border-sidebar-border bg-background shadow-xs",
+                  settingsMode ? "size-7" : "size-8",
+                )}
               />
-              <span className="truncate text-[1.3rem] font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden">
+              <span
+                className={cn(
+                  "truncate font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden",
+                  settingsMode ? "text-base" : "text-[1.3rem]",
+                )}
+              >
                 Vaak
               </span>
             </div>
@@ -228,7 +237,12 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
                           isActive={isActive}
                           tooltip={section.label}
                           aria-label={section.label}
-                          className="h-8 rounded-md px-2.5 text-sm font-medium text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[active=true]:bg-background data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-xs"
+                          className={cn(
+                            "h-8 rounded-md px-2.5 text-sm text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[active=true]:bg-background data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-xs",
+                            settingsMode
+                              ? "font-normal [&>span:last-child]:overflow-visible [&>span:last-child]:text-clip [&>span:last-child]:whitespace-normal"
+                              : "font-medium",
+                          )}
                           onClick={() => {
                             if (settingsMode) {
                               setSettingsActiveSection(section.value as SettingsSectionId);
@@ -266,8 +280,8 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     type="button"
-                    tooltip="Back"
-                    aria-label="Back"
+                    tooltip="Back to Voice"
+                    aria-label="Back to Voice"
                     className="h-8 rounded-md px-2.5 text-sm font-medium text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
                     onClick={leaveSettings}
                   >
@@ -277,7 +291,7 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
                     >
                       <ChevronLeftIcon data-icon="inline-start" />
                     </span>
-                    <span>Back</span>
+                    <span>Back to Voice</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>

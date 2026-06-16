@@ -12,7 +12,11 @@ import { DiagnosticsSettingsCard } from "./DiagnosticsSettingsCard";
 import { DictationBehaviorSettingsCard } from "./DictationBehaviorSettingsCard";
 import { VoiceCapsuleSettingsCard } from "./VoiceCapsuleSettingsCard";
 import { useSettingsNavigation } from "./SettingsNavigationContext";
-import { type SettingsSectionId } from "./settingsNavigation";
+import {
+  defaultSettingsSection,
+  settingsSections,
+  type SettingsSectionId,
+} from "./settingsNavigation";
 
 type SettingsPanelProps = {
   activeSection?: SettingsSectionId;
@@ -21,6 +25,10 @@ type SettingsPanelProps = {
 export function SettingsPanel({ activeSection }: SettingsPanelProps = {}) {
   const settingsNavigation = useSettingsNavigation();
   const selectedSection = activeSection ?? settingsNavigation.activeSection;
+  const selectedSectionConfig =
+    settingsSections.find((section) => section.value === selectedSection) ??
+    settingsSections.find((section) => section.value === defaultSettingsSection);
+
   useEffect(() => {
     analytics.capture("settings_opened", {
       section: "settings",
@@ -32,19 +40,20 @@ export function SettingsPanel({ activeSection }: SettingsPanelProps = {}) {
       <main
         className={cn(
           appScreenContentClassName,
-          "max-w-[74rem] gap-5",
+          "max-w-[78rem] gap-4",
         )}
       >
         <section
           data-testid="settings-screen-shell"
-          className="mx-auto flex w-full max-w-[52rem] flex-col gap-4"
+          className="mx-0 flex w-full max-w-[64rem] flex-col gap-4"
         >
           <div className="flex flex-col gap-1">
             <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-              Settings
+              {selectedSectionConfig?.label ?? "Speech provider"}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Providers, microphone, hotkey, and app preferences.
+              {selectedSectionConfig?.description ??
+                "Choose the transcription provider Vaak uses for dictation."}
             </p>
           </div>
 

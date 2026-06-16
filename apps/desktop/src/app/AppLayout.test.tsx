@@ -98,6 +98,11 @@ describe("AppLayout", () => {
     );
     expect(sidebarMenu.getByRole("button", { name: "Transcription mode" })).toBeInTheDocument();
     expect(sidebarMenu.getByRole("button", { name: "Microphone" })).toBeInTheDocument();
+    expect(screen.getByTestId("app-shell")).toHaveStyle({
+      "--sidebar-width": "14.5rem",
+    });
+    expect(screen.getByTestId("app-sidebar-brand-mark")).toHaveClass("size-7");
+    expect(screen.getByRole("button", { name: "Back to Voice" })).toBeInTheDocument();
   });
 
   it("returns to the previous top-level section from settings mode", async () => {
@@ -111,7 +116,7 @@ describe("AppLayout", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Analytics" }));
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Voice" }));
 
     expect(screen.getByText("Analytics content")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Analytics" })).toHaveAttribute(

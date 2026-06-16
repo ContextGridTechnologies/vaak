@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { ExternalLinkIcon, FolderOpenIcon } from "lucide-react";
+import { ExternalLinkIcon, FolderOpenIcon, ShieldAlertIcon } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
-import { PermissionCallout, SectionPanel } from "@/components/app";
+import { PermissionCallout } from "@/components/app";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { normalizeError } from "@/lib/errors";
 import {
   getDiagnosticsLocations,
@@ -35,25 +36,25 @@ export function DiagnosticsSettingsCard() {
   }
 
   return (
-    <SectionPanel
-      title="Diagnostics"
-      description="Review local app diagnostics before sharing them."
-      contentClassName="gap-3"
-      actions={
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!isTauriRuntime() || isOpening}
-          onClick={() => void handleOpenLogs()}
+    <Card size="sm" className="rounded-lg shadow-none">
+      <CardContent className="flex flex-col gap-0">
+        <div className="flex items-center justify-end border-b pb-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!isTauriRuntime() || isOpening}
+            onClick={() => void handleOpenLogs()}
+          >
+            <FolderOpenIcon data-icon="inline-start" />
+            {isOpening ? "Opening..." : "Open logs"}
+          </Button>
+        </div>
+
+        <div
+          data-testid="diagnostics-local-logs-row"
+          className="flex items-start gap-3 border-b py-3"
         >
-          <FolderOpenIcon data-icon="inline-start" />
-          {isOpening ? "Opening..." : "Open logs"}
-        </Button>
-      }
-    >
-      <div className="rounded-lg border bg-card/60 p-3">
-        <div className="flex items-start gap-3">
           <ExternalLinkIcon
             data-icon="inline-start"
             className="mt-0.5 size-4 shrink-0 text-muted-foreground"
@@ -70,31 +71,41 @@ export function DiagnosticsSettingsCard() {
             </p>
           </div>
         </div>
-      </div>
 
-      <div className="rounded-lg border bg-card/60 p-3">
-        <p className="text-sm font-medium text-foreground">
-          Logs may contain sensitive context
-        </p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          Diagnostics can include app version, operating system details, error
-          messages, stack traces, provider names, device state, and recent app
-          actions. They should not include audio, transcripts, API keys, or
-          provider credentials.
-        </p>
-      </div>
+        <div
+          data-testid="diagnostics-sensitive-context-row"
+          className="flex items-start gap-3 py-3"
+        >
+          <ShieldAlertIcon
+            data-icon="inline-start"
+            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <div className="flex min-w-0 flex-col gap-1">
+            <p className="text-sm font-medium text-foreground">
+              Logs may contain sensitive context
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Diagnostics can include app version, operating system details,
+              error messages, stack traces, provider names, device state, and
+              recent app actions. They should not include audio, transcripts,
+              API keys, or provider credentials.
+            </p>
+          </div>
+        </div>
 
-      {locations ? (
-        <p className="break-all rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-          Log folder: {locations.logDir}
-        </p>
-      ) : null}
+        {locations ? (
+          <p className="break-all rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+            Log folder: {locations.logDir}
+          </p>
+        ) : null}
 
-      {error ? (
-        <PermissionCallout tone="warning" title="Could not open logs">
-          {error}
-        </PermissionCallout>
-      ) : null}
-    </SectionPanel>
+        {error ? (
+          <PermissionCallout tone="warning" title="Could not open logs">
+            {error}
+          </PermissionCallout>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }

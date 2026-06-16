@@ -72,6 +72,10 @@ function setMediaDevices(value: Partial<MediaDevices> | undefined) {
   });
 }
 
+function lastItem<T>(items: T[]): T | undefined {
+  return items[items.length - 1];
+}
+
 describe("SettingsPanel provider setup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -186,20 +190,15 @@ describe("SettingsPanel provider setup", () => {
       expect(endpointInput).toHaveValue("https://example.openai.azure.com");
     });
     expect(screen.getByRole("heading", { name: "Azure OpenAI" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Speech provider" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Settings" }).closest('[data-slot="card"]'),
-    ).toBeNull();
+      screen.getByRole("heading", { level: 2, name: "Speech provider" }),
+    ).toBeInTheDocument();
     expect(
-      screen.getByText("Providers, microphone, hotkey, and app preferences.").closest(
-        '[data-slot="card"]',
-      ),
-    ).toBeNull();
-    expect(
-      screen
-        .getByRole("heading", { name: "Speech provider" })
-        .closest('[data-slot="card"]'),
+      lastItem(
+        screen.getAllByText(
+          "Choose the transcription provider Vaak uses for dictation.",
+        ),
+      )?.closest('[data-slot="card"]'),
     ).not.toBeNull();
     expect(screen.queryByText("Transcription mode")).not.toBeInTheDocument();
     expect(
@@ -207,10 +206,10 @@ describe("SettingsPanel provider setup", () => {
     ).not.toBeInTheDocument();
 
     expect(screen.getByTestId("settings-screen-shell")).toHaveClass(
-      "mx-auto",
       "w-full",
-      "max-w-[52rem]",
+      "max-w-[64rem]",
     );
+    expect(screen.getByTestId("settings-screen-shell")).toHaveClass("mx-0");
     expect(screen.getByTestId("settings-screen-shell").parentElement).toHaveClass(
       "py-5",
       "lg:py-6",
@@ -244,9 +243,9 @@ describe("SettingsPanel provider setup", () => {
     expect(screen.queryByText("Speech provider")).not.toBeInTheDocument();
     expect(screen.queryByText("Transcription mode")).not.toBeInTheDocument();
 
-    const microphoneCard = screen
-      .getByText("Choose the input device Vaak uses for dictation.")
-      .closest('[data-slot="card"]') as HTMLElement | null;
+    const microphoneCard = lastItem(
+      screen.getAllByText("Choose the input device Vaak uses for dictation."),
+    )?.closest('[data-slot="card"]') as HTMLElement | null;
     expect(microphoneCard).not.toBeNull();
     expect(within(microphoneCard!).getAllByText("Microphone").length).toBeGreaterThan(
       0,
@@ -288,9 +287,11 @@ describe("SettingsPanel provider setup", () => {
   it("renders only transcription mode controls when selected", async () => {
     renderApp(<SettingsPanel activeSection="transcription-mode" />);
 
-    const behaviorCard = (
-      await screen.findByText("Transcription mode")
-    ).closest('[data-slot="card"]') as HTMLElement | null;
+    const behaviorCard = lastItem(
+      await screen.findAllByText(
+        "Choose whether Vaak prioritizes speed or final transcript quality.",
+      ),
+    )?.closest('[data-slot="card"]') as HTMLElement | null;
     expect(behaviorCard).not.toBeNull();
     expect(
       within(behaviorCard!).getByText(
@@ -463,9 +464,11 @@ describe("SettingsPanel provider setup", () => {
     const user = userEvent.setup();
     renderApp(<SettingsPanel activeSection="transcription-mode" />);
 
-    const behaviorCard = (
-      await screen.findByText("Transcription mode")
-    ).closest('[data-slot="card"]') as HTMLElement | null;
+    const behaviorCard = lastItem(
+      await screen.findAllByText(
+        "Choose whether Vaak prioritizes speed or final transcript quality.",
+      ),
+    )?.closest('[data-slot="card"]') as HTMLElement | null;
     expect(behaviorCard).not.toBeNull();
     expect(
       within(behaviorCard!).getByText(
@@ -513,9 +516,11 @@ describe("SettingsPanel provider setup", () => {
     const user = userEvent.setup();
     renderApp(<SettingsPanel activeSection="keyboard-shortcut" />);
 
-    const shortcutCard = (await screen.findByText("Keyboard shortcut")).closest(
-      '[data-slot="card"]',
-    ) as HTMLElement | null;
+    const shortcutCard = lastItem(
+      await screen.findAllByText(
+        "Change the hold-to-talk shortcut used by the voice capsule.",
+      ),
+    )?.closest('[data-slot="card"]') as HTMLElement | null;
     expect(shortcutCard).not.toBeNull();
 
     await user.click(
@@ -538,9 +543,9 @@ describe("SettingsPanel provider setup", () => {
     const user = userEvent.setup();
     renderApp(<SettingsPanel activeSection="voice-capsule" />);
 
-    const voiceCapsuleCard = (await screen.findByText("Voice capsule")).closest(
-      '[data-slot="card"]',
-    ) as HTMLElement | null;
+    const voiceCapsuleCard = (
+      await screen.findByText("Manage the floating dictation control.")
+    ).closest('[data-slot="card"]') as HTMLElement | null;
     expect(voiceCapsuleCard).not.toBeNull();
 
     await waitFor(() => {
@@ -732,11 +737,31 @@ describe("SettingsPanel provider setup", () => {
     renderApp(<SettingsPanel activeSection="diagnostics" />);
 
     expect(
+      screen.getByRole("heading", { name: "Diagnostics" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Review local logs and support files before sharing them."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Settings" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("settings-screen-shell")).toHaveClass(
+      "max-w-[64rem]",
+      "mx-0",
+    );
+    expect(
       await screen.findByText("Local logs are not sent automatically"),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/attach the relevant logs to a GitHub issue or support thread/i),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("diagnostics-local-logs-row")).not.toHaveClass(
+      "rounded-lg",
+      "border",
+    );
+    expect(screen.getByTestId("diagnostics-sensitive-context-row")).not.toHaveClass(
+      "rounded-lg",
+      "border",
+    );
+    expect(screen.getAllByText("Diagnostics")).toHaveLength(1);
 
     await user.click(screen.getByRole("button", { name: "Open logs" }));
 
