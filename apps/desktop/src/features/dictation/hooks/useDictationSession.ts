@@ -5,18 +5,31 @@ import { useMicrophoneSelection } from "@/hooks/useMicrophoneSelection";
 import { normalizeError } from "@/lib/errors";
 import {
   captureDictationTarget,
+  cleanupAssemblyAiStreamingSessions,
   getHotkeyBindings,
+  getSelectedSpeechProvider,
+  getSystemSettings,
+  type DictationMode,
   type FocusedFieldInfo,
   type HotkeyBindings,
   isTauriRuntime,
   listenToTauriEvent,
+  sendAssemblyAiStreamingAudio,
   type SessionHotkeyEvent,
+  SPEECH_PROVIDER_CHANGED_EVENT,
+  SYSTEM_SETTINGS_CHANGED_EVENT,
+  startAssemblyAiStreamingSession,
+  stopAssemblyAiStreamingSession,
+  type ProviderTimelineEvent,
+  type SpeechProviderId,
 } from "@/lib/tauri";
 
 type ActiveMode = "idle" | "dictation" | "command";
 type DictationTrigger = "hotkey" | "manual" | null;
 
 const HOTKEY_STOP_TAIL_MS = 250;
+const STREAMING_SPEECH_SAMPLE_THRESHOLD = 1_500;
+const DEFAULT_DICTATION_MODE: DictationMode = "auto";
 
 export function useDictationSession({
   enabled = true,
@@ -59,12 +72,121 @@ export function useDictationSession({
     null,
   );
   const [recordingEndedAt, setRecordingEndedAt] = useState<string | null>(null);
+  const [selectedSpeechProvider, setSelectedSpeechProvider] =
+    useState<SpeechProviderId | null>(null);
+  const [dictationMode, setDictationMode] = useState<DictationMode | null>(null);
+  const [streamingError, setStreamingError] = useState<string | null>(null);
+  const [streamingProviderEvents, setStreamingProviderEvents] = useState<
+    ProviderTimelineEvent[]
+  >([]);
+  const [streamingTranscript, setStreamingTranscript] = useState<string | null>(
+    null,
+  );
   const selectedDeviceId =
     selection.mode === "manual" ? selection.deviceId : "system";
   const lastDeviceIdRef = useRef<string>("system");
   const hotkeyStopTimerRef = useRef<ReturnType<
     typeof globalThis.setTimeout
   > | null>(null);
+  const streamingStartedRef = useRef(false);
+  const streamingStartPromiseRef = useRef<Promise<void> | null>(null);
+  const streamingQueueRef = useRef<Uint8Array[]>([]);
+
+  const appendStreamingEvents = useCallback((events?: ProviderTimelineEvent[]) => {
+    if (!events || events.length === 0) {
+      return;
+    }
+    setStreamingProviderEvents((current) => [...current, ...events]);
+  }, []);
+
+  const resetStreamingState = useCallback(() => {
+    streamingStartedRef.current = false;
+    streamingStartPromiseRef.current = null;
+    streamingQueueRef.current = [];
+    setStreamingError(null);
+    setStreamingProviderEvents([]);
+    setStreamingTranscript(null);
+  }, []);
+
+  const failStreaming = useCallback((err: unknown) => {
+    streamingStartedRef.current = false;
+    streamingStartPromiseRef.current = null;
+    streamingQueueRef.current = [];
+    setStreamingError(normalizeError(err));
+  }, []);
+
+  const ensureAssemblyAiStreamingStarted = useCallback(async () => {
+    if (streamingStartedRef.current) {
+      return;
+    }
+    if (streamingStartPromiseRef.current) {
+      await streamingStartPromiseRef.current;
+      return;
+    }
+
+    const startPromise = startAssemblyAiStreamingSession({
+      onEvent: (event) => {
+        appendStreamingEvents(event.providerEvents);
+        if (event.eventType === "final" && event.text?.trim()) {
+          setStreamingTranscript(event.text.trim());
+        }
+        if (event.eventType === "terminated") {
+          streamingStartedRef.current = false;
+        }
+        if (event.eventType === "error") {
+          failStreaming("AssemblyAI streaming failed");
+        }
+      },
+    })
+      .then((result) => {
+        appendStreamingEvents(result.providerEvents);
+        streamingStartedRef.current = true;
+      })
+      .catch((err) => {
+        failStreaming(err);
+      })
+      .finally(() => {
+        streamingStartPromiseRef.current = null;
+      });
+    streamingStartPromiseRef.current = startPromise;
+    await startPromise;
+  }, [appendStreamingEvents, failStreaming]);
+
+  const handlePcm16Chunk = useCallback(
+    (chunk: Uint8Array) => {
+      if (
+        selectedSpeechProvider !== "assemblyai" ||
+        dictationMode === null ||
+        dictationMode === "standard" ||
+        !processingEnabled ||
+        !isLikelySpeechPcm16(chunk)
+      ) {
+        return;
+      }
+
+      streamingQueueRef.current.push(chunk);
+      void ensureAssemblyAiStreamingStarted()
+        .then(async () => {
+          if (!streamingStartedRef.current) {
+            return;
+          }
+          const queued = streamingQueueRef.current.splice(0);
+          for (const queuedChunk of queued) {
+            await sendAssemblyAiStreamingAudio(queuedChunk);
+          }
+        })
+        .catch((err) => {
+          failStreaming(err);
+        });
+    },
+    [
+      ensureAssemblyAiStreamingStarted,
+      failStreaming,
+      dictationMode,
+      processingEnabled,
+      selectedSpeechProvider,
+    ],
+  );
   const {
     status,
     error,
@@ -81,6 +203,7 @@ export function useDictationSession({
     reset,
   } = useAudioRecorder({
     microphoneSelection: selection,
+    onPcm16Chunk: handlePcm16Chunk,
   });
 
   const isRecording = status === "recording";
@@ -126,6 +249,7 @@ export function useDictationSession({
       clearPendingHotkeyStop();
       setFocusedFieldError(null);
       setCompletedMode(null);
+      resetStreamingState();
       setDictationTrigger(trigger);
       setRecordingStartedAt(new Date().toISOString());
       setRecordingEndedAt(null);
@@ -185,6 +309,7 @@ export function useDictationSession({
       isManualUnavailable,
       manualUnavailableMessage,
       processingEnabled,
+      resetStreamingState,
       start,
     ],
   );
@@ -200,6 +325,9 @@ export function useDictationSession({
       clearPendingHotkeyStop();
       hotkeyStopTimerRef.current = globalThis.setTimeout(() => {
         setRecordingEndedAt(new Date().toISOString());
+        void stopAssemblyAiStreamingSession().catch((err) => {
+          setStreamingError(normalizeError(err));
+        });
         stop();
         hotkeyStopTimerRef.current = null;
       }, HOTKEY_STOP_TAIL_MS);
@@ -225,6 +353,9 @@ export function useDictationSession({
     setCompletedMode("dictation");
     setActiveMode("idle");
     setRecordingEndedAt(new Date().toISOString());
+    void stopAssemblyAiStreamingSession().catch((err) => {
+      setStreamingError(normalizeError(err));
+    });
     stop();
   }, [clearPendingHotkeyStop, enabled, stop]);
 
@@ -259,6 +390,72 @@ export function useDictationSession({
       cancelled = true;
     };
   }, [enabled, isWindows, tauriAvailable]);
+
+  useEffect(() => {
+    if (!enabled || !processingEnabled) {
+      return;
+    }
+
+    let disposed = false;
+    let unlistenProvider: (() => void) | undefined;
+    let unlistenSettings: (() => void) | undefined;
+    const loadSelectedProvider = async () => {
+      try {
+        const provider = await getSelectedSpeechProvider();
+        if (!disposed) {
+          setSelectedSpeechProvider(provider);
+        }
+
+        try {
+          const systemSettings = await getSystemSettings();
+          if (!disposed) {
+            setDictationMode(systemSettings.dictationMode);
+          }
+        } catch {
+          if (!disposed) {
+            setDictationMode(DEFAULT_DICTATION_MODE);
+          }
+        }
+      } catch {
+        if (!disposed) {
+          setSelectedSpeechProvider(null);
+          setDictationMode(DEFAULT_DICTATION_MODE);
+        }
+      }
+    };
+
+    void loadSelectedProvider();
+    void listenToTauriEvent<SpeechProviderId>(
+      SPEECH_PROVIDER_CHANGED_EVENT,
+      (event) => {
+        setSelectedSpeechProvider(event.payload);
+      },
+    ).then((detach) => {
+      if (disposed) {
+        detach();
+        return;
+      }
+      unlistenProvider = detach;
+    });
+    void listenToTauriEvent<Awaited<ReturnType<typeof getSystemSettings>>>(
+      SYSTEM_SETTINGS_CHANGED_EVENT,
+      (event) => {
+        setDictationMode(event.payload.dictationMode);
+      },
+    ).then((detach) => {
+      if (disposed) {
+        detach();
+        return;
+      }
+      unlistenSettings = detach;
+    });
+
+    return () => {
+      disposed = true;
+      unlistenProvider?.();
+      unlistenSettings?.();
+    };
+  }, [enabled, processingEnabled]);
 
   useEffect(() => {
     if (!enabled || !hasPermission || isManualUnavailable) {
@@ -378,6 +575,7 @@ export function useDictationSession({
   useEffect(() => {
     return () => {
       clearPendingHotkeyStop();
+      void cleanupAssemblyAiStreamingSessions().catch(() => {});
     };
   }, [clearPendingHotkeyStop]);
 
@@ -405,6 +603,9 @@ export function useDictationSession({
     recordingMetrics: startupMetrics,
     recordingEndedAt,
     recordingStartedAt,
+    streamingError,
+    streamingProviderEvents,
+    streamingTranscript,
     refresh,
     requestPermission: requestMicrophoneAccess,
     reset,
@@ -438,4 +639,14 @@ function getStatusLabel(status: "idle" | "recording" | "stopped" | "error") {
     default:
       return "Idle";
   }
+}
+
+function isLikelySpeechPcm16(chunk: Uint8Array) {
+  const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+  for (let offset = 0; offset + 1 < chunk.byteLength; offset += 2) {
+    if (Math.abs(view.getInt16(offset, true)) >= STREAMING_SPEECH_SAMPLE_THRESHOLD) {
+      return true;
+    }
+  }
+  return false;
 }

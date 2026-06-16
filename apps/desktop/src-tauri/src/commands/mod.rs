@@ -4,6 +4,10 @@ use crate::platform::common::{
 };
 use crate::providers::credentials;
 use crate::providers::errors::{ProviderError, ProviderFailure};
+use crate::providers::speech::assemblyai_streaming::{
+    self, AssemblyAiStreamingCommandEvent, AssemblyAiStreamingStartResult,
+    ManagedAssemblyAiStreamingState, StreamingAudioWrite,
+};
 use crate::providers::{
     speech, ProviderConfig, ProviderStatus, TranscriptResult, TranscriptionInput,
 };
@@ -21,9 +25,11 @@ use crate::storage::{
 use crate::windowing;
 use crate::windowing::{VoiceCapsuleSizeMode, VoiceCapsuleSizeModeResult};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+use std::sync::Arc;
+use tauri::{ipc::Channel, AppHandle, Emitter, Manager, State, WebviewWindow};
 
 const SPEECH_PROVIDER_CHANGED_EVENT: &str = "vaak://speech-provider-changed";
+const SYSTEM_SETTINGS_CHANGED_EVENT: &str = "vaak://system-settings-changed";
 const ONBOARDING_COMPLETED_EVENT: &str = "vaak://onboarding-completed";
 const MICROPHONE_SELECTION_CHANGED_EVENT: &str = "vaak://microphone-selection-changed";
 const MAX_RECENT_RECORD_LIMIT: usize = 200;
@@ -48,6 +54,10 @@ fn command_window_policy(command: &str) -> Option<CommandWindowPolicy> {
         | "save_dictation_record"
         | "persist_dictation_audio"
         | "get_selected_speech_provider"
+        | "start_assemblyai_streaming_session"
+        | "send_assemblyai_streaming_audio"
+        | "stop_assemblyai_streaming_session"
+        | "cleanup_assemblyai_streaming_sessions"
         | "get_onboarding_state"
         | "get_voice_capsule_placement"
         | "save_voice_capsule_placement"
@@ -612,7 +622,10 @@ pub fn save_system_settings(
 ) -> Result<SystemSettings, ProviderError> {
     ensure_command_allowed_for_window("save_system_settings", window.label())?;
     apply_startup_launch_setting(&app, settings.launch_on_startup)?;
-    local_settings.save_system_settings(settings)
+    let saved_settings = local_settings.save_system_settings(settings)?;
+    app.emit(SYSTEM_SETTINGS_CHANGED_EVENT, saved_settings.clone())
+        .map_err(|err| ProviderFailure::SettingsStore(err.to_string()))?;
+    Ok(saved_settings)
 }
 
 #[tauri::command]
@@ -942,6 +955,48 @@ pub async fn transcribe_recording(
     .await
 }
 
+#[tauri::command]
+pub async fn start_assemblyai_streaming_session(
+    window: WebviewWindow,
+    events: Channel<AssemblyAiStreamingCommandEvent>,
+    streaming: State<'_, Arc<ManagedAssemblyAiStreamingState>>,
+) -> Result<AssemblyAiStreamingStartResult, ProviderError> {
+    ensure_command_allowed_for_window("start_assemblyai_streaming_session", window.label())?;
+    let api_key = credentials::provider_key("assemblyai")?;
+    assemblyai_streaming::start_managed_session(&api_key, Arc::clone(streaming.inner()), events)
+        .await
+}
+
+#[tauri::command]
+pub fn send_assemblyai_streaming_audio(
+    window: WebviewWindow,
+    audio_bytes: Vec<u8>,
+    streaming: State<'_, Arc<ManagedAssemblyAiStreamingState>>,
+) -> Result<StreamingAudioWrite, ProviderError> {
+    ensure_command_allowed_for_window("send_assemblyai_streaming_audio", window.label())?;
+    streaming.send_pcm16(audio_bytes)
+}
+
+#[tauri::command]
+pub fn stop_assemblyai_streaming_session(
+    window: WebviewWindow,
+    streaming: State<'_, Arc<ManagedAssemblyAiStreamingState>>,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("stop_assemblyai_streaming_session", window.label())?;
+    Ok(streaming.request_stop())
+}
+
+#[tauri::command]
+pub fn cleanup_assemblyai_streaming_sessions(
+    window: WebviewWindow,
+    streaming: State<'_, Arc<ManagedAssemblyAiStreamingState>>,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("cleanup_assemblyai_streaming_sessions", window.label())?;
+    let stopped = streaming.request_stop();
+    let _ = streaming.take_active();
+    Ok(stopped)
+}
+
 fn ensure_provider_ready(status: ProviderStatus) -> Result<ProviderStatus, ProviderError> {
     if !status.configured {
         return Err(crate::providers::errors::ProviderFailure::MissingCredential.into());
@@ -1029,6 +1084,10 @@ mod tests {
             "insert_into_active_target",
             "get_selected_speech_provider",
             "transcribe_recording",
+            "start_assemblyai_streaming_session",
+            "send_assemblyai_streaming_audio",
+            "stop_assemblyai_streaming_session",
+            "cleanup_assemblyai_streaming_sessions",
             "persist_dictation_audio",
             "save_dictation_record",
             "save_voice_capsule_placement",

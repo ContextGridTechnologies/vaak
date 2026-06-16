@@ -42,7 +42,10 @@ type RecorderActions = {
 type RecorderOptions = {
   microphoneSelection?: MicrophoneSelection;
   deviceId?: string;
+  onPcm16Chunk?: (chunk: Uint8Array, sampleRate: number) => void;
 };
+
+const STREAMING_SAMPLE_RATE_HZ = 16_000;
 
 export function useAudioRecorder(
   options: RecorderOptions = {},
@@ -74,6 +77,7 @@ export function useAudioRecorder(
   const analysisSetupPromiseRef = useRef<Promise<void> | null>(null);
   const analysisSampleRateRef = useRef(16000);
   const analysisSamplesRef = useRef<Float32Array[]>([]);
+  const onPcm16ChunkRef = useRef(options.onPcm16Chunk);
   const recordingAnalysisActiveRef = useRef(false);
   const preparePromiseRef = useRef<Promise<MediaStream> | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -85,6 +89,10 @@ export function useAudioRecorder(
   const selectionKey = useMemo(() => JSON.stringify(microphoneSelection), [
     microphoneSelection,
   ]);
+
+  useEffect(() => {
+    onPcm16ChunkRef.current = options.onPcm16Chunk;
+  }, [options.onPcm16Chunk]);
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
@@ -257,6 +265,15 @@ export function useAudioRecorder(
         }
         const chunk = Float32Array.from(payload.samples);
         analysisSamplesRef.current.push(chunk);
+        const streamingChunk = resampleFloat32(
+          chunk,
+          analysisSampleRateRef.current,
+          STREAMING_SAMPLE_RATE_HZ,
+        );
+        onPcm16ChunkRef.current?.(
+          float32ToPcm16(streamingChunk),
+          STREAMING_SAMPLE_RATE_HZ,
+        );
         setAudioLevel((current) => {
           const nextLevel = normalizedLevel(chunk);
           return Math.max(nextLevel, current * 0.82);
@@ -620,6 +637,48 @@ function normalizedLevel(samples: Float32Array) {
 
   const rms = Math.sqrt(sum / samples.length);
   return Math.max(0, Math.min(1, rms * 4));
+}
+
+function float32ToPcm16(samples: Float32Array) {
+  const bytes = new Uint8Array(samples.length * 2);
+  const view = new DataView(bytes.buffer);
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[index] ?? 0));
+    const value = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+    view.setInt16(index * 2, Math.round(value), true);
+  }
+  return bytes;
+}
+
+function resampleFloat32(
+  samples: Float32Array,
+  sourceSampleRate: number,
+  targetSampleRate: number,
+) {
+  if (
+    samples.length === 0 ||
+    sourceSampleRate <= 0 ||
+    targetSampleRate <= 0 ||
+    sourceSampleRate === targetSampleRate
+  ) {
+    return samples;
+  }
+
+  const ratio = sourceSampleRate / targetSampleRate;
+  const outputLength = Math.max(1, Math.floor(samples.length / ratio));
+  const output = new Float32Array(outputLength);
+
+  for (let index = 0; index < outputLength; index += 1) {
+    const sourceIndex = index * ratio;
+    const leftIndex = Math.floor(sourceIndex);
+    const rightIndex = Math.min(leftIndex + 1, samples.length - 1);
+    const fraction = sourceIndex - leftIndex;
+    const left = samples[leftIndex] ?? 0;
+    const right = samples[rightIndex] ?? left;
+    output[index] = left + (right - left) * fraction;
+  }
+
+  return output;
 }
 
 function workletModuleUrl() {

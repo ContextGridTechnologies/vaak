@@ -79,6 +79,7 @@ impl SpeechProvider for ElevenLabsSpeechProvider {
             duration_ms: None,
             provider_request_started_at: Some(timing.started_at),
             provider_response_received_at: Some(timing.completed_at),
+            provider_events: Vec::new(),
         })
     }
 }

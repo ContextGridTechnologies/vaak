@@ -78,6 +78,8 @@ pub struct AppShellPreferences {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemSettings {
+    #[serde(default = "default_dictation_mode")]
+    pub dictation_mode: String,
     #[serde(default = "default_launch_on_startup")]
     pub launch_on_startup: bool,
     #[serde(default)]
@@ -196,6 +198,7 @@ impl Default for HotkeySettings {
 impl Default for SystemSettings {
     fn default() -> Self {
         Self {
+            dictation_mode: default_dictation_mode(),
             launch_on_startup: default_launch_on_startup(),
             show_skipped_transcripts: false,
         }
@@ -332,6 +335,7 @@ impl LocalSettingsStore {
         &self,
         system_settings: SystemSettings,
     ) -> Result<SystemSettings, ProviderError> {
+        let system_settings = normalize_system_settings(system_settings)?;
         let _guard = self.lock()?;
         let mut settings = self.load_unlocked()?;
         settings.system = system_settings;
@@ -544,6 +548,10 @@ fn default_dictation_hotkey() -> String {
     DEFAULT_DICTATION_BINDING_LABEL.to_string()
 }
 
+fn default_dictation_mode() -> String {
+    "auto".to_string()
+}
+
 fn default_voice_capsule_placement_option() -> Option<VoiceCapsulePlacement> {
     Some(VoiceCapsulePlacement::default())
 }
@@ -572,7 +580,22 @@ fn parse_settings(raw: &str) -> Result<LocalSettings, ProviderError> {
     validate_microphone_selection(&settings.microphone_selection)?;
     settings.hotkeys.dictation = normalize_dictation_hotkey_label(&settings.hotkeys.dictation)
         .map_err(ProviderFailure::InvalidRequest)?;
+    settings.system = normalize_system_settings(settings.system)?;
     settings.onboarding = normalize_onboarding_state(settings.onboarding);
+    Ok(settings)
+}
+
+fn normalize_system_settings(mut settings: SystemSettings) -> Result<SystemSettings, ProviderError> {
+    settings.dictation_mode = match settings.dictation_mode.as_str() {
+        "auto" | "balanced" => "auto".to_string(),
+        "streaming" | "fast" => "streaming".to_string(),
+        "standard" | "accurate" => "standard".to_string(),
+        _ => {
+            return Err(
+                ProviderFailure::InvalidRequest("unsupported dictation mode".to_string()).into(),
+            );
+        }
+    };
     Ok(settings)
 }
 
@@ -751,6 +774,7 @@ mod tests {
             deployment_id: Some("whisper".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
             model: Some("gpt-4o-mini-transcribe".to_string()),
+            transcription_mode: None,
         };
 
         store.save_selected_speech_provider("azure-openai").unwrap();
@@ -787,6 +811,7 @@ mod tests {
             deployment_id: Some("legacy-deployment".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
             model: None,
+            transcription_mode: None,
         };
 
         let migrated = store
@@ -813,6 +838,7 @@ mod tests {
             deployment_id: Some("local-deployment".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
             model: None,
+            transcription_mode: None,
         };
 
         store
@@ -1061,6 +1087,7 @@ mod tests {
 
         let settings = store.system_settings().unwrap();
 
+        assert_eq!(settings.dictation_mode, "auto");
         assert!(settings.launch_on_startup);
         assert!(!settings.show_skipped_transcripts);
     }
@@ -1072,11 +1099,13 @@ mod tests {
 
         let saved = store
             .save_system_settings(SystemSettings {
+                dictation_mode: "accurate".to_string(),
                 launch_on_startup: false,
                 show_skipped_transcripts: true,
             })
             .unwrap();
 
+        assert_eq!(saved.dictation_mode, "standard");
         assert!(!saved.launch_on_startup);
         assert!(saved.show_skipped_transcripts);
         assert!(
@@ -1088,8 +1117,25 @@ mod tests {
 
         let json = fs::read_to_string(dir.join("settings.json")).unwrap();
         assert!(json.contains("\"system\""));
+        assert!(json.contains("\"dictationMode\": \"standard\""));
         assert!(json.contains("\"launchOnStartup\": false"));
         assert!(json.contains("\"showSkippedTranscripts\": true"));
+    }
+
+    #[test]
+    fn rejects_invalid_dictation_mode() {
+        let dir = temp_config_dir("invalid-dictation-mode");
+        let store = LocalSettingsStore::new(&dir);
+
+        let err = store
+            .save_system_settings(SystemSettings {
+                dictation_mode: "turbo".to_string(),
+                launch_on_startup: true,
+                show_skipped_transcripts: false,
+            })
+            .unwrap_err();
+
+        assert_eq!(err.code, "invalid_provider_request");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
@@ -9,16 +9,28 @@ import { useDictationSession } from "./useDictationSession";
 
 const {
   captureDictationTarget,
+  cleanupAssemblyAiStreamingSessions,
   getFocusedField,
   getHotkeyBindings,
+  getSelectedSpeechProvider,
+  getSystemSettings,
   isTauriRuntime,
   listenToTauriEvent,
+  sendAssemblyAiStreamingAudio,
+  startAssemblyAiStreamingSession,
+  stopAssemblyAiStreamingSession,
 } = vi.hoisted(() => ({
     captureDictationTarget: vi.fn(),
+    cleanupAssemblyAiStreamingSessions: vi.fn(),
     getFocusedField: vi.fn(),
     getHotkeyBindings: vi.fn(),
+    getSelectedSpeechProvider: vi.fn(),
+    getSystemSettings: vi.fn(),
     isTauriRuntime: vi.fn(),
     listenToTauriEvent: vi.fn(),
+    sendAssemblyAiStreamingAudio: vi.fn(),
+    startAssemblyAiStreamingSession: vi.fn(),
+    stopAssemblyAiStreamingSession: vi.fn(),
   }));
 
 vi.mock("@/hooks/useAudioRecorder", () => ({
@@ -30,11 +42,19 @@ vi.mock("@/hooks/useMicrophoneSelection", () => ({
 }));
 
 vi.mock("@/lib/tauri", () => ({
+  SPEECH_PROVIDER_CHANGED_EVENT: "vaak://speech-provider-changed",
+  SYSTEM_SETTINGS_CHANGED_EVENT: "vaak://system-settings-changed",
   captureDictationTarget,
+  cleanupAssemblyAiStreamingSessions,
   getFocusedField,
   getHotkeyBindings,
+  getSelectedSpeechProvider,
+  getSystemSettings,
   isTauriRuntime,
   listenToTauriEvent,
+  sendAssemblyAiStreamingAudio,
+  startAssemblyAiStreamingSession,
+  stopAssemblyAiStreamingSession,
 }));
 
 const startRecording = vi.fn();
@@ -117,6 +137,7 @@ describe("useDictationSession", () => {
     captureDictationTarget.mockReset();
     getFocusedField.mockReset();
     getHotkeyBindings.mockReset();
+    getSystemSettings.mockReset();
     isTauriRuntime.mockReset();
     listenToTauriEvent.mockReset();
     captureDictationTarget.mockResolvedValue(field);
@@ -125,8 +146,27 @@ describe("useDictationSession", () => {
       command: "Ctrl+Win+Alt",
       dictation: "Ctrl+Win",
     });
+    getSelectedSpeechProvider.mockResolvedValue("openai");
+    getSystemSettings.mockResolvedValue({
+      dictationMode: "auto",
+      launchOnStartup: true,
+      showSkippedTranscripts: false,
+    });
     isTauriRuntime.mockReturnValue(false);
     listenToTauriEvent.mockResolvedValue(() => {});
+    sendAssemblyAiStreamingAudio.mockResolvedValue({
+      bytesSent: 0,
+      droppedFrames: 0,
+      frameCount: 0,
+    });
+    startAssemblyAiStreamingSession.mockResolvedValue({
+      modelId: "u3-rt-pro",
+      providerEvents: [],
+      providerId: "assemblyai",
+      providerMode: "streaming",
+    });
+    stopAssemblyAiStreamingSession.mockResolvedValue(true);
+    cleanupAssemblyAiStreamingSessions.mockResolvedValue(false);
     startRecording.mockReset();
     stopRecording.mockReset();
     prepareRecording.mockReset();
@@ -143,9 +183,12 @@ describe("useDictationSession", () => {
       await result.current.startManualDictation();
     });
 
-    expect(useAudioRecorder).toHaveBeenCalledWith({
-      microphoneSelection: { mode: "manual", deviceId: "usb-mic" },
-    });
+    expect(useAudioRecorder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        microphoneSelection: { mode: "manual", deviceId: "usb-mic" },
+        onPcm16Chunk: expect.any(Function),
+      }),
+    );
     expect(startRecording).not.toHaveBeenCalled();
     expect(result.current.focusedFieldError).toBe(
       "Selected microphone is unavailable. Choose another device or switch to automatic mode.",
@@ -351,6 +394,170 @@ describe("useDictationSession", () => {
     expect(result.current.focusedFieldError).toBe(
       "No writable text field found for dictation.",
     );
+  });
+
+  it("starts AssemblyAI streaming only after speech-like pcm and stores final text", async () => {
+    useAvailableMicrophone();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    let recorderOptions: Parameters<typeof useAudioRecorder>[0] | undefined;
+    let onStreamingEvent:
+      | Parameters<typeof startAssemblyAiStreamingSession>[0]["onEvent"]
+      | undefined;
+    vi.mocked(useAudioRecorder).mockImplementation((options) => {
+      recorderOptions = options;
+      return {
+        activeMicrophone: null,
+        audioBlob: null,
+        audioLevel: 0,
+        audioUrl: null,
+        captureAnalysis: null,
+        elapsedMs: 0,
+        error: null,
+        prepare: prepareRecording,
+        reset: vi.fn(),
+        start: startRecording,
+        status: "recording",
+        stop: stopRecording,
+        startupMetrics: null,
+      };
+    });
+    startAssemblyAiStreamingSession.mockImplementation(async ({ onEvent }) => {
+      onStreamingEvent = onEvent;
+      return {
+        modelId: "u3-rt-pro",
+        providerEvents: [],
+        providerId: "assemblyai",
+        providerMode: "streaming",
+      };
+    });
+
+    const { result } = renderHook(() => useDictationSession());
+
+    await waitFor(() => expect(getSelectedSpeechProvider).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array([0, 0, 1, 0]), 16000);
+    });
+    expect(startAssemblyAiStreamingSession).not.toHaveBeenCalled();
+
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array([0, 0, 0, 64]), 16000);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(startAssemblyAiStreamingSession).toHaveBeenCalledTimes(1);
+    });
+    expect(sendAssemblyAiStreamingAudio).toHaveBeenCalledWith(
+      new Uint8Array([0, 0, 0, 64]),
+    );
+
+    act(() => {
+      onStreamingEvent?.({
+        eventType: "partial",
+        providerEvents: [],
+        text: "draft",
+      });
+    });
+    expect(result.current.streamingTranscript).toBeNull();
+
+    act(() => {
+      onStreamingEvent?.({
+        eventType: "final",
+        providerEvents: [{ eventType: "stream_final_received" } as never],
+        text: "final text",
+      });
+    });
+
+    expect(result.current.streamingTranscript).toBe("final text");
+    expect(result.current.streamingProviderEvents).toHaveLength(1);
+  });
+
+  it("does not start AssemblyAI streaming when standard mode is selected", async () => {
+    useAvailableMicrophone();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    getSystemSettings.mockResolvedValue({
+      dictationMode: "standard",
+      launchOnStartup: true,
+      showSkippedTranscripts: false,
+    });
+    let recorderOptions: Parameters<typeof useAudioRecorder>[0] | undefined;
+    vi.mocked(useAudioRecorder).mockImplementation((options) => {
+      recorderOptions = options;
+      return {
+        activeMicrophone: null,
+        audioBlob: null,
+        audioLevel: 0,
+        audioUrl: null,
+        captureAnalysis: null,
+        elapsedMs: 0,
+        error: null,
+        prepare: prepareRecording,
+        reset: vi.fn(),
+        start: startRecording,
+        status: "recording",
+        stop: stopRecording,
+        startupMetrics: null,
+      };
+    });
+
+    renderHook(() => useDictationSession());
+
+    await waitFor(() => expect(getSystemSettings).toHaveBeenCalled());
+    startAssemblyAiStreamingSession.mockClear();
+    sendAssemblyAiStreamingAudio.mockClear();
+    act(() => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array([0, 0, 0, 64]), 16000);
+    });
+
+    expect(startAssemblyAiStreamingSession).not.toHaveBeenCalled();
+    expect(sendAssemblyAiStreamingAudio).not.toHaveBeenCalled();
+  });
+
+  it("captures AssemblyAI streaming audio write failures without an unhandled rejection", async () => {
+    useAvailableMicrophone();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    let recorderOptions: Parameters<typeof useAudioRecorder>[0] | undefined;
+    vi.mocked(useAudioRecorder).mockImplementation((options) => {
+      recorderOptions = options;
+      return {
+        activeMicrophone: null,
+        audioBlob: null,
+        audioLevel: 0,
+        audioUrl: null,
+        captureAnalysis: null,
+        elapsedMs: 0,
+        error: null,
+        prepare: prepareRecording,
+        reset: vi.fn(),
+        start: startRecording,
+        status: "recording",
+        stop: stopRecording,
+        startupMetrics: null,
+      };
+    });
+    sendAssemblyAiStreamingAudio.mockRejectedValueOnce({
+      code: "invalid_provider_request",
+      message: "no active AssemblyAI streaming session",
+    });
+
+    const { result } = renderHook(() => useDictationSession());
+
+    await waitFor(() => expect(getSelectedSpeechProvider).toHaveBeenCalled());
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array([0, 0, 0, 64]), 16000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.streamingError).toBe(
+        "invalid_provider_request: no active AssemblyAI streaming session",
+      );
+    });
   });
 
   it("starts verification recording without a writable target when processing is disabled", async () => {

@@ -45,6 +45,23 @@ export type DictationProviderRequestTiming = {
   errorCode?: string | null;
 };
 
+export type DictationProviderTimelineEvent = {
+  eventType: string;
+  providerId: string;
+  modelId?: string | null;
+  providerMode: "async" | "streaming";
+  sessionId?: string | null;
+  stage?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  durationMs?: number | null;
+  status?: string | null;
+  errorCode?: string | null;
+  bytesSent?: number | null;
+  frameCount?: number | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 export type DictationTimeline = {
   recordingStartedAt?: string | null;
   recordingStoppedAt?: string | null;
@@ -58,6 +75,7 @@ export type DictationTimeline = {
   insertionCompletedAt?: string | null;
   recordPersistedAt?: string | null;
   providerRequests: DictationProviderRequestTiming[];
+  providerEvents?: DictationProviderTimelineEvent[];
 };
 
 export type DictationRecordingDiagnostics = {

@@ -493,6 +493,77 @@ describe("useAudioRecorder", () => {
     expect(result.current.audioLevel).toBe(0);
   });
 
+  it("emits live pcm16 chunks while recording", async () => {
+    const track = createMockTrack();
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    });
+    const onPcm16Chunk = vi.fn();
+    setMediaDevices({ getUserMedia });
+    const { result } = renderHook(() =>
+      useAudioRecorder({
+        onPcm16Chunk,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    act(() => {
+      emitAnalysisSamples([new Float32Array([0, 1, -1, 0.5])]);
+    });
+
+    expect(onPcm16Chunk).toHaveBeenCalledWith(
+      new Uint8Array([0, 0, 255, 127, 0, 128, 0, 64]),
+      16000,
+    );
+
+    await act(async () => {
+      result.current.stop();
+    });
+    onPcm16Chunk.mockClear();
+
+    act(() => {
+      emitAnalysisSamples([new Float32Array([0.25])]);
+    });
+
+    expect(onPcm16Chunk).not.toHaveBeenCalled();
+  });
+
+  it("resamples live pcm16 chunks to 16 kHz before streaming", async () => {
+    const track = createMockTrack();
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    });
+    const onPcm16Chunk = vi.fn();
+    setMediaDevices({ getUserMedia });
+    const { result } = renderHook(() =>
+      useAudioRecorder({
+        onPcm16Chunk,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    act(() => {
+      emitAnalysisSamples([
+        new Float32Array([
+          0, 0.25, 0.5, 0.75, 1, 0.75, 0.5, 0.25, 0, -0.25, -0.5, -0.75,
+        ]),
+      ], 48000);
+    });
+
+    expect(onPcm16Chunk).toHaveBeenCalledWith(
+      new Uint8Array([0, 0, 255, 95, 0, 64, 0, 224]),
+      16000,
+    );
+  });
+
   it("marks low-volume speech as unclear before transcription", async () => {
     const track = createMockTrack();
     const getUserMedia = vi.fn().mockResolvedValue({
@@ -522,7 +593,7 @@ describe("useAudioRecorder", () => {
   });
 });
 
-function emitAnalysisSamples(chunks: Float32Array[]) {
+function emitAnalysisSamples(chunks: Float32Array[], sampleRate = 16000) {
   const node =
     MockAudioWorkletNode.instances[
       MockAudioWorkletNode.instances.length - 1
@@ -535,7 +606,7 @@ function emitAnalysisSamples(chunks: Float32Array[]) {
     node.port.onmessage({
       data: {
         type: "samples",
-        sampleRate: 16000,
+        sampleRate,
         samples: Array.from(chunk),
       },
     } as MessageEvent);

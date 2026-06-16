@@ -108,6 +108,7 @@ impl SpeechProvider for AzureOpenAiSpeechProvider {
             duration_ms: None,
             provider_request_started_at: Some(timing.started_at),
             provider_response_received_at: Some(timing.completed_at),
+            provider_events: Vec::new(),
         })
     }
 }
@@ -173,6 +174,7 @@ mod tests {
             deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
             api_version: Some("2025-04-01-preview".to_string()),
             model: None,
+            transcription_mode: None,
         })
         .expect("valid config");
 
@@ -189,6 +191,7 @@ mod tests {
             deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
             api_version: None,
             model: None,
+            transcription_mode: None,
         })
         .expect("valid config");
 
@@ -206,6 +209,7 @@ mod tests {
                 deployment_id: None,
                 api_version: None,
                 model: None,
+                transcription_mode: None,
             }
         ));
     }

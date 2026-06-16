@@ -152,6 +152,7 @@ fn resolve_transcription_response(
         duration_ms: payload.audio_length.and_then(seconds_to_millis),
         provider_request_started_at: None,
         provider_response_received_at: None,
+        provider_events: Vec::new(),
     })
 }
 

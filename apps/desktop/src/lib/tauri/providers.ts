@@ -20,6 +20,47 @@ export type TranscriptResult = {
   durationMs: number | null;
   providerRequestStartedAt?: string | null;
   providerResponseReceivedAt?: string | null;
+  providerEvents?: ProviderTimelineEvent[];
+};
+
+export type ProviderTimelineEvent = {
+  eventType: string;
+  providerId: string;
+  modelId?: string | null;
+  providerMode: "async" | "streaming";
+  sessionId?: string | null;
+  stage?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  durationMs?: number | null;
+  status?: string | null;
+  errorCode?: string | null;
+  bytesSent?: number | null;
+  frameCount?: number | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+export type AssemblyAiStreamingEvent = {
+  eventType: "began" | "partial" | "final" | "terminated" | "error" | "ignored";
+  sessionId?: string | null;
+  turnOrder?: number | null;
+  text?: string | null;
+  audioDurationMs?: number | null;
+  sessionDurationMs?: number | null;
+  providerEvents?: ProviderTimelineEvent[];
+};
+
+export type AssemblyAiStreamingStartResult = {
+  providerId: "assemblyai";
+  modelId: string;
+  providerMode: "streaming";
+  providerEvents?: ProviderTimelineEvent[];
+};
+
+export type AssemblyAiStreamingAudioWrite = {
+  bytesSent: number;
+  frameCount: number;
+  droppedFrames: number;
 };
 
 export type SpeechProviderId =
@@ -107,4 +148,30 @@ export async function transcribeRecording(input: {
     prompt: input.prompt,
     model: input.model,
   });
+}
+
+export async function startAssemblyAiStreamingSession(input: {
+  onEvent: (event: AssemblyAiStreamingEvent) => void;
+}): Promise<AssemblyAiStreamingStartResult> {
+  const { Channel } = await import("@tauri-apps/api/core");
+  const events = new Channel<AssemblyAiStreamingEvent>();
+  events.onmessage = input.onEvent;
+
+  return invokeTauri("start_assemblyai_streaming_session", { events });
+}
+
+export async function sendAssemblyAiStreamingAudio(
+  audioBytes: Uint8Array,
+): Promise<AssemblyAiStreamingAudioWrite> {
+  return invokeTauri("send_assemblyai_streaming_audio", {
+    audioBytes: Array.from(audioBytes),
+  });
+}
+
+export async function stopAssemblyAiStreamingSession(): Promise<boolean> {
+  return invokeTauri("stop_assemblyai_streaming_session");
+}
+
+export async function cleanupAssemblyAiStreamingSessions(): Promise<boolean> {
+  return invokeTauri("cleanup_assemblyai_streaming_sessions");
 }

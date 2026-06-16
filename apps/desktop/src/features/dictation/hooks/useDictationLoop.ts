@@ -1,20 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 import { appEnvironment } from "@/config/app-env";
 import { normalizeError } from "@/lib/errors";
 import {
   getSelectedSpeechProvider,
+  getSystemSettings,
   insertIntoActiveTarget,
   listenToTauriEvent,
   persistDictationAudio,
+  recordStartupCheckpoint,
   saveDictationRecord,
   type DictationRecordingDiagnostics,
   SPEECH_PROVIDER_CHANGED_EVENT,
+  SYSTEM_SETTINGS_CHANGED_EVENT,
   targetSnapshotFromFocusedField,
   transcribeRecording,
   type DictationRecordDraft,
   type DictationProviderRequestTiming,
+  type ProviderTimelineEvent,
   type DictationTimeline,
+  type DictationMode,
   type SpeechProviderId,
   type TextInsertResult,
 } from "@/lib/tauri";
@@ -78,6 +83,9 @@ export type DictationLoopSession = {
   recordingEndedAt: string | null;
   recordingStartedAt: string | null;
   recorderError: string | null;
+  streamingError?: string | null;
+  streamingProviderEvents?: ProviderTimelineEvent[];
+  streamingTranscript?: string | null;
 };
 
 type DictationLoopState = {
@@ -104,18 +112,34 @@ const idleState: DictationLoopState = {
   state: "idle",
   transcript: null,
 };
-const RAW_TRANSCRIPTION_FALLBACK_PEAK_DBFS = -24;
+const RAW_TRANSCRIPTION_FALLBACK_PEAK_DBFS = -30;
+const INSERTION_TIMEOUT_MS = 5_000;
+const STREAMING_FINAL_WAIT_MS = 1_500;
+const STREAMING_FINAL_POLL_MS = 50;
+const DEFAULT_DICTATION_MODE: DictationMode = "auto";
 
 export function useDictationLoop(
   session: DictationLoopSession,
 ): DictationLoopState {
-  const lastProcessedRef = useRef<Blob | null>(null);
+  const lastProcessedKeyRef = useRef<string | null>(null);
+  const latestSessionRef = useRef(session);
+  const mountedRef = useRef(true);
   const [providerId, setProviderId] = useState<SpeechProviderId | null>(null);
+  const [dictationMode, setDictationMode] =
+    useState<DictationMode>(DEFAULT_DICTATION_MODE);
   const [loopState, setLoopState] = useState<DictationLoopState>(idleState);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     let disposed = false;
-    let unlisten: (() => void) | undefined;
+    let unlistenProvider: (() => void) | undefined;
+    let unlistenSettings: (() => void) | undefined;
 
     const loadSelectedProvider = async () => {
       try {
@@ -123,9 +147,21 @@ export function useDictationLoop(
         if (!disposed) {
           setProviderId(selectedProvider);
         }
+
+        try {
+          const systemSettings = await getSystemSettings();
+          if (!disposed) {
+            setDictationMode(systemSettings.dictationMode);
+          }
+        } catch {
+          if (!disposed) {
+            setDictationMode(DEFAULT_DICTATION_MODE);
+          }
+        }
       } catch {
         if (!disposed) {
           setProviderId("openai");
+          setDictationMode(DEFAULT_DICTATION_MODE);
         }
       }
     };
@@ -141,14 +177,31 @@ export function useDictationLoop(
         detach();
         return;
       }
-      unlisten = detach;
+      unlistenProvider = detach;
+    });
+    void listenToTauriEvent<Awaited<ReturnType<typeof getSystemSettings>>>(
+      SYSTEM_SETTINGS_CHANGED_EVENT,
+      (event) => {
+        setDictationMode(event.payload.dictationMode);
+      },
+    ).then((detach) => {
+      if (disposed) {
+        detach();
+        return;
+      }
+      unlistenSettings = detach;
     });
 
     return () => {
       disposed = true;
-      unlisten?.();
+      unlistenProvider?.();
+      unlistenSettings?.();
     };
   }, []);
+
+  useEffect(() => {
+    latestSessionRef.current = session;
+  }, [session]);
 
   useEffect(() => {
     if (session.isRecording) {
@@ -190,15 +243,16 @@ export function useDictationLoop(
     }
 
     const audioBlob = session.audioBlob;
-    const lastProcessed = lastProcessedRef.current;
-    if (lastProcessed === audioBlob) {
+    const recordingKey = dictationRecordingKey(session, audioBlob);
+    if (lastProcessedKeyRef.current === recordingKey) {
       return;
     }
 
-    lastProcessedRef.current = audioBlob;
+    lastProcessedKeyRef.current = recordingKey;
 
-    let cancelled = false;
     const label = providerLabels[providerId] ?? providerId;
+    const isActiveRun = () =>
+      mountedRef.current && lastProcessedKeyRef.current === recordingKey;
 
     const runLoop = async () => {
       const processingStartedAt = isoNow();
@@ -209,8 +263,16 @@ export function useDictationLoop(
         recordingStartedAt: session.recordingStartedAt,
         recordingStoppedAt: session.recordingEndedAt,
         processingStartedAt,
+        providerEvents: [...(session.streamingProviderEvents ?? [])],
         providerRequests: [],
       };
+      recordDictationLoopCheckpoint("dictation_loop_processing_started", {
+        audioBytes: audioBlob.size,
+        completedMode: session.completedMode,
+        hasFocusedField: Boolean(session.focusedField),
+        providerId,
+        trigger: session.dictationTrigger,
+      });
 
       setLoopState({
         error: null,
@@ -229,6 +291,9 @@ export function useDictationLoop(
       timeline.audioAnalysisCompletedAt = isoNow();
       if (captureAnalysis && shouldSkipBeforeTranscription(captureAnalysis)) {
         const message = captureMessage(captureAnalysis.reason);
+        timeline.providerEvents?.push(
+          localSpeechGateEvent(providerId, captureAnalysis, "skip"),
+        );
         await persistDraft({
           audioBlob,
           processedAudioBlob: captureAnalysis?.processedAudio ?? null,
@@ -258,7 +323,7 @@ export function useDictationLoop(
             status: "skipped",
           },
         });
-        if (!cancelled) {
+        if (isActiveRun()) {
           setLoopState({
             error: {
               kind: "capture",
@@ -280,67 +345,133 @@ export function useDictationLoop(
             modelId: string | null;
           }
         | undefined;
+      const streamingTranscript =
+        providerId === "assemblyai" &&
+        dictationMode !== "standard"
+          ? session.streamingTranscript?.trim() ?? ""
+          : "";
+      let finalStreamingTranscript = streamingTranscript;
       try {
         timeline.transcriptionStartedAt = isoNow();
         const transcriptionStartedAt = now();
-        const transcriptionAttempts = await Promise.all(
-          transcriptionSegments.map(async (segmentBlob, segmentIndex) => {
-            try {
-              const result = await transcribeRecording({
-                providerId,
-                audioBlob: segmentBlob,
-                language: "en",
-              });
-              const requestTiming = providerRequestTimingFromResult(
-                result,
-                segmentIndex,
-              );
-              if (requestTiming) {
-                timeline.providerRequests.push(requestTiming);
-              }
-              return result;
-            } catch (err) {
-              if (isBlankProviderTranscription(err)) {
-                return null;
-              }
-
-              const requestTiming = providerRequestTimingFromError(
-                err,
-                segmentIndex,
-                providerId,
-              );
-              if (requestTiming) {
-                timeline.providerRequests.push(requestTiming);
-                applyProviderRequestAggregate(timeline);
-              } else {
-                applyProviderErrorAggregate(timeline, err);
-              }
-              return { error: err };
-            }
-          }),
-        );
-        transcriptionMs = elapsedMs(transcriptionStartedAt);
-        timeline.transcriptionCompletedAt = isoNow();
-        applyProviderRequestAggregate(timeline);
-        const failedAttempt = transcriptionAttempts.find(isFailedSegmentResult);
-        if (failedAttempt) {
-          throw failedAttempt.error;
+        recordDictationLoopCheckpoint("dictation_loop_transcription_started", {
+          providerId,
+          segmentCount: transcriptionSegments.length,
+          streamingFallback: Boolean(providerId === "assemblyai" && session.streamingError),
+          dictationMode,
+          streamingTranscriptChars: streamingTranscript.length,
+        });
+        if (
+          providerId === "assemblyai" &&
+          dictationMode !== "standard" &&
+          finalStreamingTranscript.length === 0 &&
+          shouldWaitForStreamingFinal(session)
+        ) {
+          finalStreamingTranscript = await waitForStreamingFinalTranscript(
+            latestSessionRef,
+            isActiveRun,
+            STREAMING_FINAL_WAIT_MS,
+          );
         }
-        const transcriptionResults = transcriptionAttempts.filter(
-          isTranscriptSegmentResult,
-        );
-        const firstTranscriptionResult =
-          transcriptionResults.find((result) => result !== null) ?? null;
-        transcriptionContext = {
-          providerId: firstTranscriptionResult?.providerId ?? providerId,
-          modelId: firstTranscriptionResult?.model ?? null,
-        };
-        text = transcriptionResults
-          .map((result) => result?.text.trim() ?? "")
-          .filter((value) => value.length > 0)
-          .join(" ");
+        if (finalStreamingTranscript.length > 0) {
+          transcriptionContext = {
+            providerId,
+            modelId: "u3-rt-pro",
+          };
+          text = finalStreamingTranscript;
+          transcriptionMs = elapsedMs(transcriptionStartedAt);
+          timeline.transcriptionCompletedAt = isoNow();
+        } else {
+          if (
+            providerId === "assemblyai" &&
+            dictationMode === "streaming"
+          ) {
+            throw new Error(
+              session.streamingError
+                ? `AssemblyAI streaming failed: ${session.streamingError}`
+                : "AssemblyAI streaming did not return a final transcript.",
+            );
+          }
+          if (
+            providerId === "assemblyai" &&
+            dictationMode !== "standard" &&
+            session.streamingError
+          ) {
+            timeline.providerEvents?.push(
+              streamingFallbackAsyncStartedEvent(session.streamingError),
+            );
+          }
+          const transcriptionAttempts = await Promise.all(
+            transcriptionSegments.map(async (segmentBlob, segmentIndex) => {
+              try {
+                const result = await transcribeRecording({
+                  providerId,
+                  audioBlob: segmentBlob,
+                  language: "en",
+                });
+                const requestTiming = providerRequestTimingFromResult(
+                  result,
+                  segmentIndex,
+                );
+                if (requestTiming) {
+                  timeline.providerRequests.push(requestTiming);
+                }
+                if (result.providerEvents && result.providerEvents.length > 0) {
+                  timeline.providerEvents?.push(...result.providerEvents);
+                }
+                return result;
+              } catch (err) {
+                if (isBlankProviderTranscription(err)) {
+                  return null;
+                }
+
+                const requestTiming = providerRequestTimingFromError(
+                  err,
+                  segmentIndex,
+                  providerId,
+                );
+                if (requestTiming) {
+                  timeline.providerRequests.push(requestTiming);
+                  applyProviderRequestAggregate(timeline);
+                } else {
+                  applyProviderErrorAggregate(timeline, err);
+                }
+                return { error: err };
+              }
+            }),
+          );
+          transcriptionMs = elapsedMs(transcriptionStartedAt);
+          timeline.transcriptionCompletedAt = isoNow();
+          applyProviderRequestAggregate(timeline);
+          const failedAttempt = transcriptionAttempts.find(isFailedSegmentResult);
+          if (failedAttempt) {
+            throw failedAttempt.error;
+          }
+          const transcriptionResults = transcriptionAttempts.filter(
+            isTranscriptSegmentResult,
+          );
+          const firstTranscriptionResult =
+            transcriptionResults.find((result) => result !== null) ?? null;
+          transcriptionContext = {
+            providerId: firstTranscriptionResult?.providerId ?? providerId,
+            modelId: firstTranscriptionResult?.model ?? null,
+          };
+          text = transcriptionResults
+            .map((result) => result?.text.trim() ?? "")
+            .filter((value) => value.length > 0)
+            .join(" ");
+        }
+        recordDictationLoopCheckpoint("dictation_loop_transcription_completed", {
+          modelId: transcriptionContext?.modelId ?? null,
+          providerId: transcriptionContext?.providerId ?? providerId,
+          textChars: text.trim().length,
+        });
       } catch (err) {
-        if (cancelled) {
+        recordDictationLoopCheckpoint("dictation_loop_transcription_failed", {
+          error: normalizeError(err),
+          providerId,
+        });
+        if (!isActiveRun()) {
           return;
         }
 
@@ -377,7 +508,7 @@ export function useDictationLoop(
             status: "failed",
           },
         });
-        if (!cancelled) {
+        if (isActiveRun()) {
           setLoopState({
             error: {
               kind: "transcription",
@@ -392,7 +523,13 @@ export function useDictationLoop(
         return;
       }
 
-      if (cancelled) {
+      if (!isActiveRun()) {
+        recordDictationLoopCheckpoint("dictation_loop_insertion_skipped_inactive", {
+          lastProcessedKey: lastProcessedKeyRef.current,
+          mounted: mountedRef.current,
+          recordingKey,
+          textChars: text.trim().length,
+        });
         return;
       }
 
@@ -448,12 +585,27 @@ export function useDictationLoop(
         transcript: text,
       });
 
+      let insertionStartedAt: number | null = null;
       try {
         timeline.insertionStartedAt = isoNow();
-        const insertionStartedAt = now();
-        const insertResult = await insertIntoActiveTarget(text);
+        insertionStartedAt = now();
+        recordDictationLoopCheckpoint("dictation_loop_insertion_started", {
+          providerId: transcriptionContext?.providerId ?? providerId,
+          textChars: text.length,
+          timeoutMs: INSERTION_TIMEOUT_MS,
+        });
+        const insertResult = await withTimeout(
+          insertIntoActiveTarget(text),
+          INSERTION_TIMEOUT_MS,
+          `Insertion timed out after ${INSERTION_TIMEOUT_MS}ms.`,
+        );
         insertionMs = elapsedMs(insertionStartedAt);
         timeline.insertionCompletedAt = isoNow();
+        recordDictationLoopCheckpoint("dictation_loop_insertion_completed", {
+          insertionMs,
+          method: insertResult.method,
+          providerId: transcriptionContext?.providerId ?? providerId,
+        });
         await persistDraft({
           audioBlob,
           processedAudioBlob: captureAnalysis?.processedAudio ?? null,
@@ -483,7 +635,7 @@ export function useDictationLoop(
             status: "inserted",
           },
         });
-        if (!cancelled) {
+        if (isActiveRun()) {
           setLoopState({
             error: null,
             insertResult,
@@ -494,7 +646,27 @@ export function useDictationLoop(
         }
       } catch (err) {
         const message = `Insertion failed: ${normalizeError(err)}`;
+        insertionMs = insertionStartedAt
+          ? Math.max(insertionMs, elapsedMs(insertionStartedAt))
+          : insertionMs;
         timeline.insertionCompletedAt = isoNow();
+        recordDictationLoopCheckpoint("dictation_loop_insertion_failed", {
+          error: normalizeError(err),
+          insertionMs,
+          providerId: transcriptionContext?.providerId ?? providerId,
+        });
+        if (isActiveRun()) {
+          setLoopState({
+            error: {
+              kind: "insertion",
+              message,
+            },
+            insertResult: null,
+            message,
+            state: "error",
+            transcript: text,
+          });
+        }
         await persistDraft({
           audioBlob,
           processedAudioBlob: captureAnalysis?.processedAudio ?? null,
@@ -524,28 +696,15 @@ export function useDictationLoop(
             status: "failed",
           },
         });
-        if (!cancelled) {
-          setLoopState({
-            error: {
-              kind: "insertion",
-              message,
-            },
-            insertResult: null,
-            message,
-            state: "error",
-            transcript: text,
-          });
-        }
       }
     };
 
     void runLoop();
 
-    return () => {
-      cancelled = true;
-    };
+    return undefined;
   }, [
     providerId,
+    dictationMode,
     session.audioBlob,
     session.completedMode,
     session.dictationTrigger,
@@ -557,6 +716,9 @@ export function useDictationLoop(
     session.recordingEndedAt,
     session.recordingStartedAt,
     session.recorderError,
+    session.streamingError,
+    session.streamingProviderEvents,
+    session.streamingTranscript,
   ]);
 
   return useMemo(() => {
@@ -617,6 +779,20 @@ function resolveTranscriptionSegments(
   return segments.length > 0 ? segments : [audioBlob];
 }
 
+function dictationRecordingKey(
+  session: DictationLoopSession,
+  audioBlob: Blob,
+) {
+  return [
+    session.completedMode,
+    session.dictationTrigger,
+    session.recordingStartedAt,
+    session.recordingEndedAt,
+    audioBlob.size,
+    audioBlob.type,
+  ].join("|");
+}
+
 function shouldPreferRawAudio(
   providerId: SpeechProviderId,
   captureAnalysis: CaptureAnalysis | null,
@@ -632,6 +808,85 @@ function shouldSkipBeforeTranscription(captureAnalysis: CaptureAnalysis) {
     captureAnalysis.disposition === "unclear" &&
     !shouldFallbackToRawTranscription(captureAnalysis)
   );
+}
+
+function localSpeechGateEvent(
+  providerId: SpeechProviderId,
+  captureAnalysis: CaptureAnalysis,
+  decision: "skip" | "allow",
+) {
+  return {
+    durationMs: null,
+    eventType: "local_speech_gate",
+    metadata: {
+      averageDbfs: captureAnalysis.metrics.averageDbfs,
+      decision,
+      estimatedSnrDb: captureAnalysis.metrics.estimatedSnrDb,
+      leadingTrimMs: captureAnalysis.metrics.leadingTrimMs,
+      longestPauseMs: captureAnalysis.metrics.longestPauseMs,
+      peakDbfs: captureAnalysis.metrics.peakDbfs,
+      reason: captureAnalysis.reason,
+      trailingTrimMs: captureAnalysis.metrics.trailingTrimMs,
+      voicedMs: captureAnalysis.metrics.voicedMs,
+    },
+    modelId: null,
+    providerId,
+    providerMode: "async" as const,
+    sessionId: null,
+    stage: "local_speech_gate",
+    status: decision === "skip" ? "skipped" : "succeeded",
+  };
+}
+
+function streamingFallbackAsyncStartedEvent(reason: string) {
+  return {
+    durationMs: null,
+    eventType: "stream_fallback_async_started",
+    metadata: {
+      reason,
+    },
+    modelId: "u3-rt-pro",
+    providerId: "assemblyai",
+    providerMode: "streaming" as const,
+    sessionId: null,
+    stage: "fallback_async",
+    status: "started",
+  };
+}
+
+function shouldWaitForStreamingFinal(session: DictationLoopSession) {
+  const events = session.streamingProviderEvents ?? [];
+  const started = events.some(
+    (event) => event.eventType === "stream_session_started",
+  );
+  const terminal = events.some((event) =>
+    [
+      "stream_final_received",
+      "stream_terminated",
+      "stream_error",
+      "stream_fallback_async_started",
+    ].includes(event.eventType),
+  );
+  return started && !terminal;
+}
+
+async function waitForStreamingFinalTranscript(
+  latestSessionRef: RefObject<DictationLoopSession>,
+  isActiveRun: () => boolean,
+  timeoutMs: number,
+) {
+  const deadline = now() + timeoutMs;
+  while (isActiveRun() && now() < deadline) {
+    const transcript = latestSessionRef.current.streamingTranscript?.trim() ?? "";
+    if (transcript.length > 0) {
+      return transcript;
+    }
+    if (!shouldWaitForStreamingFinal(latestSessionRef.current)) {
+      return "";
+    }
+    await delay(STREAMING_FINAL_POLL_MS);
+  }
+  return latestSessionRef.current.streamingTranscript?.trim() ?? "";
 }
 
 function shouldFallbackToRawTranscription(captureAnalysis: CaptureAnalysis | null) {
@@ -799,6 +1054,11 @@ async function persistDraft(input: {
   insertion: DictationRecordDraft["insertion"];
 }) {
   if (!input.session.focusedField || !input.session.dictationTrigger) {
+    recordDictationLoopCheckpoint("dictation_loop_persist_skipped", {
+      hasFocusedField: Boolean(input.session.focusedField),
+      hasTrigger: Boolean(input.session.dictationTrigger),
+      insertionStatus: input.insertion.status,
+    });
     return;
   }
 
@@ -857,6 +1117,7 @@ async function persistDraft(input: {
       timeline: input.timeline
         ? {
             ...input.timeline,
+            providerEvents: input.timeline.providerEvents ?? [],
             providerRequests: input.timeline.providerRequests ?? [],
             recordPersistedAt: isoNow(),
           }
@@ -924,6 +1185,44 @@ function buildRecordingDiagnostics(
 
 function now() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timerHost = typeof window !== "undefined" ? window : globalThis;
+    const timeoutId = timerHost.setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
+    operation.then(resolve, reject).finally(() => {
+      timerHost.clearTimeout(timeoutId);
+    });
+  });
+}
+
+function delay(timeoutMs: number) {
+  return new Promise<void>((resolve) => {
+    const timerHost = typeof window !== "undefined" ? window : globalThis;
+    timerHost.setTimeout(resolve, timeoutMs);
+  });
+}
+
+function recordDictationLoopCheckpoint(
+  checkpoint: string,
+  detail: Record<string, unknown>,
+) {
+  const normalizedDetail = Object.entries(detail)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join("_");
+  void recordStartupCheckpoint({
+    windowLabel: "voice-capsule",
+    checkpoint,
+    detail: normalizedDetail,
+  }).catch(() => {});
 }
 
 function isoNow() {

@@ -10,8 +10,12 @@ import {
   getProviderConfig,
   getProviderStatus,
   getSelectedSpeechProvider,
+  cleanupAssemblyAiStreamingSessions,
   saveSpeechProviderSetup,
+  sendAssemblyAiStreamingAudio,
   testSpeechProvider,
+  startAssemblyAiStreamingSession,
+  stopAssemblyAiStreamingSession,
   transcribeRecording,
 } from "./providers";
 
@@ -162,5 +166,36 @@ describe("provider Tauri API", () => {
       prompt: undefined,
       model: "universal-3-pro",
     });
+  });
+
+  it("maps AssemblyAI streaming commands to the backend", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("start_assemblyai_streaming_session", {
+      providerId: "assemblyai",
+      modelId: "u3-rt-pro",
+      providerMode: "streaming",
+      providerEvents: [],
+    });
+    tauri.resolveCommand("send_assemblyai_streaming_audio", {
+      bytesSent: 4,
+      frameCount: 1,
+      droppedFrames: 0,
+    });
+    tauri.resolveCommand("stop_assemblyai_streaming_session", true);
+    tauri.resolveCommand("cleanup_assemblyai_streaming_sessions", false);
+
+    await startAssemblyAiStreamingSession({ onEvent: () => {} });
+    await sendAssemblyAiStreamingAudio(new Uint8Array([1, 2, 3, 4]));
+    await stopAssemblyAiStreamingSession();
+    await cleanupAssemblyAiStreamingSessions();
+
+    expectTauriCommand(tauri, "start_assemblyai_streaming_session", {
+      events: expect.objectContaining({ onmessage: expect.any(Function) }),
+    });
+    expectTauriCommand(tauri, "send_assemblyai_streaming_audio", {
+      audioBytes: [1, 2, 3, 4],
+    });
+    expectTauriCommand(tauri, "stop_assemblyai_streaming_session", undefined);
+    expectTauriCommand(tauri, "cleanup_assemblyai_streaming_sessions", undefined);
   });
 });

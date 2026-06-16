@@ -6,7 +6,8 @@ use std::time::Duration;
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::SpeechProvider;
 use crate::providers::{
-    build_http_client, send_provider_request_with_retry, TranscriptResult, TranscriptionInput,
+    build_http_client, send_provider_request_with_retry, ProviderRequestTiming,
+    ProviderTimelineEvent, TranscriptResult, TranscriptionInput,
 };
 
 pub const PROVIDER_ID: &str = "assemblyai";
@@ -61,6 +62,7 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
         let model = resolve_model(input.model.as_deref()).to_string();
         let mut provider_request_started_at: Option<String> = None;
         let mut provider_response_received_at: Option<String> = None;
+        let mut provider_events = Vec::new();
 
         let upload_response = send_provider_request_with_retry(&client, "AssemblyAI", || {
             build_upload_request(&client, &api_key, &input.audio, &input.mime_type)
@@ -71,6 +73,14 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
             &mut provider_response_received_at,
             &upload_response.timing,
         );
+        provider_events.push(provider_stage_event(
+            "upload",
+            &model,
+            None,
+            &upload_response.timing,
+            Some(input.audio.len() as i64),
+            None,
+        ));
 
         let upload_payload = upload_response.json::<UploadResponse>().await?;
         let audio_url = upload_payload.upload_url.trim();
@@ -93,6 +103,14 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
             &mut provider_response_received_at,
             &create_response.timing,
         );
+        provider_events.push(provider_stage_event(
+            "create_transcript",
+            &model,
+            None,
+            &create_response.timing,
+            None,
+            None,
+        ));
 
         let create_payload = create_response.json::<CreateTranscriptResponse>().await?;
         let transcript_id = create_payload.id.trim();
@@ -114,11 +132,20 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
                 &mut provider_response_received_at,
                 &poll_response.timing,
             );
+            provider_events.push(provider_stage_event(
+                "poll",
+                &model,
+                Some(transcript_id),
+                &poll_response.timing,
+                None,
+                Some(attempt as i64 + 1),
+            ));
 
             let payload = poll_response.json::<TranscriptStatusResponse>().await?;
             if let Some(mut result) = resolve_poll_response(payload, &model)? {
                 result.provider_request_started_at = provider_request_started_at;
                 result.provider_response_received_at = provider_response_received_at;
+                result.provider_events = provider_events;
                 return Ok(result);
             }
         }
@@ -150,6 +177,42 @@ fn merge_timing(
     {
         *last_completed_at = Some(timing.completed_at.clone());
     }
+}
+
+fn provider_stage_event(
+    stage: &str,
+    model: &str,
+    session_id: Option<&str>,
+    timing: &ProviderRequestTiming,
+    bytes_sent: Option<i64>,
+    poll_count: Option<i64>,
+) -> ProviderTimelineEvent {
+    ProviderTimelineEvent {
+        event_type: "stage".to_string(),
+        provider_id: PROVIDER_ID.to_string(),
+        model_id: Some(model.to_string()),
+        provider_mode: "async".to_string(),
+        session_id: session_id.map(ToOwned::to_owned),
+        stage: Some(stage.to_string()),
+        started_at: Some(timing.started_at.clone()),
+        completed_at: Some(timing.completed_at.clone()),
+        duration_ms: duration_between_ms(&timing.started_at, &timing.completed_at),
+        status: Some("succeeded".to_string()),
+        error_code: None,
+        bytes_sent,
+        frame_count: None,
+        metadata: poll_count.map(|value| serde_json::json!({ "pollCount": value })),
+    }
+}
+
+fn duration_between_ms(started_at: &str, completed_at: &str) -> Option<i64> {
+    let started_at = chrono::DateTime::parse_from_rfc3339(started_at).ok()?;
+    let completed_at = chrono::DateTime::parse_from_rfc3339(completed_at).ok()?;
+    let duration = completed_at.signed_duration_since(started_at);
+    if duration.num_milliseconds() < 0 {
+        return None;
+    }
+    Some(duration.num_milliseconds())
 }
 
 fn validate_input(input: &TranscriptionInput) -> Result<(), ProviderError> {
@@ -253,6 +316,7 @@ fn resolve_poll_response(
                     .and_then(|seconds| seconds.checked_mul(1000)),
                 provider_request_started_at: None,
                 provider_response_received_at: None,
+                provider_events: Vec::new(),
             }))
         }
         "error" => Err(ProviderFailure::Request(
@@ -361,6 +425,32 @@ mod tests {
         assert_eq!(result.model, "universal-2");
         assert_eq!(result.text, "hello from assemblyai");
         assert_eq!(result.duration_ms, Some(12_000));
+        assert!(result.provider_events.is_empty());
+    }
+
+    #[test]
+    fn provider_stage_event_records_async_stage_timing() {
+        let event = provider_stage_event(
+            "upload",
+            "universal-3-pro",
+            Some("transcript-123"),
+            &ProviderRequestTiming {
+                started_at: "2026-05-02T08:30:04.100Z".to_string(),
+                completed_at: "2026-05-02T08:30:04.450Z".to_string(),
+            },
+            Some(2048),
+            Some(1),
+        );
+
+        assert_eq!(event.event_type, "stage");
+        assert_eq!(event.provider_id, "assemblyai");
+        assert_eq!(event.model_id.as_deref(), Some("universal-3-pro"));
+        assert_eq!(event.provider_mode, "async");
+        assert_eq!(event.session_id.as_deref(), Some("transcript-123"));
+        assert_eq!(event.stage.as_deref(), Some("upload"));
+        assert_eq!(event.duration_ms, Some(350));
+        assert_eq!(event.bytes_sent, Some(2048));
+        assert_eq!(event.metadata, Some(serde_json::json!({ "pollCount": 1 })));
     }
 
     #[test]

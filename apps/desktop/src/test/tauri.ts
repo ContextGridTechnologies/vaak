@@ -14,6 +14,9 @@ const listenMock = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock,
+  Channel: class MockChannel<T> {
+    onmessage: ((message: T) => void) | null = null;
+  },
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({

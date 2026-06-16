@@ -7,6 +7,7 @@ mod stability;
 mod storage;
 mod windowing;
 
+use std::sync::Arc;
 use tauri::menu::MenuBuilder;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
@@ -65,6 +66,9 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default()
         .manage(session::SessionStore::default())
+        .manage(Arc::new(
+            providers::speech::assemblyai_streaming::ManagedAssemblyAiStreamingState::default(),
+        ))
         .manage(stability::RendererHealth::default())
         .manage(stability::VoiceCapsuleReadiness::new(
             startup_diagnostics.run_id(),
@@ -259,7 +263,11 @@ pub fn run() {
             commands::save_onboarding_mode,
             commands::save_onboarding_step,
             commands::complete_onboarding,
-            commands::transcribe_recording
+            commands::transcribe_recording,
+            commands::start_assemblyai_streaming_session,
+            commands::send_assemblyai_streaming_audio,
+            commands::stop_assemblyai_streaming_session,
+            commands::cleanup_assemblyai_streaming_sessions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

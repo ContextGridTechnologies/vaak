@@ -4,6 +4,7 @@ pub mod speech;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
@@ -28,6 +29,27 @@ pub struct TranscriptResult {
     pub duration_ms: Option<u64>,
     pub provider_request_started_at: Option<String>,
     pub provider_response_received_at: Option<String>,
+    #[serde(default)]
+    pub provider_events: Vec<ProviderTimelineEvent>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderTimelineEvent {
+    pub event_type: String,
+    pub provider_id: String,
+    pub model_id: Option<String>,
+    pub provider_mode: String,
+    pub session_id: Option<String>,
+    pub stage: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub status: Option<String>,
+    pub error_code: Option<String>,
+    pub bytes_sent: Option<i64>,
+    pub frame_count: Option<i64>,
+    pub metadata: Option<Value>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -77,6 +99,8 @@ pub struct ProviderConfig {
     pub deployment_id: Option<String>,
     pub api_version: Option<String>,
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcription_mode: Option<String>,
 }
 
 const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -106,11 +130,21 @@ const ALLOWED_AUDIO_MIME_TYPES: &[&str] = &[
 ];
 
 pub fn build_http_client() -> Result<reqwest::Client, ProviderError> {
-    reqwest::Client::builder()
-        .timeout(HTTP_REQUEST_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(ProviderError::from)
+    shared_http_client().cloned()
+}
+
+fn shared_http_client() -> Result<&'static reqwest::Client, ProviderError> {
+    static HTTP_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    HTTP_CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .timeout(HTTP_REQUEST_TIMEOUT)
+                .redirect(reqwest::redirect::Policy::limited(5))
+                .build()
+                .map_err(|err| err.to_string())
+        })
+        .as_ref()
+        .map_err(|err| ProviderFailure::Request(err.clone()).into())
 }
 
 pub fn normalize_audio_mime_type(mime_type: &str) -> Result<String, ProviderError> {
@@ -141,12 +175,14 @@ pub fn normalize_provider_config(
     speech::validate_provider_id(provider_id)?;
 
     let model = normalize_optional_provider_field(config.model, "provider model")?;
+    let transcription_mode = normalize_transcription_mode(provider_id, config.transcription_mode)?;
     if provider_id == AZURE_PROVIDER_ID {
         return Ok(ProviderConfig {
             endpoint: Some(normalize_azure_endpoint(config.endpoint)?),
             deployment_id: Some(normalize_deployment_id(config.deployment_id)?),
             api_version: Some(normalize_api_version(config.api_version)?),
             model,
+            transcription_mode,
         });
     }
 
@@ -155,7 +191,29 @@ pub fn normalize_provider_config(
         deployment_id: None,
         api_version: None,
         model,
+        transcription_mode,
     })
+}
+
+fn normalize_transcription_mode(
+    provider_id: &str,
+    value: Option<String>,
+) -> Result<Option<String>, ProviderError> {
+    if provider_id != "assemblyai" {
+        return Ok(None);
+    }
+
+    let Some(value) = normalize_optional_provider_field(value, "transcription mode")? else {
+        return Ok(None);
+    };
+
+    match value.as_str() {
+        "balanced" | "fast" | "accurate" => Ok(Some(value)),
+        _ => Err(ProviderFailure::InvalidRequest(
+            "AssemblyAI transcription mode is unsupported".to_string(),
+        )
+        .into()),
+    }
 }
 
 pub fn normalize_optional_provider_field(
@@ -497,6 +555,7 @@ mod tests {
                 deployment_id: Some("unused".to_string()),
                 api_version: Some("unused".to_string()),
                 model: Some(" gpt-4o-mini-transcribe ".to_string()),
+                transcription_mode: None,
             },
         )
         .unwrap();
@@ -516,6 +575,7 @@ mod tests {
                 deployment_id: Some("whisper".to_string()),
                 api_version: Some("2025-04-01-preview".to_string()),
                 model: None,
+                transcription_mode: None,
             },
         )
         .unwrap_err();
@@ -532,6 +592,7 @@ mod tests {
                 deployment_id: Some("whisper".to_string()),
                 api_version: Some("   ".to_string()),
                 model: None,
+                transcription_mode: None,
             },
         )
         .unwrap();
@@ -553,6 +614,7 @@ mod tests {
                     deployment_id: Some("whisper".to_string()),
                     api_version: None,
                     model: None,
+                    transcription_mode: None,
                 },
             )
             .unwrap_err();
@@ -570,6 +632,7 @@ mod tests {
                 deployment_id: Some("../whisper".to_string()),
                 api_version: None,
                 model: None,
+                transcription_mode: None,
             },
         )
         .unwrap_err();
@@ -591,6 +654,14 @@ mod tests {
         let err = normalize_transcription_prompt(Some(prompt)).unwrap_err();
 
         assert_eq!(err.code, "invalid_provider_request");
+    }
+
+    #[test]
+    fn shared_http_client_returns_same_instance() {
+        let first = shared_http_client().expect("shared client");
+        let second = shared_http_client().expect("shared client");
+
+        assert!(std::ptr::eq(first, second));
     }
 
     #[test]

@@ -113,6 +113,7 @@ describe("speech provider panels", () => {
 
     expect(input).toHaveAttribute("placeholder", SAVED_KEY_PLACEHOLDER);
     expect(input).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
   });
 
   it("shows a saved Smallest AI key as a non-copyable star placeholder", () => {

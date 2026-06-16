@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use uuid::Uuid;
 
-const LOCAL_SQLITE_SCHEMA_VERSION: u32 = 1;
+const LOCAL_SQLITE_SCHEMA_VERSION: u32 = 2;
 const RECENT_RECORD_LIMIT_MAX: usize = 100;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -194,6 +194,8 @@ pub struct DictationTimeline {
     pub record_persisted_at: Option<String>,
     #[serde(default)]
     pub provider_requests: Vec<DictationProviderRequestTiming>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_events: Vec<DictationProviderTimelineEvent>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -208,6 +210,36 @@ pub struct DictationProviderRequestTiming {
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationProviderTimelineEvent {
+    pub event_type: String,
+    pub provider_id: String,
+    #[serde(default)]
+    pub model_id: Option<String>,
+    pub provider_mode: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub stage: Option<String>,
+    #[serde(default)]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub completed_at: Option<String>,
+    #[serde(default)]
+    pub duration_ms: Option<i64>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub error_code: Option<String>,
+    #[serde(default)]
+    pub bytes_sent: Option<i64>,
+    #[serde(default)]
+    pub frame_count: Option<i64>,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug)]
@@ -525,6 +557,29 @@ impl LocalDictationRecordStore {
               FOREIGN KEY(record_id) REFERENCES dictation_records(record_id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS dictation_provider_events (
+              event_id TEXT PRIMARY KEY,
+              record_id TEXT NOT NULL,
+              provider_request_id INTEGER,
+              provider_id TEXT NOT NULL,
+              model_id TEXT,
+              provider_mode TEXT NOT NULL,
+              session_id TEXT,
+              event_type TEXT NOT NULL,
+              stage TEXT,
+              started_at TEXT,
+              completed_at TEXT,
+              duration_ms INTEGER,
+              status TEXT,
+              error_code TEXT,
+              bytes_sent INTEGER,
+              frame_count INTEGER,
+              metadata_json TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY(record_id) REFERENCES dictation_records(record_id) ON DELETE CASCADE,
+              FOREIGN KEY(provider_request_id) REFERENCES dictation_provider_requests(provider_request_id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_dictation_records_captured_at
               ON dictation_records(captured_at DESC);
 
@@ -684,6 +739,7 @@ impl LocalDictationRecordStore {
         }
 
         sync_provider_request_rows(&tx, record)?;
+        sync_provider_event_rows(&tx, record)?;
         tx.commit().map_err(sqlite_error)?;
         Ok(())
     }
@@ -874,7 +930,8 @@ fn insert_record_with_transaction(
         ],
     )
     .map_err(sqlite_error)?;
-    sync_provider_request_rows(tx, record)
+    sync_provider_request_rows(tx, record)?;
+    sync_provider_event_rows(tx, record)
 }
 
 fn legacy_record_exists(tx: &Transaction<'_>, record_id: &str) -> Result<bool, ProviderError> {
@@ -1092,6 +1149,12 @@ fn create_analytics_indexes(conn: &Connection) -> Result<(), ProviderError> {
 
             CREATE INDEX IF NOT EXISTS idx_dictation_provider_requests_status
               ON dictation_provider_requests(status, error_code, started_at);
+
+            CREATE INDEX IF NOT EXISTS idx_dictation_provider_events_record
+              ON dictation_provider_events(record_id, created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_dictation_provider_events_provider_mode
+              ON dictation_provider_events(provider_id, provider_mode, event_type, created_at);
         "#,
     )
     .map_err(sqlite_error)
@@ -1205,6 +1268,7 @@ fn backfill_timeline_columns(conn: &Connection) -> Result<(), ProviderError> {
         )
         .map_err(sqlite_error)?;
         sync_provider_request_rows(conn, &record)?;
+        sync_provider_event_rows(conn, &record)?;
     }
 
     Ok(())
@@ -1267,6 +1331,121 @@ fn sync_provider_request_rows(
     }
 
     Ok(())
+}
+
+fn sync_provider_event_rows(
+    conn: &Connection,
+    record: &DictationRecordV1,
+) -> Result<(), ProviderError> {
+    conn.execute(
+        "DELETE FROM dictation_provider_events WHERE record_id = ?1",
+        params![record.record_id],
+    )
+    .map_err(sqlite_error)?;
+
+    let Some(timeline) = record.timeline.as_ref() else {
+        return Ok(());
+    };
+
+    for event in &timeline.provider_events {
+        let metadata_json = sanitized_provider_event_metadata(event.metadata.as_ref())?;
+        conn.execute(
+            r#"
+            INSERT INTO dictation_provider_events (
+              event_id,
+              record_id,
+              provider_request_id,
+              provider_id,
+              model_id,
+              provider_mode,
+              session_id,
+              event_type,
+              stage,
+              started_at,
+              completed_at,
+              duration_ms,
+              status,
+              error_code,
+              bytes_sent,
+              frame_count,
+              metadata_json,
+              created_at
+            ) VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+            "#,
+            params![
+                Uuid::new_v4().to_string(),
+                record.record_id.as_str(),
+                event.provider_id.as_str(),
+                event.model_id.as_deref(),
+                event.provider_mode.as_str(),
+                event.session_id.as_deref(),
+                event.event_type.as_str(),
+                event.stage.as_deref(),
+                event.started_at.as_deref(),
+                event.completed_at.as_deref(),
+                event.duration_ms,
+                event.status.as_deref(),
+                event.error_code.as_deref(),
+                event.bytes_sent,
+                event.frame_count,
+                metadata_json.as_deref(),
+                current_utc_timestamp(),
+            ],
+        )
+        .map_err(sqlite_error)?;
+    }
+
+    Ok(())
+}
+
+fn sanitized_provider_event_metadata(
+    metadata: Option<&serde_json::Value>,
+) -> Result<Option<String>, ProviderError> {
+    let Some(metadata) = metadata else {
+        return Ok(None);
+    };
+
+    let sanitized = sanitize_provider_event_metadata_value(metadata);
+    if sanitized.is_null() {
+        return Ok(None);
+    }
+
+    serde_json::to_string(&sanitized)
+        .map(Some)
+        .map_err(storage_error)
+}
+
+fn sanitize_provider_event_metadata_value(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .filter_map(|(key, value)| {
+                    if is_sensitive_provider_event_metadata_key(key) {
+                        None
+                    } else {
+                        Some((key.clone(), sanitize_provider_event_metadata_value(value)))
+                    }
+                })
+                .collect(),
+        ),
+        serde_json::Value::Array(values) => serde_json::Value::Array(
+            values
+                .iter()
+                .map(sanitize_provider_event_metadata_value)
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
+}
+
+fn is_sensitive_provider_event_metadata_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    key.contains("text")
+        || key.contains("transcript")
+        || key.contains("prompt")
+        || key.contains("authorization")
+        || key.contains("api_key")
+        || key.contains("apikey")
 }
 
 fn provider_request_outcome<'a>(
@@ -1626,6 +1805,7 @@ mod tests {
                     status: Some("succeeded".to_string()),
                     error_code: None,
                 }],
+                provider_events: Vec::new(),
             }),
         };
 
@@ -1840,13 +2020,13 @@ mod tests {
     }
 
     #[test]
-    fn initializes_sqlite_schema_version_one_with_timeline_columns_and_request_table() {
-        let dir = temp_config_dir("dictation-record-schema-v1");
+    fn initializes_sqlite_schema_version_two_with_timeline_columns_and_provider_event_table() {
+        let dir = temp_config_dir("dictation-record-schema-v2");
         let settings = crate::storage::LocalSettingsStore::new(&dir);
         let store = LocalDictationRecordStore::new(&dir);
 
         store
-            .save(&settings, failed_record_draft("session-schema-v1", "raw"))
+            .save(&settings, failed_record_draft("session-schema-v2", "raw"))
             .unwrap();
 
         let conn = Connection::open(dir.join("dictation-records.sqlite")).unwrap();
@@ -1854,12 +2034,14 @@ mod tests {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
 
-        assert_eq!(user_version, 1);
+        assert_eq!(user_version, 2);
         assert!(table_has_column(&conn, "dictation_records", "provider_roundtrip_ms").unwrap());
         assert!(table_has_column(&conn, "dictation_records", "provider_model_id").unwrap());
         assert!(table_has_column(&conn, "dictation_records", "record_persisted_at").unwrap());
         assert!(table_has_column(&conn, "dictation_records", "provider_request_count").unwrap());
         assert!(table_has_column(&conn, "dictation_provider_requests", "duration_ms").unwrap());
+        assert!(table_has_column(&conn, "dictation_provider_events", "event_type").unwrap());
+        assert!(table_has_column(&conn, "dictation_provider_events", "metadata_json").unwrap());
         assert!(table_has_index(&conn, "idx_dictation_records_provider_model").unwrap());
         assert!(table_has_index(&conn, "idx_dictation_records_error").unwrap());
         assert!(table_has_index(&conn, "idx_dictation_provider_requests_provider").unwrap());
@@ -1869,6 +2051,42 @@ mod tests {
         )
         .unwrap());
         assert!(table_has_index(&conn, "idx_dictation_provider_requests_status").unwrap());
+        assert!(table_has_index(&conn, "idx_dictation_provider_events_record").unwrap());
+        assert!(table_has_index(&conn, "idx_dictation_provider_events_provider_mode").unwrap());
+    }
+
+    #[test]
+    fn migrates_sqlite_schema_version_one_to_provider_event_table() {
+        let dir = temp_config_dir("dictation-record-schema-v1-migration");
+        fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("dictation-records.sqlite");
+        let conn = Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE schema_migrations (
+              version INTEGER PRIMARY KEY,
+              applied_at TEXT NOT NULL
+            );
+            INSERT INTO schema_migrations (version, applied_at)
+            VALUES (1, '2026-05-02T08:30:00.000Z');
+            PRAGMA user_version = 1;
+            "#,
+        )
+        .unwrap();
+        drop(conn);
+
+        let store = LocalDictationRecordStore::new(&dir);
+        let records = store.list_recent(10, 0).unwrap();
+
+        let conn = Connection::open(db_path).unwrap();
+        let user_version: u32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+
+        assert!(records.is_empty());
+        assert_eq!(user_version, 2);
+        assert!(table_has_column(&conn, "dictation_provider_events", "event_type").unwrap());
+        assert!(table_has_index(&conn, "idx_dictation_provider_events_record").unwrap());
     }
 
     #[test]
@@ -1899,6 +2117,7 @@ mod tests {
                 status: Some("succeeded".to_string()),
                 error_code: None,
             }],
+            provider_events: Vec::new(),
         });
 
         store.save(&settings, draft).unwrap();
@@ -2005,6 +2224,102 @@ mod tests {
     }
 
     #[test]
+    fn persists_provider_timeline_events_without_transcript_text() {
+        let dir = temp_config_dir("dictation-record-provider-events");
+        let settings = crate::storage::LocalSettingsStore::new(&dir);
+        let store = LocalDictationRecordStore::new(&dir);
+        let mut draft = failed_record_draft("session-provider-events", "raw");
+        draft.provider = Some(DictationProviderContext {
+            provider_id: "assemblyai".to_string(),
+            model_id: Some("universal-3-pro".to_string()),
+        });
+        draft.timeline = Some(DictationTimeline {
+            recording_started_at: None,
+            recording_stopped_at: None,
+            processing_started_at: None,
+            audio_analysis_completed_at: None,
+            transcription_started_at: None,
+            provider_request_started_at: Some("2026-05-02T08:30:04.100Z".to_string()),
+            provider_response_received_at: Some("2026-05-02T08:30:09.300Z".to_string()),
+            transcription_completed_at: None,
+            insertion_started_at: None,
+            insertion_completed_at: None,
+            record_persisted_at: None,
+            provider_requests: Vec::new(),
+            provider_events: vec![DictationProviderTimelineEvent {
+                event_type: "stage".to_string(),
+                provider_id: "assemblyai".to_string(),
+                model_id: Some("universal-3-pro".to_string()),
+                provider_mode: "async".to_string(),
+                session_id: Some("transcript-123".to_string()),
+                stage: Some("upload".to_string()),
+                started_at: Some("2026-05-02T08:30:04.100Z".to_string()),
+                completed_at: Some("2026-05-02T08:30:04.450Z".to_string()),
+                duration_ms: Some(350),
+                status: Some("succeeded".to_string()),
+                error_code: None,
+                bytes_sent: Some(2048),
+                frame_count: None,
+                metadata: Some(serde_json::json!({
+                    "pollCount": 3,
+                    "transcriptText": "must not be stored"
+                })),
+            }],
+        });
+
+        store.save(&settings, draft).unwrap();
+
+        let conn = Connection::open(dir.join("dictation-records.sqlite")).unwrap();
+        let row = conn
+            .query_row(
+                r#"
+                SELECT provider_id,
+                       model_id,
+                       provider_mode,
+                       session_id,
+                       event_type,
+                       stage,
+                       duration_ms,
+                       status,
+                       bytes_sent,
+                       metadata_json
+                FROM dictation_provider_events
+                WHERE record_id = (SELECT record_id FROM dictation_records WHERE session_id = 'session-provider-events')
+                "#,
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, i64>(8)?,
+                        row.get::<_, Option<String>>(9)?,
+                    ))
+                },
+            )
+            .unwrap();
+
+        assert_eq!(row.0, "assemblyai");
+        assert_eq!(row.1, "universal-3-pro");
+        assert_eq!(row.2, "async");
+        assert_eq!(row.3, "transcript-123");
+        assert_eq!(row.4, "stage");
+        assert_eq!(row.5, "upload");
+        assert_eq!(row.6, 350);
+        assert_eq!(row.7, "succeeded");
+        assert_eq!(row.8, 2048);
+        let metadata = row.9.expect("metadata json");
+        assert!(metadata.contains("pollCount"));
+        assert!(!metadata.contains("must not be stored"));
+        assert!(!metadata.contains("transcriptText"));
+    }
+
+    #[test]
     fn rejects_invalid_provider_request_status() {
         let dir = temp_config_dir("dictation-record-invalid-provider-request-status");
         let settings = crate::storage::LocalSettingsStore::new(&dir);
@@ -2031,6 +2346,7 @@ mod tests {
                 status: Some("unknown".to_string()),
                 error_code: None,
             }],
+            provider_events: Vec::new(),
         });
 
         let err = store

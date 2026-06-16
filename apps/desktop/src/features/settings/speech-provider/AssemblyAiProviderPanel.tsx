@@ -65,7 +65,7 @@ export function AssemblyAiProviderPanel({
           <div className="flex min-w-0 flex-col gap-1">
             <h3 className="text-base font-semibold">AssemblyAI</h3>
             <p className="text-sm text-muted-foreground">
-              Use AssemblyAI batch speech-to-text with your own API key.
+              Use AssemblyAI speech-to-text with your own API key.
             </p>
           </div>
           <StatusBadge tone={providerStatusTone(status)}>

@@ -1,21 +1,26 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createElement, StrictMode, type ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useDictationLoop, type DictationLoopSession } from "./useDictationLoop";
 
 const {
   getSelectedSpeechProvider,
+  getSystemSettings,
   insertIntoActiveTarget,
   listenToTauriEvent,
   persistDictationAudio,
+  recordStartupCheckpoint,
   saveDictationRecord,
   targetSnapshotFromFocusedField,
   transcribeRecording,
 } = vi.hoisted(() => ({
   getSelectedSpeechProvider: vi.fn(),
+  getSystemSettings: vi.fn(),
   insertIntoActiveTarget: vi.fn(),
   listenToTauriEvent: vi.fn(),
   persistDictationAudio: vi.fn(),
+  recordStartupCheckpoint: vi.fn(),
   saveDictationRecord: vi.fn(),
   targetSnapshotFromFocusedField: vi.fn(),
   transcribeRecording: vi.fn(),
@@ -23,10 +28,13 @@ const {
 
 vi.mock("@/lib/tauri", () => ({
   SPEECH_PROVIDER_CHANGED_EVENT: "vaak://speech-provider-changed",
+  SYSTEM_SETTINGS_CHANGED_EVENT: "vaak://system-settings-changed",
   getSelectedSpeechProvider,
+  getSystemSettings,
   insertIntoActiveTarget,
   listenToTauriEvent,
   persistDictationAudio,
+  recordStartupCheckpoint,
   saveDictationRecord,
   targetSnapshotFromFocusedField,
   transcribeRecording,
@@ -104,10 +112,19 @@ function recordingBlob() {
   return new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
 }
 
+function StrictModeWrapper({ children }: { children: ReactNode }) {
+  return createElement(StrictMode, null, children);
+}
+
 describe("useDictationLoop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getSelectedSpeechProvider.mockResolvedValue("openai");
+    getSystemSettings.mockResolvedValue({
+      dictationMode: "auto",
+      launchOnStartup: true,
+      showSkippedTranscripts: false,
+    });
     insertIntoActiveTarget.mockResolvedValue({
       characters: 5,
       method: "send_input",
@@ -118,6 +135,7 @@ describe("useDictationLoop", () => {
       mimeType: "audio/webm",
       byteLength: 3,
     });
+    recordStartupCheckpoint.mockResolvedValue(undefined);
     saveDictationRecord.mockResolvedValue(undefined);
     targetSnapshotFromFocusedField.mockImplementation((field) => ({
       stableId: field.stableId,
@@ -142,6 +160,10 @@ describe("useDictationLoop", () => {
     });
     appEnvironment.appEnv = "development";
     appEnvironment.exposeProcessedAudioArtifacts = true;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("transcribes a stopped audio blob exactly once", async () => {
@@ -202,6 +224,76 @@ describe("useDictationLoop", () => {
     expect(transcribeRecording).toHaveBeenCalledTimes(1);
   });
 
+  it("does not cancel insertion when the same recording is represented by a new Blob object", async () => {
+    const firstAudioBlob = recordingBlob();
+    const sameRecordingBlob = recordingBlob();
+    let resolveTranscription:
+      | ((value: Awaited<ReturnType<typeof transcribeRecording>>) => void)
+      | undefined;
+    transcribeRecording.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveTranscription = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ value }) => useDictationLoop(value),
+      { initialProps: { value: session({ audioBlob: firstAudioBlob }) } },
+    );
+
+    await waitFor(() => expect(transcribeRecording).toHaveBeenCalledTimes(1));
+
+    rerender({ value: session({ audioBlob: sameRecordingBlob }) });
+    await act(async () => {
+      resolveTranscription?.({
+        durationMs: 1200,
+        model: "gpt-4o-mini-transcribe",
+        providerId: "openai",
+        text: "stable recording",
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("stable recording");
+    });
+    expect(transcribeRecording).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toBe("inserted");
+  });
+
+  it("continues insertion after React StrictMode re-runs mount effects", async () => {
+    const audioBlob = recordingBlob();
+    let resolveTranscription:
+      | ((value: Awaited<ReturnType<typeof transcribeRecording>>) => void)
+      | undefined;
+    transcribeRecording.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveTranscription = resolve;
+        }),
+    );
+
+    renderHook(() => useDictationLoop(session({ audioBlob })), {
+      wrapper: StrictModeWrapper,
+    });
+
+    await waitFor(() => expect(transcribeRecording).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      resolveTranscription?.({
+        durationMs: 1200,
+        model: "gpt-4o-mini-transcribe",
+        providerId: "openai",
+        text: "strict mode text",
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("strict mode text");
+    });
+  });
+
   it("does not persist a stale transcription failure after a newer recording starts", async () => {
     const firstAudioBlob = recordingBlob();
     const secondAudioBlob = new Blob([new Uint8Array([4, 5, 6])], {
@@ -230,7 +322,13 @@ describe("useDictationLoop", () => {
     );
 
     await waitFor(() => expect(transcribeRecording).toHaveBeenCalledTimes(1));
-    rerender({ value: session({ audioBlob: secondAudioBlob }) });
+    rerender({
+      value: session({
+        audioBlob: secondAudioBlob,
+        recordingEndedAt: "2026-05-02T08:30:08.000Z",
+        recordingStartedAt: "2026-05-02T08:30:05.000Z",
+      }),
+    });
     await waitFor(() => expect(transcribeRecording).toHaveBeenCalledTimes(2));
 
     await act(async () => {
@@ -260,6 +358,30 @@ describe("useDictationLoop", () => {
 
   it("inserts the raw transcript after transcription", async () => {
     const audioBlob = recordingBlob();
+    transcribeRecording.mockResolvedValueOnce({
+      durationMs: 1200,
+      model: "universal-3-pro",
+      providerEvents: [
+        {
+          bytesSent: 3,
+          completedAt: "2026-05-02T08:30:04.450Z",
+          durationMs: 350,
+          eventType: "stage",
+          metadata: { pollCount: 1 },
+          modelId: "universal-3-pro",
+          providerId: "assemblyai",
+          providerMode: "async",
+          sessionId: null,
+          stage: "upload",
+          startedAt: "2026-05-02T08:30:04.100Z",
+          status: "succeeded",
+        },
+      ],
+      providerRequestStartedAt: "2026-05-02T08:30:04.100Z",
+      providerResponseReceivedAt: "2026-05-02T08:30:05.300Z",
+      providerId: "assemblyai",
+      text: "hello",
+    });
 
     const { result } = renderHook(() =>
       useDictationLoop(session({ audioBlob })),
@@ -273,8 +395,8 @@ describe("useDictationLoop", () => {
         trigger: "hotkey",
         mode: "dictation",
         provider: {
-          modelId: "gpt-4o-mini-transcribe",
-          providerId: "openai",
+          modelId: "universal-3-pro",
+          providerId: "assemblyai",
         },
         transcript: {
           characterCount: 5,
@@ -307,10 +429,26 @@ describe("useDictationLoop", () => {
               segmentIndex: 0,
               startedAt: "2026-05-02T08:30:04.100Z",
               completedAt: "2026-05-02T08:30:05.300Z",
-              providerId: "openai",
-              modelId: "gpt-4o-mini-transcribe",
+              providerId: "assemblyai",
+              modelId: "universal-3-pro",
               status: "succeeded",
               errorCode: null,
+            },
+          ],
+          providerEvents: [
+            {
+              bytesSent: 3,
+              completedAt: "2026-05-02T08:30:04.450Z",
+              durationMs: 350,
+              eventType: "stage",
+              metadata: { pollCount: 1 },
+              modelId: "universal-3-pro",
+              providerId: "assemblyai",
+              providerMode: "async",
+              sessionId: null,
+              stage: "upload",
+              startedAt: "2026-05-02T08:30:04.100Z",
+              status: "succeeded",
             },
           ],
         }),
@@ -383,6 +521,91 @@ describe("useDictationLoop", () => {
         },
       }),
     );
+  });
+
+  it("falls back to AssemblyAI async transcription for quiet low-volume speech", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    transcribeRecording.mockResolvedValueOnce({
+      durationMs: 1200,
+      model: "universal-3-pro",
+      providerId: "assemblyai",
+      text: "quiet speech",
+    });
+
+    const { result } = renderHook(() =>
+      useDictationLoop(
+        analyzedSession({
+          audioBlob,
+          captureAnalysis: {
+            disposition: "unclear",
+            reason: "low_volume",
+            metrics: {
+              voicedMs: 0,
+              leadingTrimMs: 0,
+              trailingTrimMs: 0,
+              longestPauseMs: 0,
+              estimatedSnrDb: 0,
+              averageDbfs: -100,
+              peakDbfs: -28.3,
+            },
+            processedAudio: null,
+            transcriptionSegments: [],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("quiet speech");
+    });
+
+    expect(transcribeRecording).toHaveBeenCalledWith({
+      providerId: "assemblyai",
+      audioBlob,
+      language: "en",
+    });
+    expect(result.current.state).toBe("inserted");
+  });
+
+  it("records diagnostic checkpoints around AssemblyAI async fallback processing", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    transcribeRecording.mockResolvedValueOnce({
+      durationMs: 1200,
+      model: "universal-3-pro",
+      providerId: "assemblyai",
+      text: "diagnostic text",
+    });
+
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingError: "provider closed streaming socket",
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("diagnostic text");
+    });
+
+    expect(recordStartupCheckpoint).toHaveBeenCalledWith({
+      windowLabel: "voice-capsule",
+      checkpoint: "dictation_loop_processing_started",
+      detail: expect.stringContaining("providerId=assemblyai"),
+    });
+    expect(recordStartupCheckpoint).toHaveBeenCalledWith({
+      windowLabel: "voice-capsule",
+      checkpoint: "dictation_loop_transcription_started",
+      detail: expect.stringContaining("streamingFallback=true"),
+    });
+    expect(recordStartupCheckpoint).toHaveBeenCalledWith({
+      windowLabel: "voice-capsule",
+      checkpoint: "dictation_loop_transcription_completed",
+      detail: expect.stringContaining("textChars=15"),
+    });
   });
 
   it("skips provider transcription when low-volume capture has no meaningful peak", async () => {
@@ -470,6 +693,32 @@ describe("useDictationLoop", () => {
     expect(result.current.message).toBe("No speech detected.");
     expect(saveDictationRecord).toHaveBeenCalledWith(
       expect.objectContaining({
+        timeline: expect.objectContaining({
+          providerEvents: [
+            {
+              durationMs: null,
+              eventType: "local_speech_gate",
+              metadata: {
+                averageDbfs: -100,
+                decision: "skip",
+                estimatedSnrDb: 0,
+                leadingTrimMs: 0,
+                longestPauseMs: 0,
+                peakDbfs: -100,
+                reason: "no_speech",
+                trailingTrimMs: 0,
+                voicedMs: 0,
+              },
+              modelId: null,
+              providerId: "openai",
+              providerMode: "async",
+              sessionId: null,
+              stage: "local_speech_gate",
+              status: "skipped",
+            },
+          ],
+          providerRequests: [],
+        }),
         insertion: {
           errorCode: "speech_unclear",
           errorMessage: "No speech detected.",
@@ -810,6 +1059,243 @@ describe("useDictationLoop", () => {
     });
   });
 
+  it("inserts a final AssemblyAI streaming transcript without async retranscription", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingTranscript: "streamed final",
+          streamingProviderEvents: [
+            {
+              eventType: "stream_final_received",
+              providerId: "assemblyai",
+              providerMode: "streaming",
+              modelId: "u3-rt-pro",
+              sessionId: "session-1",
+              stage: "receive_final",
+              status: "succeeded",
+              metadata: { characterCount: 14 },
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("streamed final");
+    });
+
+    expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: {
+          modelId: "u3-rt-pro",
+          providerId: "assemblyai",
+        },
+        transcript: {
+          characterCount: 14,
+          finalText: "streamed final",
+          rawText: "streamed final",
+        },
+        timeline: expect.objectContaining({
+          providerEvents: [
+            expect.objectContaining({
+              eventType: "stream_final_received",
+              providerMode: "streaming",
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("waits briefly for an AssemblyAI streaming final before falling back to async", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    const streamingStarted = {
+      eventType: "stream_session_started",
+      providerId: "assemblyai",
+      providerMode: "streaming",
+      modelId: "u3-rt-pro",
+      sessionId: "session-1",
+      stage: "connect",
+      status: "succeeded",
+    } as const;
+
+    const { rerender } = renderHook(
+      ({ value }) => useDictationLoop(value),
+      {
+        initialProps: {
+          value: session({
+            audioBlob,
+            streamingProviderEvents: [streamingStarted],
+          }),
+        },
+      },
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(transcribeRecording).not.toHaveBeenCalled();
+
+    rerender({
+      value: session({
+        audioBlob,
+        streamingProviderEvents: [
+          streamingStarted,
+          {
+            eventType: "stream_final_received",
+            providerId: "assemblyai",
+            providerMode: "streaming",
+            modelId: "u3-rt-pro",
+            sessionId: "session-1",
+            stage: "receive_final",
+            status: "succeeded",
+          },
+        ],
+        streamingTranscript: "low latency text",
+      }),
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 75));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("low latency text");
+    });
+    expect(transcribeRecording).not.toHaveBeenCalled();
+  });
+
+  it("falls back to async AssemblyAI when streaming fails before a final transcript", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    transcribeRecording.mockResolvedValueOnce({
+      durationMs: 1200,
+      model: "universal-3-pro",
+      providerId: "assemblyai",
+      text: "async fallback",
+    });
+
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingError: "AssemblyAI streaming is disabled",
+          streamingProviderEvents: [
+            {
+              eventType: "stream_error",
+              providerId: "assemblyai",
+              providerMode: "streaming",
+              modelId: "u3-rt-pro",
+              sessionId: "session-1",
+              stage: "receive",
+              status: "failed",
+              errorCode: "provider_request_failed",
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("async fallback");
+    });
+
+    expect(transcribeRecording).toHaveBeenCalledWith({
+      providerId: "assemblyai",
+      audioBlob,
+      language: "en",
+    });
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeline: expect.objectContaining({
+          providerEvents: expect.arrayContaining([
+            expect.objectContaining({ eventType: "stream_error" }),
+            expect.objectContaining({
+              eventType: "stream_fallback_async_started",
+              providerMode: "streaming",
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("keeps the selected provider when system settings loading fails", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    getSystemSettings.mockRejectedValue(new Error("settings unavailable"));
+    transcribeRecording.mockResolvedValueOnce({
+      durationMs: 1200,
+      model: "universal-3-pro",
+      providerId: "assemblyai",
+      text: "assembly transcript",
+    });
+
+    renderHook(() => useDictationLoop(session({ audioBlob })));
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("assembly transcript");
+    });
+    expect(transcribeRecording).toHaveBeenCalledWith({
+      providerId: "assemblyai",
+      audioBlob,
+      language: "en",
+    });
+  });
+
+  it("does not fall back to async AssemblyAI when streaming is forced", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    getSystemSettings.mockResolvedValue({
+      dictationMode: "streaming",
+      launchOnStartup: true,
+      showSkippedTranscripts: false,
+    });
+
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingError: "AssemblyAI streaming is disabled",
+          streamingProviderEvents: [
+            {
+              eventType: "stream_error",
+              providerId: "assemblyai",
+              providerMode: "streaming",
+              modelId: "u3-rt-pro",
+              sessionId: "session-1",
+              stage: "receive",
+              status: "failed",
+              errorCode: "provider_request_failed",
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(saveDictationRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          insertion: expect.objectContaining({
+            errorCode: "transcription_failed",
+            status: "failed",
+          }),
+        }),
+      );
+    });
+
+    expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+  });
+
   it("continues saving the dictation record when audio persistence fails", async () => {
     const audioBlob = recordingBlob();
     persistDictationAudio.mockRejectedValue(new Error("disk unavailable"));
@@ -1054,6 +1540,52 @@ describe("useDictationLoop", () => {
     );
     expect(result.current.state).toBe("error");
     expect(result.current.message).toBe("Insertion failed: target changed");
+  });
+
+  it("times out hanging insertions and saves the failed dictation record", async () => {
+    const audioBlob = recordingBlob();
+    insertIntoActiveTarget.mockImplementation(() => new Promise(() => {}));
+
+    const { result } = renderHook(() =>
+      useDictationLoop(session({ audioBlob })),
+    );
+
+    await vi.waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello");
+    });
+    expect(result.current.state).toBe("inserting");
+
+    await waitFor(
+      () => {
+        expect(result.current.error?.kind).toBe("insertion");
+      },
+      { timeout: 6_000 },
+    );
+
+    expect(result.current.state).toBe("error");
+    expect(result.current.message).toBe(
+      "Insertion failed: Insertion timed out after 5000ms.",
+    );
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        insertion: {
+          errorCode: "insertion_failed",
+          errorMessage: "Insertion failed: Insertion timed out after 5000ms.",
+          method: null,
+          status: "failed",
+        },
+        transcript: {
+          characterCount: 5,
+          finalText: "hello",
+          rawText: "hello",
+        },
+      }),
+    );
+    expect(recordStartupCheckpoint).toHaveBeenCalledWith({
+      windowLabel: "voice-capsule",
+      checkpoint: "dictation_loop_insertion_failed",
+      detail: expect.stringContaining("timed out"),
+    });
   });
 
   it("does not transcribe or insert command-mode recordings", async () => {
