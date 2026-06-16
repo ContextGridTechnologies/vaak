@@ -65,7 +65,7 @@ describe("AppLayout", () => {
     expect(screen.getByText("Home content")).toBeInTheDocument();
   });
 
-  it("shows the analytics navigation item in development builds", () => {
+  it("shows the analytics navigation item", () => {
     renderLayout(
       <AppLayout>
         <TabsContent value="home">Home content</TabsContent>
@@ -74,6 +74,72 @@ describe("AppLayout", () => {
     );
 
     expect(screen.getByRole("button", { name: "Analytics" })).toBeInTheDocument();
+  });
+
+  it("switches the sidebar to settings categories when Settings is opened", async () => {
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+        <TabsContent value="settings">Settings content</TabsContent>
+        <TabsContent value="analytics">Analytics content</TabsContent>
+        <TabsContent value="info">Info content</TabsContent>
+      </AppLayout>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    const sidebarMenu = within(screen.getByTestId("app-sidebar-primary"));
+    expect(sidebarMenu.queryByRole("button", { name: "Voice" })).not.toBeInTheDocument();
+    expect(sidebarMenu.queryByRole("button", { name: "Analytics" })).not.toBeInTheDocument();
+    expect(sidebarMenu.queryByRole("button", { name: "Info" })).not.toBeInTheDocument();
+    expect(sidebarMenu.getByRole("button", { name: "Speech provider" })).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    expect(sidebarMenu.getByRole("button", { name: "Transcription mode" })).toBeInTheDocument();
+    expect(sidebarMenu.getByRole("button", { name: "Microphone" })).toBeInTheDocument();
+  });
+
+  it("returns to the previous top-level section from settings mode", async () => {
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+        <TabsContent value="settings">Settings content</TabsContent>
+        <TabsContent value="analytics">Analytics content</TabsContent>
+      </AppLayout>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Analytics" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(screen.getByText("Analytics content")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Analytics" })).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+  });
+
+  it("keeps icon collapse behavior available in settings mode", async () => {
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+        <TabsContent value="settings">Settings content</TabsContent>
+      </AppLayout>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByTestId("app-sidebar-dock-toggle"));
+
+    expect(screen.getByTestId("app-sidebar")).toHaveAttribute(
+      "data-state",
+      "collapsed",
+    );
+    expect(
+      within(screen.getByTestId("app-sidebar-primary")).getByRole("button", {
+        name: "Speech provider",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the sidebar pinned on the left with an icon collapse model", () => {

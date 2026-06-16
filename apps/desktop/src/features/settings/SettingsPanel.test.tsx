@@ -128,6 +128,7 @@ describe("SettingsPanel provider setup", () => {
       command: "Ctrl+Shift+Alt",
     });
     providerApi.getSystemSettings.mockResolvedValue({
+      dictationMode: "auto",
       launchOnStartup: true,
       showSkippedTranscripts: false,
     });
@@ -186,6 +187,7 @@ describe("SettingsPanel provider setup", () => {
     });
     expect(screen.getByRole("heading", { name: "Azure OpenAI" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Speech provider" })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Settings" }).closest('[data-slot="card"]'),
     ).toBeNull();
@@ -194,7 +196,15 @@ describe("SettingsPanel provider setup", () => {
         '[data-slot="card"]',
       ),
     ).toBeNull();
-    expect(screen.getByText("Speech provider").closest('[data-slot="card"]')).not.toBeNull();
+    expect(
+      screen
+        .getByRole("heading", { name: "Speech provider" })
+        .closest('[data-slot="card"]'),
+    ).not.toBeNull();
+    expect(screen.queryByText("Transcription mode")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Choose the input device Vaak uses for dictation."),
+    ).not.toBeInTheDocument();
 
     expect(screen.getByTestId("settings-screen-shell")).toHaveClass(
       "mx-auto",
@@ -227,10 +237,12 @@ describe("SettingsPanel provider setup", () => {
     );
   });
 
-  it("shows microphone and shortcut settings as separate cards after provider setup", async () => {
-    renderApp(<SettingsPanel />);
+  it("renders only microphone settings when selected", async () => {
+    renderApp(<SettingsPanel activeSection="microphone" />);
 
-    expect(await screen.findByText("Speech provider")).toBeInTheDocument();
+    expect((await screen.findAllByText("Microphone")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Speech provider")).not.toBeInTheDocument();
+    expect(screen.queryByText("Transcription mode")).not.toBeInTheDocument();
 
     const microphoneCard = screen
       .getByText("Choose the input device Vaak uses for dictation.")
@@ -268,18 +280,33 @@ describe("SettingsPanel provider setup", () => {
       screen.getByRole("option", { name: "Conference microphone" }),
     ).toBeInTheDocument();
 
-    const shortcutCard = screen
-      .getByText("Change the hold-to-talk shortcut used by the voice capsule.")
-      .closest('[data-slot="card"]') as HTMLElement | null;
-    expect(shortcutCard).not.toBeNull();
-    expect(within(shortcutCard!).getByText("Keyboard shortcut")).toBeInTheDocument();
-    expect(within(shortcutCard!).getByText("Ctrl")).toBeInTheDocument();
-    expect(within(shortcutCard!).getByText("Win")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Change the hold-to-talk shortcut used by the voice capsule."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders only transcription mode controls when selected", async () => {
+    renderApp(<SettingsPanel activeSection="transcription-mode" />);
+
+    const behaviorCard = (
+      await screen.findByText("Transcription mode")
+    ).closest('[data-slot="card"]') as HTMLElement | null;
+    expect(behaviorCard).not.toBeNull();
+    expect(
+      within(behaviorCard!).getByText(
+        "Choose whether Vaak prioritizes speed or final transcript quality.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(behaviorCard!).getByText("Speed vs accuracy")).toBeInTheDocument();
+    expect(screen.queryByText("Speech provider")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Choose the input device Vaak uses for dictation."),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps optional telemetry controls inside the system setting card", async () => {
     const user = userEvent.setup();
-    renderApp(<SettingsPanel />);
+    renderApp(<SettingsPanel activeSection="system" />);
 
     const systemCard = (await screen.findByText("System setting")).closest(
       '[data-slot="card"]',
@@ -327,7 +354,7 @@ describe("SettingsPanel provider setup", () => {
 
   it("lets users control whether Vaak starts on startup", async () => {
     const user = userEvent.setup();
-    renderApp(<SettingsPanel />);
+    renderApp(<SettingsPanel activeSection="system" />);
 
     const systemCard = (await screen.findByText("System setting")).closest(
       '[data-slot="card"]',
@@ -347,6 +374,7 @@ describe("SettingsPanel provider setup", () => {
     expect(toggle).not.toBeChecked();
     await waitFor(() => {
       expect(providerApi.saveSystemSettings).toHaveBeenCalledWith({
+        dictationMode: "auto",
         launchOnStartup: false,
         showSkippedTranscripts: false,
       });
@@ -366,7 +394,7 @@ describe("SettingsPanel provider setup", () => {
       message: "could not update startup preference",
     });
     const user = userEvent.setup();
-    renderApp(<SettingsPanel />);
+    renderApp(<SettingsPanel activeSection="system" />);
 
     const systemCard = (await screen.findByText("System setting")).closest(
       '[data-slot="card"]',
@@ -399,7 +427,7 @@ describe("SettingsPanel provider setup", () => {
 
   it("keeps skipped transcript rows hidden by default with an application setting", async () => {
     const user = userEvent.setup();
-    renderApp(<SettingsPanel />);
+    renderApp(<SettingsPanel activeSection="system" />);
 
     const systemCard = (await screen.findByText("System setting")).closest(
       '[data-slot="card"]',
@@ -417,6 +445,7 @@ describe("SettingsPanel provider setup", () => {
     expect(toggle).toBeChecked();
     await waitFor(() => {
       expect(providerApi.saveSystemSettings).toHaveBeenCalledWith({
+        dictationMode: "auto",
         launchOnStartup: true,
         showSkippedTranscripts: true,
       });
@@ -430,9 +459,59 @@ describe("SettingsPanel provider setup", () => {
     );
   });
 
+  it("saves transcription mode as a global system setting", async () => {
+    const user = userEvent.setup();
+    renderApp(<SettingsPanel activeSection="transcription-mode" />);
+
+    const behaviorCard = (
+      await screen.findByText("Transcription mode")
+    ).closest('[data-slot="card"]') as HTMLElement | null;
+    expect(behaviorCard).not.toBeNull();
+    expect(
+      within(behaviorCard!).getByText(
+        "Choose whether Vaak prioritizes speed or final transcript quality.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(behaviorCard!).getByText("Speed vs accuracy")).toBeInTheDocument();
+    expect(
+      within(behaviorCard!).getByRole("radio", {
+        name: "Fast transcription",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(behaviorCard!).getByRole("radio", {
+        name: "Accurate transcription",
+      }),
+    ).toBeInTheDocument();
+    expect(within(behaviorCard!).queryByText("Auto")).not.toBeInTheDocument();
+    expect(within(behaviorCard!).queryByText("Streaming")).not.toBeInTheDocument();
+    expect(within(behaviorCard!).queryByText("Standard")).not.toBeInTheDocument();
+
+    await user.click(
+      within(behaviorCard!).getByRole("radio", {
+        name: "Accurate transcription",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(providerApi.saveSystemSettings).toHaveBeenCalledWith({
+        dictationMode: "standard",
+        launchOnStartup: true,
+        showSkippedTranscripts: false,
+      });
+    });
+    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
+      "setting_changed",
+      {
+        setting_id: "dictation_mode",
+        value: "standard",
+      },
+    );
+  });
+
   it("saves a changed dictation shortcut from Settings", async () => {
     const user = userEvent.setup();
-    renderApp(<SettingsPanel />);
+    renderApp(<SettingsPanel activeSection="keyboard-shortcut" />);
 
     const shortcutCard = (await screen.findByText("Keyboard shortcut")).closest(
       '[data-slot="card"]',
@@ -457,7 +536,7 @@ describe("SettingsPanel provider setup", () => {
   it("provides voice capsule restart, reset, and disable controls", async () => {
     providerApi.isTauriRuntime.mockReturnValue(true);
     const user = userEvent.setup();
-    renderApp(<SettingsPanel />);
+    renderApp(<SettingsPanel activeSection="voice-capsule" />);
 
     const voiceCapsuleCard = (await screen.findByText("Voice capsule")).closest(
       '[data-slot="card"]',
@@ -650,7 +729,7 @@ describe("SettingsPanel provider setup", () => {
   it("keeps diagnostics local and opens the log folder for manual sharing", async () => {
     providerApi.isTauriRuntime.mockReturnValue(true);
     const user = userEvent.setup();
-    renderApp(<SettingsPanel />);
+    renderApp(<SettingsPanel activeSection="diagnostics" />);
 
     expect(
       await screen.findByText("Local logs are not sent automatically"),

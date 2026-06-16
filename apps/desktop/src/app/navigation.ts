@@ -6,8 +6,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { appEnvironment, type AppEnvironment } from "@/config/app-env";
-
 type AppSectionConfig = {
   value: "home" | "analytics" | "settings" | "info";
   label: string;
@@ -19,6 +17,11 @@ export const primarySections: readonly AppSectionConfig[] = [
     value: "home",
     label: "Voice",
     icon: AudioLinesIcon,
+  },
+  {
+    value: "analytics",
+    label: "Analytics",
+    icon: ChartNoAxesCombinedIcon,
   },
 ] as const;
 
@@ -35,21 +38,10 @@ export const utilitySections: readonly AppSectionConfig[] = [
   },
 ] as const;
 
-export function getAppSections(
-  environment: Pick<AppEnvironment, "appEnv"> = appEnvironment,
-): readonly AppSectionConfig[] {
-  const developerSections: readonly AppSectionConfig[] =
-    environment.appEnv === "development"
-      ? [
-          {
-            value: "analytics",
-            label: "Analytics",
-            icon: ChartNoAxesCombinedIcon,
-          },
-        ]
-      : [];
+export function getAppSections(environment?: unknown): readonly AppSectionConfig[] {
+  void environment;
 
-  return [...primarySections, ...developerSections, ...utilitySections];
+  return [...primarySections, ...utilitySections];
 }
 
 export const appSections = getAppSections();

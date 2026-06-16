@@ -216,7 +216,7 @@ describe("SpeechProviderSettings", () => {
       expect(modelCombobox).toHaveTextContent("GPT-4o Transcribe");
     });
     expect(
-      screen.getByText("Providers, microphone, hotkey, and app preferences."),
+      screen.getByText("Choose the transcription provider Vaak uses for dictation."),
     ).toBeInTheDocument();
 
     await selectComboboxOption(
@@ -283,7 +283,9 @@ describe("SpeechProviderSettings", () => {
     });
     providerApi.getProviderConfig.mockImplementation((providerId: string) => {
       if (providerId === "assemblyai") {
-        return Promise.resolve({ model: "universal-2" });
+        return Promise.resolve({
+          model: "universal-2",
+        });
       }
 
       return Promise.resolve(null);
@@ -314,7 +316,9 @@ describe("SpeechProviderSettings", () => {
       expect(providerApi.saveSpeechProviderSetup).toHaveBeenCalledWith({
         providerId: "assemblyai",
         apiKey: "aa-test",
-        config: { model: "universal-3-pro" },
+        config: {
+          model: "universal-3-pro",
+        },
         activate: true,
       });
       expect(verifyOnboardingProvider).toHaveBeenCalledWith("assemblyai");

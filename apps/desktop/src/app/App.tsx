@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 
 import { PermissionCallout } from "@/components/app";
-import { appEnvironment } from "@/config/app-env";
 import { TabsContent } from "@/components/ui/tabs";
 import { AppLayout } from "./AppLayout";
 import { AppProviders } from "./AppProviders";
@@ -16,7 +15,6 @@ import "../styles/globals.css";
 
 function App() {
   const tauriAvailable = isTauriRuntime();
-  const showDeveloperAnalytics = appEnvironment.appEnv === "development";
 
   return (
     <div
@@ -48,11 +46,9 @@ function App() {
                 <SettingsPanel />
               </TabsContent>
 
-              {showDeveloperAnalytics ? (
-                <TabsContent value="analytics" className="flex flex-col gap-4">
-                  <AnalyticsPanel />
-                </TabsContent>
-              ) : null}
+              <TabsContent value="analytics" className="flex flex-col gap-4">
+                <AnalyticsPanel />
+              </TabsContent>
 
               <TabsContent value="info" className="flex flex-col gap-4">
                 <InfoPanel />

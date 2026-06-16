@@ -12,9 +12,15 @@ import {
   getSystemSettings,
   isTauriRuntime,
   saveSystemSettings,
+  type DictationMode,
 } from "@/lib/tauri";
 
+const DEFAULT_DICTATION_MODE: DictationMode = "auto";
+
 export function SystemSettingsCard() {
+  const [dictationMode, setDictationMode] = useState<DictationMode>(
+    DEFAULT_DICTATION_MODE,
+  );
   const [launchOnStartup, setLaunchOnStartup] = useState(true);
   const [showSkippedTranscripts, setShowSkippedTranscripts] = useState(false);
   const [analyticsEnabled, setAnalyticsEnabled] = useState(() =>
@@ -35,6 +41,7 @@ export function SystemSettingsCard() {
     getSystemSettings()
       .then((settings) => {
         if (!cancelled) {
+          setDictationMode(settings.dictationMode);
           setLaunchOnStartup(settings.launchOnStartup);
           setShowSkippedTranscripts(settings.showSkippedTranscripts);
           setError(null);
@@ -59,9 +66,11 @@ export function SystemSettingsCard() {
 
     try {
       const savedSettings = await saveSystemSettings({
+        dictationMode,
         launchOnStartup: nextValue,
         showSkippedTranscripts,
       });
+      setDictationMode(savedSettings.dictationMode);
       setLaunchOnStartup(savedSettings.launchOnStartup);
       setShowSkippedTranscripts(savedSettings.showSkippedTranscripts);
       analytics.capture("setting_changed", {
@@ -89,9 +98,11 @@ export function SystemSettingsCard() {
 
     try {
       const savedSettings = await saveSystemSettings({
+        dictationMode,
         launchOnStartup,
         showSkippedTranscripts: nextValue,
       });
+      setDictationMode(savedSettings.dictationMode);
       setLaunchOnStartup(savedSettings.launchOnStartup);
       setShowSkippedTranscripts(savedSettings.showSkippedTranscripts);
       analytics.capture("setting_changed", {

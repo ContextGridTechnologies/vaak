@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/app";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
 import {
@@ -718,26 +718,25 @@ export function SpeechProviderSettings({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-            Settings
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Providers, microphone, hotkey, and app preferences.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-          <StatusBadge
-            tone={providerStatusTone(selectedStatus)}
-            className="normal-case tracking-normal"
-          >
-            {providerStatusLabel(selectedStatus)}
-          </StatusBadge>
-        </div>
-      </div>
-
       <Card size="sm" className="rounded-lg shadow-none">
+        <CardHeader className="gap-3 sm:grid-cols-[1fr_auto]">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-base font-semibold leading-snug text-foreground">
+              Speech provider
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Choose the transcription provider Vaak uses for dictation.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <StatusBadge
+              tone={providerStatusTone(selectedStatus)}
+              className="normal-case tracking-normal"
+            >
+              {providerStatusLabel(selectedStatus)}
+            </StatusBadge>
+          </div>
+        </CardHeader>
         <CardContent className="flex flex-col gap-2.5">
           {providerSetup}
         </CardContent>

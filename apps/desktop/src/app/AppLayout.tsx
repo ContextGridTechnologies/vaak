@@ -7,6 +7,7 @@ import {
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarGroup,
   SidebarGroupContent,
@@ -29,6 +30,12 @@ import {
 } from "@/lib/tauri";
 import appIconUrl from "../../src-tauri/icons/32x32.png?url";
 import { appSections, type AppSection } from "./navigation";
+import {
+  defaultSettingsSection,
+  settingsSections,
+  type SettingsSectionId,
+} from "@/features/settings/settingsNavigation";
+import { SettingsNavigationProvider } from "@/features/settings/SettingsNavigationContext";
 
 type AppLayoutProps = {
   notice?: ReactNode;
@@ -43,6 +50,10 @@ const DEFAULT_APP_SHELL_PREFERENCES: AppShellPreferences = {
 
 export function AppLayout({ notice, children }: AppLayoutProps) {
   const [activeSection, setActiveSection] = useState<AppSection>("home");
+  const [settingsActiveSection, setSettingsActiveSection] =
+    useState<SettingsSectionId>(defaultSettingsSection);
+  const [previousSectionBeforeSettings, setPreviousSectionBeforeSettings] =
+    useState<AppSection>("home");
   const [compactViewport, setCompactViewport] = useState(() =>
     isCompactViewport(),
   );
@@ -129,10 +140,35 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
     );
   }, [appShellPreferences, compactViewport]);
 
+  const settingsMode = activeSection === "settings";
+  const displayedSidebarSections = settingsMode ? settingsSections : appSections;
+
+  const activateAppSection = useCallback((section: AppSection) => {
+    if (section === "settings") {
+      setPreviousSectionBeforeSettings((currentPreviousSection) =>
+        activeSection === "settings" ? currentPreviousSection : activeSection,
+      );
+      setSettingsActiveSection(defaultSettingsSection);
+    }
+    setActiveSection(section);
+  }, [activeSection]);
+
+  const handleTabsValueChange = useCallback((value: string) => {
+    activateAppSection(value as AppSection);
+  }, [activateAppSection]);
+
+  const leaveSettings = useCallback(() => {
+    setActiveSection(
+      previousSectionBeforeSettings === "settings"
+        ? "home"
+        : previousSectionBeforeSettings,
+    );
+  }, [previousSectionBeforeSettings]);
+
   return (
     <Tabs
       value={activeSection}
-      onValueChange={(value) => setActiveSection(value as AppSection)}
+      onValueChange={handleTabsValueChange}
       className="h-full min-h-full"
     >
       <SidebarProvider
@@ -169,10 +205,15 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
           <SidebarContent>
             <SidebarGroup className="px-2 py-1" data-testid="app-sidebar-primary">
               <SidebarGroupContent>
-                <SidebarMenu aria-label="Primary navigation" className="gap-1">
-                  {appSections.map((section) => {
+                <SidebarMenu
+                  aria-label={settingsMode ? "Settings navigation" : "Primary navigation"}
+                  className="gap-1"
+                >
+                  {displayedSidebarSections.map((section) => {
                     const Icon = section.icon;
-                    const isActive = activeSection === section.value;
+                    const isActive = settingsMode
+                      ? settingsActiveSection === section.value
+                      : activeSection === section.value;
 
                     return (
                       <SidebarMenuItem key={section.value}>
@@ -188,7 +229,14 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
                           tooltip={section.label}
                           aria-label={section.label}
                           className="h-8 rounded-md px-2.5 text-sm font-medium text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[active=true]:bg-background data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-xs"
-                          onClick={() => setActiveSection(section.value)}
+                          onClick={() => {
+                            if (settingsMode) {
+                              setSettingsActiveSection(section.value as SettingsSectionId);
+                              return;
+                            }
+
+                            activateAppSection(section.value as AppSection);
+                          }}
                         >
                           <span
                             aria-hidden="true"
@@ -196,7 +244,11 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
                           >
                             <Icon
                               data-icon="inline-start"
-                              data-testid={`app-sidebar-nav-icon-${section.value}`}
+                              data-testid={
+                                settingsMode
+                                  ? `app-sidebar-settings-icon-${section.value}`
+                                  : `app-sidebar-nav-icon-${section.value}`
+                              }
                             />
                           </span>
                           <span>{section.label}</span>
@@ -208,6 +260,29 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>
+          {settingsMode ? (
+            <SidebarFooter className="mt-auto px-2 py-3">
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    type="button"
+                    tooltip="Back"
+                    aria-label="Back"
+                    className="h-8 rounded-md px-2.5 text-sm font-medium text-sidebar-foreground/78 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+                    onClick={leaveSettings}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/62 group-data-[state=collapsed]/sidebar-wrapper:size-4"
+                    >
+                      <ChevronLeftIcon data-icon="inline-start" />
+                    </span>
+                    <span>Back</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarFooter>
+          ) : null}
           <SidebarDockToggle />
         </Sidebar>
         <SidebarInset className="min-w-0 overflow-hidden bg-transparent">
@@ -223,7 +298,12 @@ export function AppLayout({ notice, children }: AppLayoutProps) {
                 {notice}
               </div>
             ) : null}
-            {children}
+            <SettingsNavigationProvider
+              activeSection={settingsActiveSection}
+              setActiveSection={setSettingsActiveSection}
+            >
+              {children}
+            </SettingsNavigationProvider>
           </ScrollArea>
         </SidebarInset>
       </SidebarProvider>
