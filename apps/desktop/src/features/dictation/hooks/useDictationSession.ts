@@ -161,6 +161,8 @@ export function useDictationSession({
   const streamingPendingPcmRef = useRef<Uint8Array>(new Uint8Array(0));
   const streamingFinalTurnsRef = useRef<Map<number, string>>(new Map());
   const streamingProviderRef = useRef<StreamingProviderId | null>(null);
+  const selectedSpeechProviderRef = useRef<SpeechProviderId | null>(null);
+  const dictationModeRef = useRef<DictationMode>(DEFAULT_DICTATION_MODE);
 
   const appendStreamingEvents = useCallback((events?: ProviderTimelineEvent[]) => {
     if (!events || events.length === 0) {
@@ -259,8 +261,8 @@ export function useDictationSession({
   const handlePcm16Chunk = useCallback(
     (chunk: Uint8Array) => {
       const provider = streamingProviderForSettings(
-        selectedSpeechProvider,
-        dictationMode,
+        selectedSpeechProviderRef.current,
+        dictationModeRef.current,
         processingEnabled,
       );
       if (!provider || streamingFailedRef.current) {
@@ -327,8 +329,8 @@ export function useDictationSession({
     const provider =
       streamingProviderRef.current ??
       streamingProviderForSettings(
-        selectedSpeechProvider,
-        dictationMode,
+        selectedSpeechProviderRef.current,
+        dictationModeRef.current,
         processingEnabled,
       );
     if (!provider) {
@@ -342,7 +344,7 @@ export function useDictationSession({
     } catch (err) {
       setStreamingError(normalizeError(err));
     }
-  }, [dictationMode, flushStreamingAudio, processingEnabled, selectedSpeechProvider]);
+  }, [flushStreamingAudio, processingEnabled]);
 
   const {
     status,
@@ -555,21 +557,26 @@ export function useDictationSession({
     const loadSelectedProvider = async () => {
       try {
         const provider = await getSelectedSpeechProvider();
+        selectedSpeechProviderRef.current = provider;
         if (!disposed) {
           setSelectedSpeechProvider(provider);
         }
 
         try {
           const systemSettings = await getSystemSettings();
+          dictationModeRef.current = systemSettings.dictationMode;
           if (!disposed) {
             setDictationMode(systemSettings.dictationMode);
           }
         } catch {
+          dictationModeRef.current = DEFAULT_DICTATION_MODE;
           if (!disposed) {
             setDictationMode(DEFAULT_DICTATION_MODE);
           }
         }
       } catch {
+        selectedSpeechProviderRef.current = null;
+        dictationModeRef.current = DEFAULT_DICTATION_MODE;
         if (!disposed) {
           setSelectedSpeechProvider(null);
           setDictationMode(DEFAULT_DICTATION_MODE);
@@ -581,6 +588,7 @@ export function useDictationSession({
     void listenToTauriEvent<SpeechProviderId>(
       SPEECH_PROVIDER_CHANGED_EVENT,
       (event) => {
+        selectedSpeechProviderRef.current = event.payload;
         setSelectedSpeechProvider(event.payload);
       },
     ).then((detach) => {
@@ -593,6 +601,7 @@ export function useDictationSession({
     void listenToTauriEvent<Awaited<ReturnType<typeof getSystemSettings>>>(
       SYSTEM_SETTINGS_CHANGED_EVENT,
       (event) => {
+        dictationModeRef.current = event.payload.dictationMode;
         setDictationMode(event.payload.dictationMode);
       },
     ).then((detach) => {

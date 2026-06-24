@@ -31,6 +31,9 @@ describe("AnalyticsPanel", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     resetAnalyticsSnapshotCacheForTests();
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-06-12T12:00:00.000Z").getTime(),
+    );
     isTauriRuntime.mockReturnValue(true);
     getDiagnosticsLocations.mockResolvedValue({
       appDataDir: "C:\\Users\\nikhi\\AppData\\Roaming\\Vaak",
