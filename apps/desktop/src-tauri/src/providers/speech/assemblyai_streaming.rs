@@ -6,6 +6,7 @@ use serde_json::json;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::handshake::client::Request;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
@@ -24,6 +25,35 @@ const AUDIO_CHANNEL_CAPACITY: usize = 64;
 const EVENT_CHANNEL_CAPACITY: usize = 64;
 const PROVIDER_ID: &str = "assemblyai";
 const PROVIDER_MODE: &str = "streaming";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AssemblyAiStreamingProfile {
+    pub(crate) provider_id: &'static str,
+    pub(crate) sample_rate_hz: u32,
+    pub(crate) channel_count: u8,
+    pub(crate) sample_format: &'static str,
+    pub(crate) frame_ms: u32,
+    pub(crate) bytes_per_frame: usize,
+    pub(crate) transport_encoding: &'static str,
+    pub(crate) accuracy_mode: &'static str,
+    pub(crate) language_code: &'static str,
+}
+
+impl Default for AssemblyAiStreamingProfile {
+    fn default() -> Self {
+        Self {
+            provider_id: PROVIDER_ID,
+            sample_rate_hz: DEFAULT_SAMPLE_RATE_HZ,
+            channel_count: 1,
+            sample_format: "pcm_s16le",
+            frame_ms: DEFAULT_FRAME_MS,
+            bytes_per_frame: 1_600,
+            transport_encoding: "websocket_binary",
+            accuracy_mode: DEFAULT_STREAMING_MODE,
+            language_code: DEFAULT_STREAMING_LANGUAGE_CODE,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct AssemblyAiStreamingSession {
@@ -64,7 +94,7 @@ pub(crate) async fn start_managed_session(
     let config = AssemblyAiStreamingConfig::with_model(model)?;
     let model_id = config.speech_model.clone();
     let session = AssemblyAiStreamingSession::connect_with_config(api_key, config).await?;
-    let snapshot = AssemblyAiStreamingSnapshot::new("pending".to_string());
+    let snapshot = AssemblyAiStreamingSnapshot::new("pending".to_string(), model_id.clone());
     let started_events = snapshot.provider_events.clone();
     let (handle, mut events_rx) = session.into_handle_and_events(snapshot.session_id.clone());
     state.try_start(handle)?;
@@ -184,6 +214,7 @@ impl AssemblyAiStreamingSession {
         let writer_state = Arc::clone(&state);
         let reader_state = Arc::clone(&state);
 
+        let reader_config = config.clone();
         tokio::spawn(async move {
             while let Some(message) = audio_rx.recv().await {
                 match message {
@@ -218,7 +249,10 @@ impl AssemblyAiStreamingSession {
                 if let Ok(text) = message.to_text() {
                     match parse_streaming_event(text) {
                         Ok(event) => {
-                            let output = AssemblyAiStreamingOutput::from_event(event);
+                            let output = AssemblyAiStreamingOutput::from_event_with_config(
+                                event,
+                                &reader_config,
+                            );
                             let should_stop =
                                 matches!(output, AssemblyAiStreamingOutput::Terminated { .. });
                             if events_tx.send(output).await.is_err() {
@@ -250,20 +284,44 @@ impl AssemblyAiStreamingSession {
         })
     }
 
-    pub(crate) fn send_pcm16(&mut self, bytes: &[u8]) {
-        for frame in self.chunker.push(bytes) {
-            if self
-                .audio_tx
-                .try_send(StreamingClientMessage::Audio(frame))
-                .is_err()
-            {
-                self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+    pub(crate) fn send_pcm16(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<StreamingAudioWrite, ProviderError> {
+        let frames = self.chunker.push(bytes);
+        let frame_count = frames.len();
+        let bytes_sent = frames.iter().map(Vec::len).sum::<usize>();
+        for frame in frames {
+            if let Err(error) = self.audio_tx.try_send(StreamingClientMessage::Audio(frame)) {
+                if matches!(error, TrySendError::Full(_)) {
+                    self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+                    return Err(ProviderFailure::Request(
+                        "AssemblyAI streaming audio channel is full".to_string(),
+                    )
+                    .into());
+                }
+                return Err(ProviderFailure::Request(
+                    "AssemblyAI streaming audio channel is closed".to_string(),
+                )
+                .into());
             }
         }
+        Ok(StreamingAudioWrite {
+            bytes_sent,
+            frame_count,
+            dropped_frames: self.dropped_frame_count(),
+        })
     }
 
-    pub(crate) fn request_stop(&self) {
+    pub(crate) fn request_stop(&mut self) {
         if self.state.request_stop() {
+            if let Some(frame) = self.chunker.flush_padded_frame() {
+                if let Err(error) = self.audio_tx.try_send(StreamingClientMessage::Audio(frame)) {
+                    if matches!(error, TrySendError::Full(_)) {
+                        self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
             let _ = self.audio_tx.try_send(StreamingClientMessage::Terminate);
         }
     }
@@ -335,7 +393,7 @@ impl ManagedAssemblyAiStreamingState {
         self.active
             .lock()
             .ok()
-            .and_then(|active| active.as_ref().map(StreamingSessionHandle::request_stop))
+            .and_then(|mut active| active.as_mut().map(StreamingSessionHandle::request_stop))
             .unwrap_or(false)
     }
 
@@ -365,6 +423,17 @@ impl StreamingSessionHandle {
         }
     }
 
+    #[cfg(test)]
+    fn test_with_sender(session_id: &str, audio_tx: mpsc::Sender<StreamingClientMessage>) -> Self {
+        Self {
+            session_id: session_id.to_string(),
+            audio_tx: Some(audio_tx),
+            chunker: Pcm16FrameChunker::default_assemblyai().expect("test frame config"),
+            stop_state: Arc::new(StreamingSessionState::default()),
+            dropped_frames: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
     fn send_pcm16(&mut self, bytes: &[u8]) -> Result<StreamingAudioWrite, ProviderError> {
         let frames = self.chunker.push(bytes);
         let frame_count = frames.len();
@@ -377,11 +446,18 @@ impl StreamingSessionHandle {
             });
         };
         for frame in frames {
-            if audio_tx
-                .try_send(StreamingClientMessage::Audio(frame))
-                .is_err()
-            {
-                self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+            if let Err(error) = audio_tx.try_send(StreamingClientMessage::Audio(frame)) {
+                if matches!(error, TrySendError::Full(_)) {
+                    self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+                    return Err(ProviderFailure::Request(
+                        "AssemblyAI streaming audio channel is full".to_string(),
+                    )
+                    .into());
+                }
+                return Err(ProviderFailure::Request(
+                    "AssemblyAI streaming audio channel is closed".to_string(),
+                )
+                .into());
             }
         }
         Ok(StreamingAudioWrite {
@@ -391,11 +467,18 @@ impl StreamingSessionHandle {
         })
     }
 
-    fn request_stop(&self) -> bool {
+    fn request_stop(&mut self) -> bool {
         if !self.stop_state.request_stop() {
             return false;
         }
         if let Some(audio_tx) = &self.audio_tx {
+            if let Some(frame) = self.chunker.flush_padded_frame() {
+                if let Err(error) = audio_tx.try_send(StreamingClientMessage::Audio(frame)) {
+                    if matches!(error, TrySendError::Full(_)) {
+                        self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
             let _ = audio_tx.try_send(StreamingClientMessage::Terminate);
         }
         true
@@ -422,6 +505,7 @@ pub(crate) struct StreamingAudioWrite {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AssemblyAiStreamingSnapshot {
     pub(crate) session_id: String,
+    pub(crate) model_id: String,
     pub(crate) final_text: Option<String>,
     pub(crate) partial_count: u64,
     pub(crate) bytes_sent: i64,
@@ -431,9 +515,10 @@ pub(crate) struct AssemblyAiStreamingSnapshot {
 }
 
 impl AssemblyAiStreamingSnapshot {
-    pub(crate) fn new(session_id: String) -> Self {
+    pub(crate) fn new(session_id: String, model_id: String) -> Self {
         let mut snapshot = Self {
             session_id,
+            model_id,
             final_text: None,
             partial_count: 0,
             bytes_sent: 0,
@@ -462,8 +547,15 @@ impl AssemblyAiStreamingSnapshot {
 
     pub(crate) fn record_output(&mut self, output: &AssemblyAiStreamingOutput) {
         match output {
-            AssemblyAiStreamingOutput::Began { session_id, .. } => {
+            AssemblyAiStreamingOutput::Began {
+                session_id,
+                applied_model,
+                ..
+            } => {
                 self.session_id = session_id.clone();
+                if let Some(applied_model) = applied_model {
+                    self.model_id = applied_model.clone();
+                }
                 self.provider_events.push(self.event(
                     "stream_session_began",
                     "begin",
@@ -533,7 +625,7 @@ impl AssemblyAiStreamingSnapshot {
         ProviderTimelineEvent {
             event_type: event_type.to_string(),
             provider_id: PROVIDER_ID.to_string(),
-            model_id: Some(DEFAULT_STREAMING_MODEL.to_string()),
+            model_id: Some(self.model_id.clone()),
             provider_mode: PROVIDER_MODE.to_string(),
             session_id: Some(self.session_id.clone()),
             stage: Some(stage.to_string()),
@@ -579,6 +671,8 @@ pub(crate) enum AssemblyAiStreamingOutput {
     Began {
         session_id: String,
         expires_at: i64,
+        applied_model: Option<String>,
+        applied_mode: Option<String>,
     },
     Partial {
         turn_order: u32,
@@ -600,11 +694,53 @@ pub(crate) enum AssemblyAiStreamingOutput {
 
 impl AssemblyAiStreamingOutput {
     fn from_event(event: AssemblyAiStreamingEvent) -> Self {
+        Self::from_event_with_config(event, &AssemblyAiStreamingConfig::default())
+    }
+
+    fn from_event_with_config(
+        event: AssemblyAiStreamingEvent,
+        config: &AssemblyAiStreamingConfig,
+    ) -> Self {
         match event {
-            AssemblyAiStreamingEvent::Begin { id, expires_at } => Self::Began {
-                session_id: id,
+            AssemblyAiStreamingEvent::Begin {
+                id,
                 expires_at,
-            },
+                configuration,
+            } => {
+                if let Some(applied_model) = configuration
+                    .as_ref()
+                    .and_then(|value| value.model.as_deref())
+                {
+                    if applied_model != config.speech_model {
+                        return Self::Error {
+                            message: format!(
+                                "AssemblyAI streaming applied model {applied_model} instead of requested {}",
+                                config.speech_model
+                            ),
+                        };
+                    }
+                }
+                if let Some(applied_mode) = configuration
+                    .as_ref()
+                    .and_then(|value| value.mode.as_deref())
+                {
+                    if applied_mode != config.mode {
+                        return Self::Error {
+                            message: format!(
+                                "AssemblyAI streaming applied mode {applied_mode} instead of requested {}",
+                                config.mode
+                            ),
+                        };
+                    }
+                }
+
+                Self::Began {
+                    session_id: id,
+                    expires_at,
+                    applied_model: configuration.as_ref().and_then(|value| value.model.clone()),
+                    applied_mode: configuration.and_then(|value| value.mode),
+                }
+            }
             AssemblyAiStreamingEvent::Turn {
                 turn_order,
                 end_of_turn,
@@ -756,6 +892,24 @@ impl Pcm16FrameChunker {
     pub(crate) fn pending_len(&self) -> usize {
         self.pending.len()
     }
+
+    pub(crate) fn flush_padded_frame(&mut self) -> Option<Vec<u8>> {
+        if self.pending.is_empty() {
+            return None;
+        }
+
+        let mut frame = Vec::with_capacity(self.frame_bytes);
+        frame.extend_from_slice(&self.pending);
+        frame.resize(self.frame_bytes, 0);
+        self.pending.clear();
+        Some(frame)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub(crate) struct AssemblyAiAppliedConfiguration {
+    pub(crate) model: Option<String>,
+    pub(crate) mode: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -764,6 +918,8 @@ pub(crate) enum AssemblyAiStreamingEvent {
     Begin {
         id: String,
         expires_at: i64,
+        #[serde(default)]
+        configuration: Option<AssemblyAiAppliedConfiguration>,
     },
     Turn {
         turn_order: u32,
@@ -813,6 +969,24 @@ impl AssemblyAiStreamingEvent {
                 session_duration_seconds,
                 ..
             } => session_duration_seconds.checked_mul(1_000),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn applied_model(&self) -> Option<&str> {
+        match self {
+            Self::Begin { configuration, .. } => configuration
+                .as_ref()
+                .and_then(|value| value.model.as_deref()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn applied_mode(&self) -> Option<&str> {
+        match self {
+            Self::Begin { configuration, .. } => configuration
+                .as_ref()
+                .and_then(|value| value.mode.as_deref()),
             _ => None,
         }
     }
@@ -871,6 +1045,32 @@ mod tests {
     }
 
     #[test]
+    fn assemblyai_streaming_profile_matches_provider_audio_requirements() {
+        let profile = AssemblyAiStreamingProfile::default();
+
+        assert_eq!(profile.provider_id, "assemblyai");
+        assert_eq!(profile.sample_rate_hz, 16_000);
+        assert_eq!(profile.channel_count, 1);
+        assert_eq!(profile.sample_format, "pcm_s16le");
+        assert_eq!(profile.frame_ms, 50);
+        assert_eq!(profile.bytes_per_frame, 1_600);
+        assert_eq!(profile.transport_encoding, "websocket_binary");
+        assert_eq!(profile.accuracy_mode, "max_accuracy");
+        assert_eq!(profile.language_code, "en");
+    }
+
+    #[test]
+    fn parses_begin_configuration_echo_from_provider() {
+        let event = parse_streaming_event(
+            r#"{"type":"Begin","id":"session-1","expires_at":1772570132,"configuration":{"model":"universal-3-5-pro","mode":"max_accuracy","api_version":"1.0.0"}}"#,
+        )
+        .expect("begin event");
+
+        assert_eq!(event.applied_model(), Some("universal-3-5-pro"));
+        assert_eq!(event.applied_mode(), Some("max_accuracy"));
+    }
+
+    #[test]
     fn pcm16_frame_chunker_emits_fifty_ms_frames_and_keeps_remainder() {
         let mut chunker = Pcm16FrameChunker::new(16_000, 50).expect("valid frame config");
         let audio = vec![7; 3_200 + 10];
@@ -880,6 +1080,20 @@ mod tests {
         assert_eq!(frames.len(), 2);
         assert!(frames.iter().all(|frame| frame.len() == 1_600));
         assert_eq!(chunker.pending_len(), 10);
+    }
+
+    #[test]
+    fn pcm16_frame_chunker_flushes_partial_trailing_audio_with_silence_padding() {
+        let mut chunker = Pcm16FrameChunker::new(16_000, 50).expect("valid frame config");
+        assert!(chunker.push(&[7; 10]).is_empty());
+
+        let frame = chunker.flush_padded_frame().expect("padded frame");
+
+        assert_eq!(frame.len(), 1_600);
+        assert_eq!(&frame[..10], &[7; 10]);
+        assert!(frame[10..].iter().all(|byte| *byte == 0));
+        assert_eq!(chunker.pending_len(), 0);
+        assert!(chunker.flush_padded_frame().is_none());
     }
 
     #[test]
@@ -959,6 +1173,105 @@ mod tests {
     }
 
     #[test]
+    fn treats_applied_model_mismatch_as_streaming_error() {
+        let event = parse_streaming_event(
+            r#"{"type":"Begin","id":"session-1","expires_at":1772570132,"configuration":{"model":"universal-streaming-english","mode":"max_accuracy","api_version":"1.0.0"}}"#,
+        )
+        .expect("begin event");
+
+        let output = AssemblyAiStreamingOutput::from_event_with_config(
+            event,
+            &AssemblyAiStreamingConfig::with_model(Some("u3-rt-pro".to_string())).expect("config"),
+        );
+
+        assert_eq!(
+            output,
+            AssemblyAiStreamingOutput::Error {
+                message: "AssemblyAI streaming applied model universal-streaming-english instead of requested u3-rt-pro".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn treats_applied_mode_mismatch_as_streaming_error() {
+        let event = parse_streaming_event(
+            r#"{"type":"Begin","id":"session-1","expires_at":1772570132,"configuration":{"model":"u3-rt-pro","mode":"balanced","api_version":"1.0.0"}}"#,
+        )
+        .expect("begin event");
+
+        let output = AssemblyAiStreamingOutput::from_event_with_config(
+            event,
+            &AssemblyAiStreamingConfig::with_model(Some("u3-rt-pro".to_string())).expect("config"),
+        );
+
+        assert_eq!(
+            output,
+            AssemblyAiStreamingOutput::Error {
+                message:
+                    "AssemblyAI streaming applied mode balanced instead of requested max_accuracy"
+                        .to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn streaming_snapshot_uses_requested_model_for_started_event() {
+        let snapshot = AssemblyAiStreamingSnapshot::new(
+            "session-1".to_string(),
+            "universal-3-5-pro".to_string(),
+        );
+
+        assert_eq!(
+            snapshot.provider_events[0].model_id.as_deref(),
+            Some("universal-3-5-pro"),
+        );
+    }
+
+    #[test]
+    fn streaming_handle_returns_error_instead_of_silently_dropping_full_channel_audio() {
+        let (audio_tx, mut audio_rx) = mpsc::channel(1);
+        audio_tx
+            .try_send(StreamingClientMessage::Audio(vec![1; 1_600]))
+            .expect("fill channel");
+        let mut handle = StreamingSessionHandle::test_with_sender("session-1", audio_tx);
+
+        let err = handle
+            .send_pcm16(&[2; 1_600])
+            .expect_err("full audio channel should fail");
+
+        assert!(err
+            .message
+            .contains("AssemblyAI streaming audio channel is full"));
+        assert_eq!(handle.dropped_frames(), 1);
+        assert!(matches!(
+            audio_rx.try_recv().expect("queued message"),
+            StreamingClientMessage::Audio(_),
+        ));
+    }
+
+    #[test]
+    fn streaming_handle_flushes_partial_frame_before_terminate() {
+        let (audio_tx, mut audio_rx) = mpsc::channel(4);
+        let mut handle = StreamingSessionHandle::test_with_sender("session-1", audio_tx);
+        handle.send_pcm16(&[3; 10]).expect("partial write");
+
+        assert!(handle.request_stop());
+
+        match audio_rx.try_recv().expect("padded audio frame") {
+            StreamingClientMessage::Audio(frame) => {
+                assert_eq!(frame.len(), 1_600);
+                assert_eq!(&frame[..10], &[3; 10]);
+                assert!(frame[10..].iter().all(|byte| *byte == 0));
+            }
+            StreamingClientMessage::Terminate => panic!("terminate arrived before audio flush"),
+        }
+        assert!(matches!(
+            audio_rx.try_recv().expect("terminate message"),
+            StreamingClientMessage::Terminate,
+        ));
+    }
+
+    #[test]
     fn converts_provider_error_events_to_streaming_errors() {
         let output = AssemblyAiStreamingOutput::from_event(
             parse_streaming_event(
@@ -978,7 +1291,8 @@ mod tests {
 
     #[test]
     fn streaming_snapshot_records_final_text_without_partial_text() {
-        let mut snapshot = AssemblyAiStreamingSnapshot::new("session-1".to_string());
+        let mut snapshot =
+            AssemblyAiStreamingSnapshot::new("session-1".to_string(), "u3-rt-pro".to_string());
 
         snapshot.record_output(&AssemblyAiStreamingOutput::Partial {
             turn_order: 1,
@@ -1016,7 +1330,8 @@ mod tests {
 
     #[test]
     fn streaming_snapshot_records_termination_billing_metrics() {
-        let mut snapshot = AssemblyAiStreamingSnapshot::new("session-1".to_string());
+        let mut snapshot =
+            AssemblyAiStreamingSnapshot::new("session-1".to_string(), "u3-rt-pro".to_string());
         snapshot.bytes_sent = 3_200;
         snapshot.frame_count = 2;
         snapshot.dropped_frames = 1;

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useMicrophoneSelection } from "@/hooks/useMicrophoneSelection";
@@ -29,6 +36,7 @@ type DictationTrigger = "hotkey" | "manual" | null;
 
 const HOTKEY_STOP_TAIL_MS = 250;
 const DEFAULT_DICTATION_MODE: DictationMode = "auto";
+const ASSEMBLYAI_STREAMING_FRAME_BYTES = 1_600;
 
 export function useDictationSession({
   enabled = true,
@@ -91,6 +99,7 @@ export function useDictationSession({
   const streamingStartPromiseRef = useRef<Promise<void> | null>(null);
   const streamingFailedRef = useRef(false);
   const streamingQueueRef = useRef<Uint8Array[]>([]);
+  const streamingPendingPcmRef = useRef<Uint8Array>(new Uint8Array(0));
   const streamingFinalTurnsRef = useRef<Map<number, string>>(new Map());
 
   const appendStreamingEvents = useCallback((events?: ProviderTimelineEvent[]) => {
@@ -105,6 +114,7 @@ export function useDictationSession({
     streamingStartPromiseRef.current = null;
     streamingFailedRef.current = false;
     streamingQueueRef.current = [];
+    streamingPendingPcmRef.current = new Uint8Array(0);
     streamingFinalTurnsRef.current = new Map();
     setStreamingError(null);
     setStreamingProviderEvents([]);
@@ -116,6 +126,7 @@ export function useDictationSession({
     streamingStartPromiseRef.current = null;
     streamingFailedRef.current = true;
     streamingQueueRef.current = [];
+    streamingPendingPcmRef.current = new Uint8Array(0);
     setStreamingError(normalizeError(err));
   }, []);
 
@@ -167,6 +178,15 @@ export function useDictationSession({
     await startPromise;
   }, [appendStreamingEvents, failStreaming]);
 
+  const sendAssemblyAiStreamingFrame = useCallback(async (chunk: Uint8Array) => {
+    const result = await sendAssemblyAiStreamingAudio(chunk);
+    if (result.droppedFrames > 0) {
+      throw new Error(
+        `AssemblyAI streaming dropped ${result.droppedFrames} audio frame(s).`,
+      );
+    }
+  }, []);
+
   const handlePcm16Chunk = useCallback(
     (chunk: Uint8Array) => {
       if (
@@ -179,7 +199,9 @@ export function useDictationSession({
         return;
       }
 
-      streamingQueueRef.current.push(chunk);
+      streamingQueueRef.current.push(
+        ...appendAssemblyAiStreamingFrames(chunk, streamingPendingPcmRef),
+      );
       void ensureAssemblyAiStreamingStarted()
         .then(async () => {
           if (!streamingStartedRef.current) {
@@ -187,7 +209,7 @@ export function useDictationSession({
           }
           const queued = streamingQueueRef.current.splice(0);
           for (const queuedChunk of queued) {
-            await sendAssemblyAiStreamingAudio(queuedChunk);
+            await sendAssemblyAiStreamingFrame(queuedChunk);
           }
         })
         .catch((err) => {
@@ -199,9 +221,56 @@ export function useDictationSession({
       failStreaming,
       dictationMode,
       processingEnabled,
+      sendAssemblyAiStreamingFrame,
       selectedSpeechProvider,
     ],
   );
+
+  const flushAssemblyAiStreamingAudio = useCallback(async () => {
+    if (
+      selectedSpeechProvider !== "assemblyai" ||
+      dictationMode === null ||
+      dictationMode === "standard" ||
+      !processingEnabled ||
+      streamingFailedRef.current
+    ) {
+      return;
+    }
+
+    const pending = streamingPendingPcmRef.current;
+    if (pending.length > 0) {
+      const padded = new Uint8Array(ASSEMBLYAI_STREAMING_FRAME_BYTES);
+      padded.set(pending);
+      streamingPendingPcmRef.current = new Uint8Array(0);
+      streamingQueueRef.current.push(padded);
+    }
+
+    await ensureAssemblyAiStreamingStarted();
+    if (!streamingStartedRef.current) {
+      return;
+    }
+
+    const queued = streamingQueueRef.current.splice(0);
+    for (const queuedChunk of queued) {
+      await sendAssemblyAiStreamingFrame(queuedChunk);
+    }
+  }, [
+    dictationMode,
+    ensureAssemblyAiStreamingStarted,
+    processingEnabled,
+    sendAssemblyAiStreamingFrame,
+    selectedSpeechProvider,
+  ]);
+
+  const stopAssemblyAiStreaming = useCallback(async () => {
+    try {
+      await flushAssemblyAiStreamingAudio();
+      await stopAssemblyAiStreamingSession();
+    } catch (err) {
+      setStreamingError(normalizeError(err));
+    }
+  }, [flushAssemblyAiStreamingAudio]);
+
   const {
     status,
     error,
@@ -340,14 +409,12 @@ export function useDictationSession({
       clearPendingHotkeyStop();
       hotkeyStopTimerRef.current = globalThis.setTimeout(() => {
         setRecordingEndedAt(new Date().toISOString());
-        void stopAssemblyAiStreamingSession().catch((err) => {
-          setStreamingError(normalizeError(err));
-        });
         stop();
+        void stopAssemblyAiStreaming();
         hotkeyStopTimerRef.current = null;
       }, HOTKEY_STOP_TAIL_MS);
     },
-    [clearPendingHotkeyStop, enabled, stop],
+    [clearPendingHotkeyStop, enabled, stop, stopAssemblyAiStreaming],
   );
 
   const startManualDictation = useCallback(async () => {
@@ -368,11 +435,9 @@ export function useDictationSession({
     setCompletedMode("dictation");
     setActiveMode("idle");
     setRecordingEndedAt(new Date().toISOString());
-    void stopAssemblyAiStreamingSession().catch((err) => {
-      setStreamingError(normalizeError(err));
-    });
     stop();
-  }, [clearPendingHotkeyStop, enabled, stop]);
+    void stopAssemblyAiStreaming();
+  }, [clearPendingHotkeyStop, enabled, stop, stopAssemblyAiStreaming]);
 
   const selectDevice = useCallback((value: string) => {
     if (value === "default" || value === "system") {
@@ -654,4 +719,31 @@ function getStatusLabel(status: "idle" | "recording" | "stopped" | "error") {
     default:
       return "Idle";
   }
+}
+
+function appendAssemblyAiStreamingFrames(
+  chunk: Uint8Array,
+  pendingRef: MutableRefObject<Uint8Array>,
+) {
+  if (chunk.length === 0) {
+    return [];
+  }
+
+  const combined = new Uint8Array(pendingRef.current.length + chunk.length);
+  combined.set(pendingRef.current);
+  combined.set(chunk, pendingRef.current.length);
+
+  const frameCount = Math.floor(
+    combined.length / ASSEMBLYAI_STREAMING_FRAME_BYTES,
+  );
+  const frames: Uint8Array[] = [];
+  for (let index = 0; index < frameCount; index += 1) {
+    const start = index * ASSEMBLYAI_STREAMING_FRAME_BYTES;
+    frames.push(combined.slice(start, start + ASSEMBLYAI_STREAMING_FRAME_BYTES));
+  }
+
+  pendingRef.current = combined.slice(
+    frameCount * ASSEMBLYAI_STREAMING_FRAME_BYTES,
+  );
+  return frames;
 }
