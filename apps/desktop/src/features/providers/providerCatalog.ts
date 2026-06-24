@@ -6,6 +6,7 @@ export type ProviderCatalogItem = {
   id:
     | "openai"
     | "azure-openai"
+    | "azure-ai-speech"
     | "assemblyai"
     | "deepgram"
     | "groq"
@@ -37,6 +38,15 @@ export const providerCatalog: ProviderCatalogItem[] = [
     credentialLabel: "Azure OpenAI API key",
     setupStatus: "not-configured",
     modelHint: "Azure OpenAI endpoint and transcription deployment",
+  },
+  {
+    id: "azure-ai-speech",
+    name: "Azure AI Speech",
+    description: "Use Azure AI Speech short-audio transcription with your own key.",
+    categories: ["speech-to-text"],
+    credentialLabel: "Azure AI Speech key",
+    setupStatus: "not-configured",
+    modelHint: "Azure Speech resource endpoint",
   },
   {
     id: "assemblyai",

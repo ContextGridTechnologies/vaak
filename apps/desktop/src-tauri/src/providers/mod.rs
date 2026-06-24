@@ -97,6 +97,8 @@ pub struct ProviderStatus {
 pub struct ProviderConfig {
     pub endpoint: Option<String>,
     pub deployment_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub streaming_deployment_id: Option<String>,
     pub api_version: Option<String>,
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -115,6 +117,7 @@ const MAX_AUDIO_MIME_TYPE_LEN: usize = 64;
 const PROVIDER_RESPONSE_LOG_LIMIT: usize = 240;
 const SAFE_PROVIDER_ERROR_FIELDS: &[&str] = &["code", "detail", "error", "message"];
 const AZURE_PROVIDER_ID: &str = "azure-openai";
+const AZURE_AI_SPEECH_PROVIDER_ID: &str = "azure-ai-speech";
 const ALLOWED_AUDIO_MIME_TYPES: &[&str] = &[
     "audio/aac",
     "audio/flac",
@@ -178,17 +181,39 @@ pub fn normalize_provider_config(
     let transcription_mode = normalize_transcription_mode(provider_id, config.transcription_mode)?;
     if provider_id == AZURE_PROVIDER_ID {
         return Ok(ProviderConfig {
-            endpoint: Some(normalize_azure_endpoint(config.endpoint)?),
+            endpoint: Some(normalize_bare_https_origin(
+                config.endpoint,
+                "Azure OpenAI endpoint",
+            )?),
             deployment_id: Some(normalize_deployment_id(config.deployment_id)?),
+            streaming_deployment_id: normalize_optional_deployment_id(
+                config.streaming_deployment_id,
+                "Azure OpenAI streaming deployment id",
+            )?,
             api_version: Some(normalize_api_version(config.api_version)?),
             model,
             transcription_mode,
         });
     }
 
+    if provider_id == AZURE_AI_SPEECH_PROVIDER_ID {
+        return Ok(ProviderConfig {
+            endpoint: Some(normalize_bare_https_origin(
+                config.endpoint,
+                "Azure AI Speech endpoint",
+            )?),
+            deployment_id: None,
+            streaming_deployment_id: None,
+            api_version: None,
+            model: None,
+            transcription_mode: None,
+        });
+    }
+
     Ok(ProviderConfig {
         endpoint: None,
         deployment_id: None,
+        streaming_deployment_id: None,
         api_version: None,
         model,
         transcription_mode,
@@ -450,19 +475,19 @@ fn truncate_for_provider_log(text: &str, limit: usize) -> String {
     }
 }
 
-fn normalize_azure_endpoint(endpoint: Option<String>) -> Result<String, ProviderError> {
-    let endpoint = normalize_required_provider_field(endpoint, "Azure OpenAI endpoint")?;
+fn normalize_bare_https_origin(
+    endpoint: Option<String>,
+    label: &str,
+) -> Result<String, ProviderError> {
+    let endpoint = normalize_required_provider_field(endpoint, label)?;
     let parsed = reqwest::Url::parse(&endpoint).map_err(|_| {
-        ProviderFailure::InvalidRequest("Azure OpenAI endpoint is invalid".to_string())
+        ProviderFailure::InvalidRequest(format!("{label} is invalid"))
     })?;
 
     let is_local_http = parsed.scheme() == "http"
         && matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "::1"));
     if parsed.scheme() != "https" && !is_local_http {
-        return Err(ProviderFailure::InvalidRequest(
-            "Azure OpenAI endpoint must use https".to_string(),
-        )
-        .into());
+        return Err(ProviderFailure::InvalidRequest(format!("{label} must use https")).into());
     }
 
     if parsed.host_str().is_none()
@@ -472,10 +497,9 @@ fn normalize_azure_endpoint(endpoint: Option<String>) -> Result<String, Provider
         || parsed.fragment().is_some()
         || parsed.path() != "/"
     {
-        return Err(ProviderFailure::InvalidRequest(
-            "Azure OpenAI endpoint must be a bare origin".to_string(),
-        )
-        .into());
+        return Err(
+            ProviderFailure::InvalidRequest(format!("{label} must be a bare origin")).into(),
+        );
     }
 
     Ok(endpoint.trim_end_matches('/').to_string())
@@ -483,17 +507,33 @@ fn normalize_azure_endpoint(endpoint: Option<String>) -> Result<String, Provider
 
 fn normalize_deployment_id(value: Option<String>) -> Result<String, ProviderError> {
     let deployment_id = normalize_required_provider_field(value, "Azure OpenAI deployment id")?;
+    validate_deployment_id(&deployment_id, "Azure OpenAI deployment id")?;
+    Ok(deployment_id)
+}
+
+fn normalize_optional_deployment_id(
+    value: Option<String>,
+    label: &str,
+) -> Result<Option<String>, ProviderError> {
+    let Some(deployment_id) = normalize_optional_provider_field(value, label)? else {
+        return Ok(None);
+    };
+    validate_deployment_id(&deployment_id, label)?;
+    Ok(Some(deployment_id))
+}
+
+fn validate_deployment_id(deployment_id: &str, label: &str) -> Result<(), ProviderError> {
     if !deployment_id
         .chars()
         .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
     {
         return Err(ProviderFailure::InvalidRequest(
-            "Azure OpenAI deployment id contains unsupported characters".to_string(),
+            format!("{label} contains unsupported characters"),
         )
         .into());
     }
 
-    Ok(deployment_id)
+    Ok(())
 }
 
 fn normalize_api_version(value: Option<String>) -> Result<String, ProviderError> {
@@ -553,6 +593,7 @@ mod tests {
             ProviderConfig {
                 endpoint: Some("https://unused.example.com".to_string()),
                 deployment_id: Some("unused".to_string()),
+                streaming_deployment_id: None,
                 api_version: Some("unused".to_string()),
                 model: Some(" gpt-4o-mini-transcribe ".to_string()),
                 transcription_mode: None,
@@ -573,6 +614,7 @@ mod tests {
             ProviderConfig {
                 endpoint: Some("https://example.openai.azure.com/custom".to_string()),
                 deployment_id: Some("whisper".to_string()),
+                streaming_deployment_id: None,
                 api_version: Some("2025-04-01-preview".to_string()),
                 model: None,
                 transcription_mode: None,
@@ -590,6 +632,7 @@ mod tests {
             ProviderConfig {
                 endpoint: Some("https://example.openai.azure.com".to_string()),
                 deployment_id: Some("whisper".to_string()),
+                streaming_deployment_id: None,
                 api_version: Some("   ".to_string()),
                 model: None,
                 transcription_mode: None,
@@ -612,6 +655,7 @@ mod tests {
                 ProviderConfig {
                     endpoint: Some(endpoint.to_string()),
                     deployment_id: Some("whisper".to_string()),
+                    streaming_deployment_id: None,
                     api_version: None,
                     model: None,
                     transcription_mode: None,
@@ -630,6 +674,7 @@ mod tests {
             ProviderConfig {
                 endpoint: Some("https://example.openai.azure.com".to_string()),
                 deployment_id: Some("../whisper".to_string()),
+                streaming_deployment_id: None,
                 api_version: None,
                 model: None,
                 transcription_mode: None,
@@ -638,6 +683,47 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.code, "invalid_provider_request");
+    }
+
+    #[test]
+    fn normalizes_azure_openai_streaming_deployment_separately() {
+        let config = normalize_provider_config(
+            "azure-openai",
+            ProviderConfig {
+                endpoint: Some("https://example.openai.azure.com".to_string()),
+                deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
+                streaming_deployment_id: Some("gpt-realtime".to_string()),
+                api_version: None,
+                model: None,
+                transcription_mode: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(config.deployment_id.as_deref(), Some("gpt-4o-mini-transcribe"));
+        assert_eq!(config.streaming_deployment_id.as_deref(), Some("gpt-realtime"));
+    }
+
+    #[test]
+    fn normalizes_azure_ai_speech_config_without_openai_deployment() {
+        let config = normalize_provider_config(
+            "azure-ai-speech",
+            ProviderConfig {
+                endpoint: Some("https://example.cognitiveservices.azure.com".to_string()),
+                deployment_id: None,
+                streaming_deployment_id: None,
+                api_version: None,
+                model: None,
+                transcription_mode: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.endpoint.as_deref(),
+            Some("https://example.cognitiveservices.azure.com")
+        );
+        assert_eq!(config.deployment_id, None);
     }
 
     #[test]

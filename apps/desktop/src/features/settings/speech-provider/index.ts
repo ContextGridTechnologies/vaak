@@ -1,5 +1,6 @@
 export { AssemblyAiProviderPanel } from "./AssemblyAiProviderPanel";
 export { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
+export { AzureAiSpeechProviderPanel } from "./AzureAiSpeechProviderPanel";
 export { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 export { OpenAiProviderPanel } from "./OpenAiProviderPanel";
 export { SmallestProviderPanel } from "./SmallestProviderPanel";

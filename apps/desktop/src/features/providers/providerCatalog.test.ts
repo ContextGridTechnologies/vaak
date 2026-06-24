@@ -11,6 +11,7 @@ describe("providerCatalog", () => {
       expect.arrayContaining([
         "openai",
         "azure-openai",
+        "azure-ai-speech",
         "assemblyai",
         "deepgram",
         "groq",
@@ -51,6 +52,7 @@ describe("providerCatalog", () => {
       expect.arrayContaining([
         "openai",
         "azure-openai",
+        "azure-ai-speech",
         "assemblyai",
         "deepgram",
         "elevenlabs",

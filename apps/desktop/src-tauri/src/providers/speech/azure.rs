@@ -172,6 +172,7 @@ mod tests {
         let provider = AzureOpenAiSpeechProvider::new(ProviderConfig {
             endpoint: Some("https://example.openai.azure.com/".to_string()),
             deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
+            streaming_deployment_id: None,
             api_version: Some("2025-04-01-preview".to_string()),
             model: None,
             transcription_mode: None,
@@ -189,6 +190,7 @@ mod tests {
         let provider = AzureOpenAiSpeechProvider::new(ProviderConfig {
             endpoint: Some("https://example.openai.azure.com".to_string()),
             deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
+            streaming_deployment_id: None,
             api_version: None,
             model: None,
             transcription_mode: None,
@@ -207,6 +209,7 @@ mod tests {
             &ProviderConfig {
                 endpoint: Some("https://example.openai.azure.com".to_string()),
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: None,
                 transcription_mode: None,

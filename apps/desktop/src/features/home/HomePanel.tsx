@@ -1238,6 +1238,7 @@ const providerDisplayName: Record<string, string> = {
   smallest: "Smallest AI",
   azure_openai: "Azure OpenAI",
   "azure-openai": "Azure OpenAI",
+  "azure-ai-speech": "Azure AI Speech",
 };
 
 function formatRelativeTime(value: string) {

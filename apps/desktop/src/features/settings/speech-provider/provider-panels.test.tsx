@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderApp } from "@/test/render";
 
 import { AssemblyAiProviderPanel } from "./AssemblyAiProviderPanel";
+import { AzureAiSpeechProviderPanel } from "./AzureAiSpeechProviderPanel";
 import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
@@ -51,6 +52,32 @@ describe("speech provider panels", () => {
         onApiKeyChange={vi.fn()}
         onApiVersionChange={vi.fn()}
         onDeploymentIdChange={vi.fn()}
+        onEndpointChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onTest={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByLabelText("API key");
+
+    expect(input).toHaveAttribute("placeholder", SAVED_KEY_PLACEHOLDER);
+    expect(input).toHaveValue("");
+  });
+
+  it("shows a saved Azure AI Speech key as a non-copyable star placeholder", () => {
+    renderApp(
+      <AzureAiSpeechProviderPanel
+        apiKey=""
+        endpoint="https://example.cognitiveservices.azure.com"
+        isLoading={false}
+        isSaving={false}
+        isTesting={false}
+        status={{
+          providerId: "azure-ai-speech",
+          configured: true,
+          configComplete: true,
+        }}
+        onApiKeyChange={vi.fn()}
         onEndpointChange={vi.fn()}
         onSubmit={vi.fn()}
         onTest={vi.fn()}

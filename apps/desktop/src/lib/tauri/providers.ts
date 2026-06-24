@@ -9,6 +9,7 @@ export type ProviderStatus = {
 export type ProviderConfig = {
   endpoint?: string;
   deploymentId?: string;
+  streamingDeploymentId?: string;
   apiVersion?: string;
   model?: string;
 };
@@ -94,6 +95,7 @@ export type ElevenLabsStreamingAudioWrite = StreamingAudioWrite;
 export type SpeechProviderId =
   | "openai"
   | "azure-openai"
+  | "azure-ai-speech"
   | "assemblyai"
   | "deepgram"
   | "elevenlabs"

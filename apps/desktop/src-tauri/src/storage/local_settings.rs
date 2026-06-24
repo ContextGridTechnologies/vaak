@@ -772,6 +772,7 @@ mod tests {
         let config = ProviderConfig {
             endpoint: Some("https://example.openai.azure.com".to_string()),
             deployment_id: Some("whisper".to_string()),
+            streaming_deployment_id: None,
             api_version: Some("2025-04-01-preview".to_string()),
             model: Some("gpt-4o-mini-transcribe".to_string()),
             transcription_mode: None,
@@ -809,6 +810,7 @@ mod tests {
         let legacy_config = ProviderConfig {
             endpoint: Some("https://legacy.openai.azure.com".to_string()),
             deployment_id: Some("legacy-deployment".to_string()),
+            streaming_deployment_id: None,
             api_version: Some("2025-04-01-preview".to_string()),
             model: None,
             transcription_mode: None,
@@ -836,6 +838,7 @@ mod tests {
         let local_config = ProviderConfig {
             endpoint: Some("https://local.openai.azure.com".to_string()),
             deployment_id: Some("local-deployment".to_string()),
+            streaming_deployment_id: None,
             api_version: Some("2025-04-01-preview".to_string()),
             model: None,
             transcription_mode: None,

@@ -11,6 +11,7 @@ use crate::storage::LocalSettingsStore;
 mod assemblyai;
 pub(crate) mod assemblyai_streaming;
 mod azure;
+mod azure_ai_speech;
 mod deepgram;
 pub(crate) mod deepgram_streaming;
 mod elevenlabs;
@@ -126,6 +127,13 @@ pub async fn transcribe(
             .transcribe(api_key, input)
             .await
         }
+        azure_ai_speech::PROVIDER_ID => {
+            azure_ai_speech::AzureAiSpeechProvider::new(
+                provider_config.ok_or_else(|| ProviderFailure::MissingConfiguration)?,
+            )?
+            .transcribe(api_key, input)
+            .await
+        }
         assemblyai::PROVIDER_ID => {
             assemblyai::AssemblyAiSpeechProvider::default()
                 .transcribe(api_key, input)
@@ -155,6 +163,7 @@ pub fn validate_provider_id(provider_id: &str) -> Result<(), ProviderError> {
     match provider_id {
         openai::PROVIDER_ID
         | azure::PROVIDER_ID
+        | azure_ai_speech::PROVIDER_ID
         | assemblyai::PROVIDER_ID
         | deepgram::PROVIDER_ID
         | gemini::PROVIDER_ID
@@ -178,6 +187,15 @@ fn is_config_complete(
                 credentials::legacy_provider_config(provider_id)
             })?
             .map(|config| azure::AzureOpenAiSpeechProvider::config_complete(&config))
+            .unwrap_or(false));
+    }
+
+    if provider_id == azure_ai_speech::PROVIDER_ID {
+        return Ok(settings
+            .provider_config_or_migrate(provider_id, || {
+                credentials::legacy_provider_config(provider_id)
+            })?
+            .map(|config| azure_ai_speech::AzureAiSpeechProvider::config_complete(&config))
             .unwrap_or(false));
     }
 
@@ -340,6 +358,7 @@ mod tests {
                 &ProviderConfig {
                     endpoint: Some("https://example.openai.azure.com".to_string()),
                     deployment_id: None,
+                    streaming_deployment_id: None,
                     api_version: Some("2025-04-01-preview".to_string()),
                     model: None,
                     transcription_mode: None,
@@ -355,6 +374,7 @@ mod tests {
                 &ProviderConfig {
                     endpoint: Some("https://example.openai.azure.com".to_string()),
                     deployment_id: Some("gpt-4o-mini-transcribe".to_string()),
+                    streaming_deployment_id: None,
                     api_version: Some("2025-04-01-preview".to_string()),
                     model: None,
                     transcription_mode: None,
@@ -363,6 +383,33 @@ mod tests {
             .unwrap();
 
         assert!(is_config_complete("azure-openai", &settings).unwrap());
+    }
+
+    #[test]
+    fn azure_ai_speech_is_a_supported_provider_id() {
+        assert!(validate_provider_id("azure-ai-speech").is_ok());
+    }
+
+    #[test]
+    fn azure_ai_speech_config_is_complete_with_endpoint() {
+        let dir = temp_config_dir("azure-ai-speech");
+        let settings = LocalSettingsStore::new(&dir);
+
+        settings
+            .save_provider_config(
+                "azure-ai-speech",
+                &ProviderConfig {
+                    endpoint: Some("https://example.cognitiveservices.azure.com".to_string()),
+                    deployment_id: None,
+                    streaming_deployment_id: None,
+                    api_version: None,
+                    model: None,
+                    transcription_mode: None,
+                },
+            )
+            .unwrap();
+
+        assert!(is_config_complete("azure-ai-speech", &settings).unwrap());
     }
 
     #[test]
@@ -431,6 +478,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some(deepgram::DEFAULT_MODEL.to_string()),
                 transcription_mode: None,
@@ -456,6 +504,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("pulse".to_string()),
                 transcription_mode: None,
@@ -481,6 +530,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("pulse-pro".to_string()),
                 transcription_mode: None,
@@ -506,6 +556,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("gpt-4o-transcribe".to_string()),
                 transcription_mode: None,
@@ -531,6 +582,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("gpt-4o-transcribe".to_string()),
                 transcription_mode: None,
@@ -674,6 +726,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("universal-3-pro".to_string()),
                 transcription_mode: None,
@@ -726,6 +779,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("universal-3-pro".to_string()),
                 transcription_mode: None,
@@ -747,6 +801,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: None,
                 transcription_mode: None,
@@ -765,6 +820,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("u3-rt-pro".to_string()),
                 transcription_mode: None,
@@ -783,6 +839,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("universal-3-5-pro".to_string()),
                 transcription_mode: None,
@@ -801,6 +858,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("universal-streaming-english".to_string()),
                 transcription_mode: None,
@@ -828,6 +886,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("u3-rt-pro".to_string()),
                 transcription_mode: None,
@@ -1022,6 +1081,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("scribe_v2".to_string()),
                 transcription_mode: None,
@@ -1078,6 +1138,7 @@ mod tests {
             Some(ProviderConfig {
                 endpoint: None,
                 deployment_id: None,
+                streaming_deployment_id: None,
                 api_version: None,
                 model: Some("pulse-pro".to_string()),
                 transcription_mode: None,

@@ -144,6 +144,8 @@ function getProviderIcon(providerId: ProviderCatalogItem["id"]) {
       return BotIcon;
     case "azure-openai":
       return CloudCogIcon;
+    case "azure-ai-speech":
+      return CloudCogIcon;
     case "assemblyai":
       return AudioLinesIcon;
     case "deepgram":

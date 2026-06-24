@@ -18,6 +18,7 @@ import {
 } from "@/lib/tauri";
 
 import { AssemblyAiProviderPanel } from "./AssemblyAiProviderPanel";
+import { AzureAiSpeechProviderPanel } from "./AzureAiSpeechProviderPanel";
 import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 import { DeepgramProviderPanel } from "./DeepgramProviderPanel";
 import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
@@ -57,6 +58,7 @@ export function SpeechProviderSettings({
 }: SpeechProviderSettingsProps) {
   const [apiKey, setApiKey] = useState("");
   const [azureApiKey, setAzureApiKey] = useState("");
+  const [azureAiSpeechApiKey, setAzureAiSpeechApiKey] = useState("");
   const [assemblyAiApiKey, setAssemblyAiApiKey] = useState("");
   const [deepgramApiKey, setDeepgramApiKey] = useState("");
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
@@ -76,6 +78,7 @@ export function SpeechProviderSettings({
   const [azureApiVersion, setAzureApiVersion] = useState(
     AZURE_OPENAI_API_VERSION,
   );
+  const [azureAiSpeechEndpoint, setAzureAiSpeechEndpoint] = useState("");
   const [selectedProviderId, setSelectedProviderId] =
     useState<SpeechProviderId>("openai");
   const [providerStatuses, setProviderStatuses] = useState<ProviderStatuses>(
@@ -94,6 +97,9 @@ export function SpeechProviderSettings({
   const selectedProviderError = providerErrors[selectedProviderId];
   const selectedProviderReadyMessage = providerTestResults[selectedProviderId];
   const azureHasSavedKey = Boolean(providerStatuses["azure-openai"]?.configured);
+  const azureAiSpeechHasSavedKey = Boolean(
+    providerStatuses["azure-ai-speech"]?.configured,
+  );
   const isOnboarding = variant === "onboarding";
 
   useEffect(() => {
@@ -106,12 +112,14 @@ export function SpeechProviderSettings({
         const [
           openAiStatus,
           azureStatus,
+          azureAiSpeechStatus,
           assemblyAiStatus,
           deepgramStatus,
           elevenLabsStatus,
           smallestStatus,
           openAiConfig,
           azureConfig,
+          azureAiSpeechConfig,
           assemblyAiConfig,
           elevenLabsConfig,
           smallestConfig,
@@ -120,12 +128,14 @@ export function SpeechProviderSettings({
           await Promise.all([
             getProviderStatus("openai"),
             getProviderStatus("azure-openai"),
+            getProviderStatus("azure-ai-speech"),
             getProviderStatus("assemblyai"),
             getProviderStatus("deepgram"),
             getProviderStatus("elevenlabs"),
             getProviderStatus("smallest"),
             getProviderConfig("openai"),
             getProviderConfig("azure-openai"),
+            getProviderConfig("azure-ai-speech"),
             getProviderConfig("assemblyai"),
             getProviderConfig("elevenlabs"),
             getProviderConfig("smallest"),
@@ -135,6 +145,7 @@ export function SpeechProviderSettings({
           setProviderStatuses({
             openai: openAiStatus,
             "azure-openai": azureStatus,
+            "azure-ai-speech": azureAiSpeechStatus,
             assemblyai: assemblyAiStatus,
             deepgram: deepgramStatus,
             elevenlabs: elevenLabsStatus,
@@ -146,6 +157,7 @@ export function SpeechProviderSettings({
           setAzureApiVersion(
             azureConfig?.apiVersion ?? AZURE_OPENAI_API_VERSION,
           );
+          setAzureAiSpeechEndpoint(azureAiSpeechConfig?.endpoint ?? "");
           setAssemblyAiModel(
             assemblyAiConfig?.model ?? DEFAULT_ASSEMBLYAI_MODEL,
           );
@@ -209,6 +221,11 @@ export function SpeechProviderSettings({
     setAzureApiKey(value);
   };
 
+  const handleAzureAiSpeechApiKeyChange = (value: string) => {
+    clearOnboardingVerification("azure-ai-speech");
+    setAzureAiSpeechApiKey(value);
+  };
+
   const handleAssemblyAiApiKeyChange = (value: string) => {
     clearOnboardingVerification("assemblyai");
     setAssemblyAiApiKey(value);
@@ -227,6 +244,11 @@ export function SpeechProviderSettings({
   const handleAzureEndpointChange = (value: string) => {
     clearOnboardingVerification("azure-openai");
     setAzureEndpoint(value);
+  };
+
+  const handleAzureAiSpeechEndpointChange = (value: string) => {
+    clearOnboardingVerification("azure-ai-speech");
+    setAzureAiSpeechEndpoint(value);
   };
 
   const handleAzureDeploymentIdChange = (value: string) => {
@@ -363,6 +385,59 @@ export function SpeechProviderSettings({
       setProviderErrors((current) => ({
         ...current,
         "azure-openai": normalizeProviderError("azure-openai", err),
+      }));
+    } finally {
+      setSavingProviderId(null);
+    }
+  };
+
+  const saveAzureAiSpeechSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    clearOnboardingVerification("azure-ai-speech");
+    setProviderErrors((current) => ({
+      ...current,
+      "azure-ai-speech": undefined,
+    }));
+    setProviderTestResults((current) => ({
+      ...current,
+      "azure-ai-speech": undefined,
+    }));
+    setSavingProviderId("azure-ai-speech");
+
+    try {
+      if (!azureAiSpeechHasSavedKey && azureAiSpeechApiKey.trim().length === 0) {
+        setProviderErrors((current) => ({
+          ...current,
+          "azure-ai-speech": "Azure AI Speech key is required before first use.",
+        }));
+        return;
+      }
+
+      const status = await saveSpeechProviderSetup({
+        providerId: "azure-ai-speech",
+        apiKey: azureAiSpeechApiKey,
+        config: {
+          endpoint: azureAiSpeechEndpoint,
+        },
+        activate: true,
+      });
+
+      setProviderStatuses((current) => ({
+        ...current,
+        "azure-ai-speech": status,
+      }));
+      setSelectedProviderId("azure-ai-speech");
+      setAzureAiSpeechApiKey("");
+      captureProviderConfigured("azure-ai-speech", variant);
+      if (isOnboarding) {
+        await verifySavedProvider("azure-ai-speech");
+      } else {
+        toast.success("Azure AI Speech settings saved");
+      }
+    } catch (err) {
+      setProviderErrors((current) => ({
+        ...current,
+        "azure-ai-speech": normalizeProviderError("azure-ai-speech", err),
       }));
     } finally {
       setSavingProviderId(null);
@@ -638,6 +713,22 @@ export function SpeechProviderSettings({
           onSubmit={saveAzureOpenAiSettings}
           onTest={testSelectedProvider}
         />
+      ) : selectedProviderId === "azure-ai-speech" ? (
+        <AzureAiSpeechProviderPanel
+          apiKey={azureAiSpeechApiKey}
+          endpoint={azureAiSpeechEndpoint}
+          error={providerErrors["azure-ai-speech"]}
+          isLoading={isLoading}
+          isSaving={savingProviderId === "azure-ai-speech"}
+          isTesting={testingProviderId === "azure-ai-speech"}
+          showTestButton={!isOnboarding}
+          testResult={providerTestResults["azure-ai-speech"]}
+          status={providerStatuses["azure-ai-speech"]}
+          onApiKeyChange={handleAzureAiSpeechApiKeyChange}
+          onEndpointChange={handleAzureAiSpeechEndpointChange}
+          onSubmit={saveAzureAiSpeechSettings}
+          onTest={testSelectedProvider}
+        />
       ) : selectedProviderId === "assemblyai" ? (
         <AssemblyAiProviderPanel
           apiKey={assemblyAiApiKey}
@@ -770,7 +861,7 @@ function captureProviderConfigured(
 }
 
 function providerFamily(providerId: SpeechProviderId): string {
-  if (providerId === "azure-openai") {
+  if (providerId === "azure-openai" || providerId === "azure-ai-speech") {
     return "azure";
   }
 

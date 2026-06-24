@@ -46,6 +46,12 @@ describe("provider Tauri API", () => {
     expect(providerId).toBe("deepgram");
   });
 
+  it("supports Azure AI Speech in typed speech provider flows", () => {
+    const providerId: SpeechProviderId = "azure-ai-speech";
+
+    expect(providerId).toBe("azure-ai-speech");
+  });
+
   it("maps provider setup to the atomic backend command", async () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("save_speech_provider_setup", {

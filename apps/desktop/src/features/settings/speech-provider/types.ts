@@ -63,6 +63,7 @@ export const DEFAULT_SMALLEST_MODEL = SMALLEST_MODELS[0].value;
 export const providerLabels: Record<SpeechProviderId, string> = {
   openai: "OpenAI",
   "azure-openai": "Azure OpenAI",
+  "azure-ai-speech": "Azure AI Speech",
   assemblyai: "AssemblyAI",
   deepgram: "Deepgram",
   elevenlabs: "ElevenLabs",
