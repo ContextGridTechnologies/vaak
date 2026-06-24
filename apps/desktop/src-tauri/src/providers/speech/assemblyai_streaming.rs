@@ -3,7 +3,7 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
@@ -13,6 +13,8 @@ use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::providers::errors::{ProviderError, ProviderFailure};
+pub(crate) use crate::providers::speech::streaming_common::StreamingAudioWrite;
+use crate::providers::speech::streaming_common::{Pcm16FrameChunker, StreamingSessionState};
 use crate::providers::ProviderTimelineEvent;
 
 const DEFAULT_STREAMING_HOST: &str = "streaming.assemblyai.com";
@@ -278,7 +280,7 @@ impl AssemblyAiStreamingSession {
         Ok(Self {
             audio_tx,
             events_rx,
-            chunker: Pcm16FrameChunker::default_assemblyai()?,
+            chunker: Pcm16FrameChunker::for_pcm16(DEFAULT_SAMPLE_RATE_HZ, DEFAULT_FRAME_MS)?,
             state,
             dropped_frames: Arc::new(AtomicU64::new(0)),
         })
@@ -417,7 +419,8 @@ impl StreamingSessionHandle {
         Self {
             session_id: session_id.to_string(),
             audio_tx: None,
-            chunker: Pcm16FrameChunker::default_assemblyai().expect("test frame config"),
+            chunker: Pcm16FrameChunker::for_pcm16(DEFAULT_SAMPLE_RATE_HZ, DEFAULT_FRAME_MS)
+                .expect("test frame config"),
             stop_state: Arc::new(StreamingSessionState::default()),
             dropped_frames: Arc::new(AtomicU64::new(0)),
         }
@@ -428,7 +431,8 @@ impl StreamingSessionHandle {
         Self {
             session_id: session_id.to_string(),
             audio_tx: Some(audio_tx),
-            chunker: Pcm16FrameChunker::default_assemblyai().expect("test frame config"),
+            chunker: Pcm16FrameChunker::for_pcm16(DEFAULT_SAMPLE_RATE_HZ, DEFAULT_FRAME_MS)
+                .expect("test frame config"),
             stop_state: Arc::new(StreamingSessionState::default()),
             dropped_frames: Arc::new(AtomicU64::new(0)),
         }
@@ -491,14 +495,6 @@ impl StreamingSessionHandle {
     pub(crate) fn dropped_frames(&self) -> u64 {
         self.dropped_frames.load(Ordering::Relaxed)
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct StreamingAudioWrite {
-    pub(crate) bytes_sent: usize,
-    pub(crate) frame_count: usize,
-    pub(crate) dropped_frames: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -831,81 +827,6 @@ impl AssemblyAiStreamingConfig {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct Pcm16FrameChunker {
-    frame_bytes: usize,
-    pending: Vec<u8>,
-}
-
-impl Pcm16FrameChunker {
-    pub(crate) fn new(sample_rate_hz: u32, frame_ms: u32) -> Result<Self, ProviderError> {
-        if sample_rate_hz == 0 || frame_ms == 0 {
-            return Err(ProviderFailure::InvalidRequest(
-                "streaming PCM frame config must be non-zero".to_string(),
-            )
-            .into());
-        }
-
-        let samples_per_frame = sample_rate_hz
-            .checked_mul(frame_ms)
-            .and_then(|value| value.checked_div(1_000))
-            .ok_or_else(|| {
-                ProviderError::from(ProviderFailure::InvalidRequest(
-                    "streaming PCM frame config is invalid".to_string(),
-                ))
-            })?;
-        let frame_bytes = samples_per_frame
-            .checked_mul(2)
-            .and_then(|value| usize::try_from(value).ok())
-            .ok_or_else(|| {
-                ProviderError::from(ProviderFailure::InvalidRequest(
-                    "streaming PCM frame size is too large".to_string(),
-                ))
-            })?;
-
-        Ok(Self {
-            frame_bytes,
-            pending: Vec::with_capacity(frame_bytes),
-        })
-    }
-
-    pub(crate) fn default_assemblyai() -> Result<Self, ProviderError> {
-        Self::new(DEFAULT_SAMPLE_RATE_HZ, DEFAULT_FRAME_MS)
-    }
-
-    pub(crate) fn push(&mut self, bytes: &[u8]) -> Vec<Vec<u8>> {
-        self.pending.extend_from_slice(bytes);
-        let frame_count = self.pending.len() / self.frame_bytes;
-        let mut frames = Vec::with_capacity(frame_count);
-
-        for chunk in self.pending[..frame_count * self.frame_bytes].chunks(self.frame_bytes) {
-            frames.push(chunk.to_vec());
-        }
-
-        if frame_count > 0 {
-            self.pending.drain(..frame_count * self.frame_bytes);
-        }
-
-        frames
-    }
-
-    pub(crate) fn pending_len(&self) -> usize {
-        self.pending.len()
-    }
-
-    pub(crate) fn flush_padded_frame(&mut self) -> Option<Vec<u8>> {
-        if self.pending.is_empty() {
-            return None;
-        }
-
-        let mut frame = Vec::with_capacity(self.frame_bytes);
-        frame.extend_from_slice(&self.pending);
-        frame.resize(self.frame_bytes, 0);
-        self.pending.clear();
-        Some(frame)
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub(crate) struct AssemblyAiAppliedConfiguration {
     pub(crate) model: Option<String>,
@@ -1002,23 +923,6 @@ fn current_utc_timestamp() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct StreamingSessionState {
-    stopping: AtomicBool,
-}
-
-impl StreamingSessionState {
-    pub(crate) fn request_stop(&self) -> bool {
-        self.stopping
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-    }
-
-    pub(crate) fn is_stopping(&self) -> bool {
-        self.stopping.load(Ordering::Acquire)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1072,7 +976,7 @@ mod tests {
 
     #[test]
     fn pcm16_frame_chunker_emits_fifty_ms_frames_and_keeps_remainder() {
-        let mut chunker = Pcm16FrameChunker::new(16_000, 50).expect("valid frame config");
+        let mut chunker = Pcm16FrameChunker::for_pcm16(16_000, 50).expect("valid frame config");
         let audio = vec![7; 3_200 + 10];
 
         let frames = chunker.push(&audio);
@@ -1084,7 +988,7 @@ mod tests {
 
     #[test]
     fn pcm16_frame_chunker_flushes_partial_trailing_audio_with_silence_padding() {
-        let mut chunker = Pcm16FrameChunker::new(16_000, 50).expect("valid frame config");
+        let mut chunker = Pcm16FrameChunker::for_pcm16(16_000, 50).expect("valid frame config");
         assert!(chunker.push(&[7; 10]).is_empty());
 
         let frame = chunker.flush_padded_frame().expect("padded frame");

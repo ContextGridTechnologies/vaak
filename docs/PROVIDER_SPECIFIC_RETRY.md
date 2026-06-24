@@ -134,6 +134,35 @@ Retry notes:
 - It retries `429` and `5xx` according to the base policy.
 - Do not retry empty or malformed normalized transcript responses.
 
+Streaming flow:
+
+1. Open `wss://api.deepgram.com/v1/listen`.
+2. Send mono 16-bit PCM binary frames using `encoding=linear16`, `sample_rate=16000`, and `channels=1`.
+3. Send `{"type":"KeepAlive"}` as a text frame only when the session is open without continuous audio.
+4. Receive `Results` messages for partial and final transcripts.
+5. Send `{"type":"Finalize"}` to flush pending audio.
+6. Send `{"type":"CloseStream"}` and continue reading final results until metadata or websocket close.
+
+Streaming defaults and limits:
+
+- default model: `nova-3`
+- sample rate: 16 kHz
+- frame size: 100 ms / 3200 bytes
+- language code: `en-US`
+- `smart_format=true`
+- `interim_results=true`
+- `endpointing=300`
+- `vad_events` and `utterance_end_ms` disabled initially
+- websocket provider errors map to `provider_request_failed`
+- the frontend must send continuous PCM, including silence, and aggregate final result segments in receive order
+- duplicate final result segments around `Finalize` or `CloseStream` must not be committed twice
+- the streaming route uses the same `nova-3` model id as the batch route; do not add Flux until a separate voice-agent route is intentionally designed
+
+Streaming retry notes:
+
+- Websocket streaming sessions do not use HTTP transport retry after connect.
+- Fast/streaming dictation may fall back to the batch path if streaming fails before a final transcript.
+
 ### ElevenLabs
 
 Provider id: `elevenlabs`
@@ -148,7 +177,7 @@ Speech endpoint:
 Defaults and limits:
 
 - default model: `scribe_v2`
-- max audio: 3 GB
+- max audio: 3 GB currently enforced by Vaak; ElevenLabs documents a provider file limit under 5 GB
 - empty audio is an invalid local request
 - blank response text is `invalid_provider_response`
 
@@ -157,6 +186,18 @@ Retry notes:
 - ElevenLabs uses the shared transport retry helper with a fresh multipart request per attempt.
 - It retries `429` and `5xx` according to the base policy.
 - Do not retry empty transcript or malformed response.
+
+Streaming flow:
+
+- realtime endpoint: `wss://api.elevenlabs.io/v1/speech-to-text/realtime`
+- auth: `xi-api-key` header from backend provider settings
+- model: `scribe_v2_realtime`
+- query parameters include `audio_format=pcm_16000`, `commit_strategy=manual`, and optional `language_code`
+- audio messages are JSON `input_audio_chunk` events with base64 PCM audio, `commit=true`, and `sample_rate=16000`
+- partial and committed transcript messages should normalize to the shared streaming event shape
+- provider error message types should map to sanitized `provider_request_failed` errors
+- websocket sessions should not use HTTP transport retry after connect; `auto` mode may fall back to the batch path if streaming fails before a committed transcript
+- `scribe_v2` and `scribe_v1` are batch routes and must not silently remap to `scribe_v2_realtime`
 
 ### Smallest AI
 
@@ -179,6 +220,23 @@ Defaults and limits:
 - blank `transcription` is `invalid_provider_response`
 - `audio_length` is normalized from seconds to milliseconds when present
 
+Streaming flow:
+
+1. Open `wss://api.smallest.ai/waves/v1/stt/live?model=pulse`.
+2. Send mono 16-bit PCM binary frames using `linear16`, 16 kHz audio.
+3. Receive transcription messages with partial/final text.
+4. Send `{"type":"close_stream"}` and continue reading until the provider sends `is_last=true`.
+
+Streaming defaults and limits:
+
+- supported model: `pulse`
+- `pulse-pro` is batch-only and must not be remapped to `pulse`
+- sample rate: 16 kHz
+- frame size: 4096 bytes
+- language code: `en`
+- websocket provider errors map to `provider_request_failed`
+- the frontend must send continuous PCM, including silence, and aggregate final messages by provider sequence
+
 Retry notes:
 
 - Smallest AI uses the shared `send_provider_request_with_retry` helper with a fresh raw-audio request per attempt.
@@ -186,6 +244,7 @@ Retry notes:
 - It preserves `retryAfterMs` for rate-limit responses when available.
 - Invalid JSON is `provider_request_failed` with a sanitized unreadable-response message.
 - Response logging reports JSON keys or a bounded body summary, not full provider payloads.
+- Websocket streaming sessions do not use HTTP transport retry after connect; Fast/streaming dictation may fall back to the batch path if streaming fails before a final transcript or the selected model is not streaming-capable.
 
 ## Future Providers
 

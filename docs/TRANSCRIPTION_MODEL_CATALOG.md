@@ -63,7 +63,7 @@ The visible provider pickers should stay focused on models a dictation user can 
 
 - OpenAI: `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`, `whisper-1`.
 - AssemblyAI: `universal-3-5-pro`, `universal-3-pro`, `u3-rt-pro`.
-- ElevenLabs: `scribe_v2`, `scribe_v1`.
+- ElevenLabs: `scribe_v2`, `scribe_v2_realtime`, `scribe_v1`.
 - Deepgram: `nova-3` as the internal default; no visible model picker unless there is a real user-facing choice.
 - Smallest AI: `pulse`, `pulse-pro`.
 - Azure OpenAI: configured deployment ID, not a fixed public model picker.
@@ -121,22 +121,25 @@ The visible AssemblyAI picker should omit `universal-2`, `universal-streaming-en
 
 Deepgram's docs describe `nova-3` as the recommended highest-performing general-purpose ASR model for batch or streaming, list `flux-general-en` and `flux-general-multi` for streaming voice-agent workflows, and expose model IDs through the `model` query parameter on `/v1/listen`.
 
-Vaak currently implements Deepgram batch transcription through `/v1/listen`, so the catalog keeps one dictation-focused Deepgram route:
+Vaak implements Deepgram batch and streaming transcription through `/v1/listen`, so the catalog keeps one dictation-focused Deepgram model with separate routes:
 
-- `nova-3`: batch.
+- `nova-3`: batch and streaming.
 
-Do not add Deepgram vertical, legacy, or provider-internal variants such as `nova-2-finance`, `nova-2-video`, `nova-2-drivethru`, `nova-2-atc`, or Deepgram-hosted Whisper variants to the Vaak model catalog unless the product exposes an advanced model picker with a concrete user need. Do not mark `flux-general-en`, `flux-general-multi`, or Deepgram streaming variants as `Streaming` until Vaak has a Deepgram streaming adapter.
+Deepgram streaming uses `wss://api.deepgram.com/v1/listen`, `Authorization: Token {api_key}`, 16 kHz mono `linear16` PCM binary frames, `interim_results=true`, `smart_format=true`, `endpointing=300`, and text control messages for `KeepAlive`, `Finalize`, and `CloseStream`.
+
+Do not add Deepgram vertical, legacy, or provider-internal variants such as `nova-2-finance`, `nova-2-video`, `nova-2-drivethru`, `nova-2-atc`, or Deepgram-hosted Whisper variants to the Vaak model catalog unless the product exposes an advanced model picker with a concrete user need. Do not mark `flux-general-en`, `flux-general-multi`, or other Flux variants as `Streaming` until Vaak intentionally designs a separate voice-agent route.
 
 ### ElevenLabs
 
-ElevenLabs' speech-to-text endpoint lists `scribe_v2` and `scribe_v1` for batch transcription through `/v1/speech-to-text`, and its examples use `scribe_v2`. Their realtime speech-to-text docs use `scribe_v2_realtime`, but Vaak currently has only the batch ElevenLabs adapter.
+ElevenLabs' speech-to-text endpoint lists `scribe_v2` and `scribe_v1` for batch transcription through `/v1/speech-to-text`, and its examples use `scribe_v2`. Their realtime speech-to-text docs use `scribe_v2_realtime`.
 
 Visible models:
 
 - `scribe_v2`: batch.
+- `scribe_v2_realtime`: streaming.
 - `scribe_v1`: batch.
 
-Do not mark `scribe_v2_realtime` as `Streaming` until Vaak has an ElevenLabs realtime adapter.
+ElevenLabs realtime uses `wss://api.elevenlabs.io/v1/speech-to-text/realtime`, `xi-api-key` auth, `audio_format=pcm_16000`, 16 kHz mono PCM encoded as base64 inside JSON `input_audio_chunk` messages, and committed transcript events for final text. `scribe_v2` and `scribe_v1` must never silently resolve to `scribe_v2_realtime`; unsupported streaming requests should fall back through the dictation loop.
 
 ### Smallest AI
 
@@ -145,4 +148,11 @@ Smallest AI's current Pulse STT overview documents a unified endpoint, `https://
 - `pulse`: multilingual, supports pre-recorded and streaming in Smallest's API.
 - `pulse-pro`: English-only, pre-recorded HTTP only.
 
-Vaak currently has only the Smallest batch adapter, so both are cataloged and visible as `Batch` routes. Do not mark `pulse` as `Streaming` until Vaak has a Smallest realtime adapter.
+Vaak implements both Smallest routes that fit the current product:
+
+- `pulse`: batch and streaming.
+- `pulse-pro`: batch only.
+
+Smallest streaming uses `wss://api.smallest.ai/waves/v1/stt/live?model=pulse`, bearer auth, 16 kHz mono `linear16` PCM, 4096-byte binary frames, and a `{"type":"close_stream"}` control message before waiting for `is_last=true`.
+
+`pulse-pro` must never resolve to `pulse` for streaming. If the user selects `pulse-pro` and asks for a streaming session, the resolver should return an unsupported-route error and let the dictation flow decide whether to fall back to batch.

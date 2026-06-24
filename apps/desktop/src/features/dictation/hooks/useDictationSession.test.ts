@@ -10,6 +10,9 @@ import { useDictationSession } from "./useDictationSession";
 const {
   captureDictationTarget,
   cleanupAssemblyAiStreamingSessions,
+  cleanupDeepgramStreamingSessions,
+  cleanupElevenLabsStreamingSessions,
+  cleanupSmallestStreamingSessions,
   getFocusedField,
   getHotkeyBindings,
   getSelectedSpeechProvider,
@@ -17,11 +20,23 @@ const {
   isTauriRuntime,
   listenToTauriEvent,
   sendAssemblyAiStreamingAudio,
+  sendDeepgramStreamingAudio,
+  sendElevenLabsStreamingAudio,
+  sendSmallestStreamingAudio,
   startAssemblyAiStreamingSession,
+  startDeepgramStreamingSession,
+  startElevenLabsStreamingSession,
+  startSmallestStreamingSession,
   stopAssemblyAiStreamingSession,
+  stopDeepgramStreamingSession,
+  stopElevenLabsStreamingSession,
+  stopSmallestStreamingSession,
 } = vi.hoisted(() => ({
     captureDictationTarget: vi.fn(),
     cleanupAssemblyAiStreamingSessions: vi.fn(),
+    cleanupDeepgramStreamingSessions: vi.fn(),
+    cleanupElevenLabsStreamingSessions: vi.fn(),
+    cleanupSmallestStreamingSessions: vi.fn(),
     getFocusedField: vi.fn(),
     getHotkeyBindings: vi.fn(),
     getSelectedSpeechProvider: vi.fn(),
@@ -29,8 +44,17 @@ const {
     isTauriRuntime: vi.fn(),
     listenToTauriEvent: vi.fn(),
     sendAssemblyAiStreamingAudio: vi.fn(),
+    sendDeepgramStreamingAudio: vi.fn(),
+    sendElevenLabsStreamingAudio: vi.fn(),
+    sendSmallestStreamingAudio: vi.fn(),
     startAssemblyAiStreamingSession: vi.fn(),
+    startDeepgramStreamingSession: vi.fn(),
+    startElevenLabsStreamingSession: vi.fn(),
+    startSmallestStreamingSession: vi.fn(),
     stopAssemblyAiStreamingSession: vi.fn(),
+    stopDeepgramStreamingSession: vi.fn(),
+    stopElevenLabsStreamingSession: vi.fn(),
+    stopSmallestStreamingSession: vi.fn(),
   }));
 
 vi.mock("@/hooks/useAudioRecorder", () => ({
@@ -46,6 +70,9 @@ vi.mock("@/lib/tauri", () => ({
   SYSTEM_SETTINGS_CHANGED_EVENT: "vaak://system-settings-changed",
   captureDictationTarget,
   cleanupAssemblyAiStreamingSessions,
+  cleanupDeepgramStreamingSessions,
+  cleanupElevenLabsStreamingSessions,
+  cleanupSmallestStreamingSessions,
   getFocusedField,
   getHotkeyBindings,
   getSelectedSpeechProvider,
@@ -53,8 +80,17 @@ vi.mock("@/lib/tauri", () => ({
   isTauriRuntime,
   listenToTauriEvent,
   sendAssemblyAiStreamingAudio,
+  sendDeepgramStreamingAudio,
+  sendElevenLabsStreamingAudio,
+  sendSmallestStreamingAudio,
   startAssemblyAiStreamingSession,
+  startDeepgramStreamingSession,
+  startElevenLabsStreamingSession,
+  startSmallestStreamingSession,
   stopAssemblyAiStreamingSession,
+  stopDeepgramStreamingSession,
+  stopElevenLabsStreamingSession,
+  stopSmallestStreamingSession,
 }));
 
 const startRecording = vi.fn();
@@ -142,9 +178,21 @@ describe("useDictationSession", () => {
     isTauriRuntime.mockReset();
     listenToTauriEvent.mockReset();
     sendAssemblyAiStreamingAudio.mockReset();
+    sendDeepgramStreamingAudio.mockReset();
+    sendElevenLabsStreamingAudio.mockReset();
+    sendSmallestStreamingAudio.mockReset();
     startAssemblyAiStreamingSession.mockReset();
+    startDeepgramStreamingSession.mockReset();
+    startElevenLabsStreamingSession.mockReset();
+    startSmallestStreamingSession.mockReset();
     stopAssemblyAiStreamingSession.mockReset();
+    stopDeepgramStreamingSession.mockReset();
+    stopElevenLabsStreamingSession.mockReset();
+    stopSmallestStreamingSession.mockReset();
     cleanupAssemblyAiStreamingSessions.mockReset();
+    cleanupDeepgramStreamingSessions.mockReset();
+    cleanupElevenLabsStreamingSessions.mockReset();
+    cleanupSmallestStreamingSessions.mockReset();
     captureDictationTarget.mockResolvedValue(field);
     getFocusedField.mockResolvedValue(field);
     getHotkeyBindings.mockResolvedValue({
@@ -164,14 +212,53 @@ describe("useDictationSession", () => {
       droppedFrames: 0,
       frameCount: 0,
     });
+    sendDeepgramStreamingAudio.mockResolvedValue({
+      bytesSent: 0,
+      droppedFrames: 0,
+      frameCount: 0,
+    });
+    sendElevenLabsStreamingAudio.mockResolvedValue({
+      bytesSent: 0,
+      droppedFrames: 0,
+      frameCount: 0,
+    });
+    sendSmallestStreamingAudio.mockResolvedValue({
+      bytesSent: 0,
+      droppedFrames: 0,
+      frameCount: 0,
+    });
     startAssemblyAiStreamingSession.mockResolvedValue({
       modelId: "u3-rt-pro",
       providerEvents: [],
       providerId: "assemblyai",
       providerMode: "streaming",
     });
+    startDeepgramStreamingSession.mockResolvedValue({
+      modelId: "nova-3",
+      providerEvents: [],
+      providerId: "deepgram",
+      providerMode: "streaming",
+    });
+    startElevenLabsStreamingSession.mockResolvedValue({
+      modelId: "scribe_v2_realtime",
+      providerEvents: [],
+      providerId: "elevenlabs",
+      providerMode: "streaming",
+    });
+    startSmallestStreamingSession.mockResolvedValue({
+      modelId: "pulse",
+      providerEvents: [],
+      providerId: "smallest",
+      providerMode: "streaming",
+    });
     stopAssemblyAiStreamingSession.mockResolvedValue(true);
+    stopDeepgramStreamingSession.mockResolvedValue(true);
+    stopElevenLabsStreamingSession.mockResolvedValue(true);
+    stopSmallestStreamingSession.mockResolvedValue(true);
     cleanupAssemblyAiStreamingSessions.mockResolvedValue(false);
+    cleanupDeepgramStreamingSessions.mockResolvedValue(false);
+    cleanupElevenLabsStreamingSessions.mockResolvedValue(false);
+    cleanupSmallestStreamingSessions.mockResolvedValue(false);
     startRecording.mockReset();
     stopRecording.mockReset();
     prepareRecording.mockReset();
@@ -528,6 +615,156 @@ describe("useDictationSession", () => {
     expect(Array.from(sent?.slice(800) ?? [])).toEqual(Array(800).fill(2));
   });
 
+  it("buffers Smallest AI pcm into 4096-byte frames before sending over Tauri IPC", async () => {
+    useAvailableMicrophone();
+    getSelectedSpeechProvider.mockResolvedValue("smallest");
+    let recorderOptions: Parameters<typeof useAudioRecorder>[0] | undefined;
+    vi.mocked(useAudioRecorder).mockImplementation((options) => {
+      recorderOptions = options;
+      return {
+        activeMicrophone: null,
+        audioBlob: null,
+        audioLevel: 0,
+        audioUrl: null,
+        captureAnalysis: null,
+        elapsedMs: 0,
+        error: null,
+        prepare: prepareRecording,
+        reset: vi.fn(),
+        start: startRecording,
+        status: "recording",
+        stop: stopRecording,
+        startupMetrics: null,
+      };
+    });
+
+    renderHook(() => useDictationSession());
+
+    await waitFor(() => expect(getSelectedSpeechProvider).toHaveBeenCalled());
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array(2048).fill(1), 16000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(startSmallestStreamingSession).toHaveBeenCalledTimes(1);
+    expect(sendSmallestStreamingAudio).not.toHaveBeenCalled();
+
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array(2048).fill(2), 16000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(sendSmallestStreamingAudio).toHaveBeenCalledTimes(1));
+    expect(sendAssemblyAiStreamingAudio).not.toHaveBeenCalled();
+    const sent = sendSmallestStreamingAudio.mock.calls[0]?.[0];
+    expect(sent).toBeInstanceOf(Uint8Array);
+    expect(sent).toHaveLength(4096);
+    expect(Array.from(sent?.slice(0, 2048) ?? [])).toEqual(Array(2048).fill(1));
+    expect(Array.from(sent?.slice(2048) ?? [])).toEqual(Array(2048).fill(2));
+  });
+
+  it("buffers ElevenLabs pcm into 3200-byte frames before sending over Tauri IPC", async () => {
+    useAvailableMicrophone();
+    getSelectedSpeechProvider.mockResolvedValue("elevenlabs");
+    let recorderOptions: Parameters<typeof useAudioRecorder>[0] | undefined;
+    vi.mocked(useAudioRecorder).mockImplementation((options) => {
+      recorderOptions = options;
+      return {
+        activeMicrophone: null,
+        audioBlob: null,
+        audioLevel: 0,
+        audioUrl: null,
+        captureAnalysis: null,
+        elapsedMs: 0,
+        error: null,
+        prepare: prepareRecording,
+        reset: vi.fn(),
+        start: startRecording,
+        status: "recording",
+        stop: stopRecording,
+        startupMetrics: null,
+      };
+    });
+
+    renderHook(() => useDictationSession());
+
+    await waitFor(() => expect(getSelectedSpeechProvider).toHaveBeenCalled());
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array(1600).fill(1), 16000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(startElevenLabsStreamingSession).toHaveBeenCalledTimes(1);
+    expect(sendElevenLabsStreamingAudio).not.toHaveBeenCalled();
+
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array(1600).fill(2), 16000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(sendElevenLabsStreamingAudio).toHaveBeenCalledTimes(1));
+    expect(sendAssemblyAiStreamingAudio).not.toHaveBeenCalled();
+    expect(sendSmallestStreamingAudio).not.toHaveBeenCalled();
+    const sent = sendElevenLabsStreamingAudio.mock.calls[0]?.[0];
+    expect(sent).toBeInstanceOf(Uint8Array);
+    expect(sent).toHaveLength(3200);
+    expect(Array.from(sent?.slice(0, 1600) ?? [])).toEqual(Array(1600).fill(1));
+    expect(Array.from(sent?.slice(1600) ?? [])).toEqual(Array(1600).fill(2));
+  });
+
+  it("buffers Deepgram pcm into 3200-byte frames before sending over Tauri IPC", async () => {
+    useAvailableMicrophone();
+    getSelectedSpeechProvider.mockResolvedValue("deepgram");
+    let recorderOptions: Parameters<typeof useAudioRecorder>[0] | undefined;
+    vi.mocked(useAudioRecorder).mockImplementation((options) => {
+      recorderOptions = options;
+      return {
+        activeMicrophone: null,
+        audioBlob: null,
+        audioLevel: 0,
+        audioUrl: null,
+        captureAnalysis: null,
+        elapsedMs: 0,
+        error: null,
+        prepare: prepareRecording,
+        reset: vi.fn(),
+        start: startRecording,
+        status: "recording",
+        stop: stopRecording,
+        startupMetrics: null,
+      };
+    });
+
+    renderHook(() => useDictationSession());
+
+    await waitFor(() => expect(getSelectedSpeechProvider).toHaveBeenCalled());
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array(1600).fill(1), 16000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(startDeepgramStreamingSession).toHaveBeenCalledTimes(1);
+    expect(sendDeepgramStreamingAudio).not.toHaveBeenCalled();
+
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array(1600).fill(2), 16000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(sendDeepgramStreamingAudio).toHaveBeenCalledTimes(1));
+    expect(sendAssemblyAiStreamingAudio).not.toHaveBeenCalled();
+    expect(sendElevenLabsStreamingAudio).not.toHaveBeenCalled();
+    expect(sendSmallestStreamingAudio).not.toHaveBeenCalled();
+    const sent = sendDeepgramStreamingAudio.mock.calls[0]?.[0];
+    expect(sent).toBeInstanceOf(Uint8Array);
+    expect(sent).toHaveLength(3200);
+    expect(Array.from(sent?.slice(0, 1600) ?? [])).toEqual(Array(1600).fill(1));
+    expect(Array.from(sent?.slice(1600) ?? [])).toEqual(Array(1600).fill(2));
+  });
+
   it("flushes a padded AssemblyAI pcm frame before stopping streaming", async () => {
     useAvailableMicrophone();
     getSelectedSpeechProvider.mockResolvedValue("assemblyai");
@@ -637,6 +874,204 @@ describe("useDictationSession", () => {
         providerEvents: [],
         text: "second sentence",
         turnOrder: 1,
+      });
+    });
+
+    expect(result.current.streamingTranscript).toBe(
+      "first sentence second sentence",
+    );
+  });
+
+  it("accumulates finalized Smallest AI streaming sequences in order", async () => {
+    useAvailableMicrophone();
+    getSelectedSpeechProvider.mockResolvedValue("smallest");
+    let recorderOptions: Parameters<typeof useAudioRecorder>[0] | undefined;
+    let onStreamingEvent:
+      | Parameters<typeof startSmallestStreamingSession>[0]["onEvent"]
+      | undefined;
+    vi.mocked(useAudioRecorder).mockImplementation((options) => {
+      recorderOptions = options;
+      return {
+        activeMicrophone: null,
+        audioBlob: null,
+        audioLevel: 0,
+        audioUrl: null,
+        captureAnalysis: null,
+        elapsedMs: 0,
+        error: null,
+        prepare: prepareRecording,
+        reset: vi.fn(),
+        start: startRecording,
+        status: "recording",
+        stop: stopRecording,
+        startupMetrics: null,
+      };
+    });
+    startSmallestStreamingSession.mockImplementation(async ({ onEvent }) => {
+      onStreamingEvent = onEvent;
+      return {
+        modelId: "pulse",
+        providerEvents: [],
+        providerId: "smallest",
+        providerMode: "streaming",
+      };
+    });
+
+    const { result } = renderHook(() => useDictationSession());
+
+    await waitFor(() => expect(getSelectedSpeechProvider).toHaveBeenCalled());
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array(4096), 16000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(startSmallestStreamingSession).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      onStreamingEvent?.({
+        eventType: "final",
+        providerEvents: [],
+        sequence: 1,
+        text: "second sentence",
+      });
+      onStreamingEvent?.({
+        eventType: "final",
+        providerEvents: [],
+        sequence: 0,
+        text: "first sentence",
+      });
+    });
+
+    expect(result.current.streamingTranscript).toBe(
+      "first sentence second sentence",
+    );
+  });
+
+  it("accumulates finalized ElevenLabs streaming sequences in receive order", async () => {
+    useAvailableMicrophone();
+    getSelectedSpeechProvider.mockResolvedValue("elevenlabs");
+    let recorderOptions: Parameters<typeof useAudioRecorder>[0] | undefined;
+    let onStreamingEvent:
+      | Parameters<typeof startElevenLabsStreamingSession>[0]["onEvent"]
+      | undefined;
+    vi.mocked(useAudioRecorder).mockImplementation((options) => {
+      recorderOptions = options;
+      return {
+        activeMicrophone: null,
+        audioBlob: null,
+        audioLevel: 0,
+        audioUrl: null,
+        captureAnalysis: null,
+        elapsedMs: 0,
+        error: null,
+        prepare: prepareRecording,
+        reset: vi.fn(),
+        start: startRecording,
+        status: "recording",
+        stop: stopRecording,
+        startupMetrics: null,
+      };
+    });
+    startElevenLabsStreamingSession.mockImplementation(async ({ onEvent }) => {
+      onStreamingEvent = onEvent;
+      return {
+        modelId: "scribe_v2_realtime",
+        providerEvents: [],
+        providerId: "elevenlabs",
+        providerMode: "streaming",
+      };
+    });
+
+    const { result } = renderHook(() => useDictationSession());
+
+    await waitFor(() => expect(getSelectedSpeechProvider).toHaveBeenCalled());
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array(3200), 16000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(startElevenLabsStreamingSession).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      onStreamingEvent?.({
+        eventType: "final",
+        providerEvents: [],
+        sequence: 0,
+        text: "first sentence",
+      });
+      onStreamingEvent?.({
+        eventType: "final",
+        providerEvents: [],
+        sequence: 1,
+        text: "second sentence",
+      });
+    });
+
+    expect(result.current.streamingTranscript).toBe(
+      "first sentence second sentence",
+    );
+  });
+
+  it("accumulates finalized Deepgram streaming sequences in receive order", async () => {
+    useAvailableMicrophone();
+    getSelectedSpeechProvider.mockResolvedValue("deepgram");
+    let recorderOptions: Parameters<typeof useAudioRecorder>[0] | undefined;
+    let onStreamingEvent:
+      | Parameters<typeof startDeepgramStreamingSession>[0]["onEvent"]
+      | undefined;
+    vi.mocked(useAudioRecorder).mockImplementation((options) => {
+      recorderOptions = options;
+      return {
+        activeMicrophone: null,
+        audioBlob: null,
+        audioLevel: 0,
+        audioUrl: null,
+        captureAnalysis: null,
+        elapsedMs: 0,
+        error: null,
+        prepare: prepareRecording,
+        reset: vi.fn(),
+        start: startRecording,
+        status: "recording",
+        stop: stopRecording,
+        startupMetrics: null,
+      };
+    });
+    startDeepgramStreamingSession.mockImplementation(async ({ onEvent }) => {
+      onStreamingEvent = onEvent;
+      return {
+        modelId: "nova-3",
+        providerEvents: [],
+        providerId: "deepgram",
+        providerMode: "streaming",
+      };
+    });
+
+    const { result } = renderHook(() => useDictationSession());
+
+    await waitFor(() => expect(getSelectedSpeechProvider).toHaveBeenCalled());
+    await act(async () => {
+      recorderOptions?.onPcm16Chunk?.(new Uint8Array(3200), 16000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(startDeepgramStreamingSession).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      onStreamingEvent?.({
+        eventType: "final",
+        providerEvents: [],
+        sequence: 0,
+        text: "first sentence",
+      });
+      onStreamingEvent?.({
+        eventType: "final",
+        providerEvents: [],
+        sequence: 1,
+        text: "second sentence",
       });
     });
 

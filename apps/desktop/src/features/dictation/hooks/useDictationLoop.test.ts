@@ -1112,6 +1112,147 @@ describe("useDictationLoop", () => {
     );
   });
 
+  it("inserts a final Smallest AI streaming transcript without async retranscription", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("smallest");
+
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingTranscript: "smallest streamed final",
+          streamingProviderEvents: [
+            {
+              eventType: "stream_final_received",
+              providerId: "smallest",
+              providerMode: "streaming",
+              modelId: "pulse",
+              sessionId: "session-1",
+              stage: "receive",
+              status: "succeeded",
+              metadata: { characterCount: 23 },
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith(
+        "smallest streamed final",
+      );
+    });
+
+    expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: {
+          modelId: "pulse",
+          providerId: "smallest",
+        },
+        transcript: {
+          characterCount: 23,
+          finalText: "smallest streamed final",
+          rawText: "smallest streamed final",
+        },
+      }),
+    );
+  });
+
+  it("inserts a final ElevenLabs streaming transcript without async retranscription", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("elevenlabs");
+
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingTranscript: "elevenlabs streamed final",
+          streamingProviderEvents: [
+            {
+              eventType: "stream_final_received",
+              providerId: "elevenlabs",
+              providerMode: "streaming",
+              modelId: "scribe_v2_realtime",
+              sessionId: "session-1",
+              stage: "receive",
+              status: "succeeded",
+              metadata: { characterCount: 25 },
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith(
+        "elevenlabs streamed final",
+      );
+    });
+
+    expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: {
+          modelId: "scribe_v2_realtime",
+          providerId: "elevenlabs",
+        },
+        transcript: {
+          characterCount: 25,
+          finalText: "elevenlabs streamed final",
+          rawText: "elevenlabs streamed final",
+        },
+      }),
+    );
+  });
+
+  it("inserts a final Deepgram streaming transcript without async retranscription", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("deepgram");
+
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingTranscript: "deepgram streamed final",
+          streamingProviderEvents: [
+            {
+              eventType: "stream_final_received",
+              providerId: "deepgram",
+              providerMode: "streaming",
+              modelId: "nova-3",
+              sessionId: "session-1",
+              stage: "receive",
+              status: "succeeded",
+              metadata: { characterCount: 23 },
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith(
+        "deepgram streamed final",
+      );
+    });
+
+    expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: {
+          modelId: "nova-3",
+          providerId: "deepgram",
+        },
+        transcript: {
+          characterCount: 23,
+          finalText: "deepgram streamed final",
+          rawText: "deepgram streamed final",
+        },
+      }),
+    );
+  });
+
   it("waits briefly for an AssemblyAI streaming final before falling back to async", async () => {
     const audioBlob = recordingBlob();
     getSelectedSpeechProvider.mockResolvedValue("assemblyai");
@@ -1210,6 +1351,120 @@ describe("useDictationLoop", () => {
 
     expect(transcribeRecording).toHaveBeenCalledWith({
       providerId: "assemblyai",
+      audioBlob,
+      language: "en",
+    });
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeline: expect.objectContaining({
+          providerEvents: expect.arrayContaining([
+            expect.objectContaining({ eventType: "stream_error" }),
+            expect.objectContaining({
+              eventType: "stream_fallback_async_started",
+              providerMode: "streaming",
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("falls back to batch ElevenLabs when streaming fails before a final transcript", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("elevenlabs");
+    transcribeRecording.mockResolvedValueOnce({
+      durationMs: 1200,
+      model: "scribe_v2",
+      providerId: "elevenlabs",
+      text: "elevenlabs batch fallback",
+    });
+
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingError: "ElevenLabs streaming is unavailable",
+          streamingProviderEvents: [
+            {
+              eventType: "stream_error",
+              providerId: "elevenlabs",
+              providerMode: "streaming",
+              modelId: "scribe_v2_realtime",
+              sessionId: "session-1",
+              stage: "receive",
+              status: "failed",
+              errorCode: "provider_request_failed",
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith(
+        "elevenlabs batch fallback",
+      );
+    });
+
+    expect(transcribeRecording).toHaveBeenCalledWith({
+      providerId: "elevenlabs",
+      audioBlob,
+      language: "en",
+    });
+    expect(saveDictationRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeline: expect.objectContaining({
+          providerEvents: expect.arrayContaining([
+            expect.objectContaining({ eventType: "stream_error" }),
+            expect.objectContaining({
+              eventType: "stream_fallback_async_started",
+              providerMode: "streaming",
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("falls back to batch Deepgram when streaming fails before a final transcript", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("deepgram");
+    transcribeRecording.mockResolvedValueOnce({
+      durationMs: 1200,
+      model: "nova-3",
+      providerId: "deepgram",
+      text: "deepgram batch fallback",
+    });
+
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingError: "Deepgram streaming is unavailable",
+          streamingProviderEvents: [
+            {
+              eventType: "stream_error",
+              providerId: "deepgram",
+              providerMode: "streaming",
+              modelId: "nova-3",
+              sessionId: "session-1",
+              stage: "receive",
+              status: "failed",
+              errorCode: "provider_request_failed",
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith(
+        "deepgram batch fallback",
+      );
+    });
+
+    expect(transcribeRecording).toHaveBeenCalledWith({
+      providerId: "deepgram",
       audioBlob,
       language: "en",
     });

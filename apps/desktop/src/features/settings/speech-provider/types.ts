@@ -36,6 +36,10 @@ export const ELEVENLABS_MODELS = [
     label: "Scribe v2",
   },
   {
+    value: "scribe_v2_realtime",
+    label: "Scribe v2 Realtime",
+  },
+  {
     value: "scribe_v1",
     label: "Scribe v1",
   },

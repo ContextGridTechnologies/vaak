@@ -12,11 +12,15 @@ mod assemblyai;
 pub(crate) mod assemblyai_streaming;
 mod azure;
 mod deepgram;
+pub(crate) mod deepgram_streaming;
 mod elevenlabs;
+pub(crate) mod elevenlabs_streaming;
 mod gemini;
 mod openai;
 mod prompts;
 mod smallest;
+pub(crate) mod smallest_streaming;
+pub(crate) mod streaming_common;
 
 #[async_trait]
 pub trait SpeechProvider {
@@ -908,12 +912,6 @@ mod tests {
         assert_eq!(route.provider_model_id, "nova-3");
         assert_eq!(route.endpoint_profile_id, "deepgram-listen");
         assert!(route.default_for_mode);
-        assert!(transcription_model_route(
-            deepgram::PROVIDER_ID,
-            "nova-3",
-            TranscriptionMode::Streaming,
-        )
-        .is_none());
 
         for model in [
             "nova-2-finance",
@@ -931,6 +929,42 @@ mod tests {
     }
 
     #[test]
+    fn deepgram_nova_3_is_streaming_capable_without_adding_flux() {
+        let streaming_route = transcription_model_route(
+            deepgram::PROVIDER_ID,
+            "nova-3",
+            TranscriptionMode::Streaming,
+        )
+        .expect("nova-3 should support Deepgram streaming transcription");
+
+        assert_eq!(streaming_route.provider_model_id, "nova-3");
+        assert_eq!(streaming_route.endpoint_profile_id, "deepgram-live-listen");
+        assert_eq!(
+            streaming_route.audio_profile_id,
+            "deepgram-streaming-linear16-16khz"
+        );
+        assert!(streaming_route.default_for_mode);
+        assert!(streaming_route.capabilities.partial_results);
+        assert!(streaming_route.capabilities.final_results);
+        assert!(transcription_model_definition(deepgram::PROVIDER_ID, "flux-general-en").is_none());
+        assert!(transcription_model_route(
+            deepgram::PROVIDER_ID,
+            "flux-general-en",
+            TranscriptionMode::Streaming,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn deepgram_streaming_resolution_uses_nova_3_default() {
+        let resolved =
+            resolve_model_for_mode(deepgram::PROVIDER_ID, None, TranscriptionMode::Streaming)
+                .expect("deepgram streaming default should resolve");
+
+        assert_eq!(resolved.as_deref(), Some("nova-3"));
+    }
+
+    #[test]
     fn catalog_does_not_resolve_unimplemented_provider_streaming_models() {
         assert!(transcription_model_route(
             deepgram::PROVIDER_ID,
@@ -944,12 +978,127 @@ mod tests {
             TranscriptionMode::Streaming,
         )
         .is_none());
-        assert!(transcription_model_route(
+    }
+
+    #[test]
+    fn elevenlabs_realtime_is_streaming_capable_without_remapping_batch_models() {
+        let streaming_route = transcription_model_route(
             elevenlabs::PROVIDER_ID,
             "scribe_v2_realtime",
             TranscriptionMode::Streaming,
         )
+        .expect("elevenlabs realtime streaming route");
+
+        assert_eq!(streaming_route.provider_model_id, "scribe_v2_realtime");
+        assert_eq!(
+            streaming_route.endpoint_profile_id,
+            "elevenlabs-realtime-stt"
+        );
+        assert_eq!(
+            streaming_route.audio_profile_id,
+            "elevenlabs-streaming-pcm16-16khz-json-base64"
+        );
+        assert!(streaming_route.default_for_mode);
+        assert!(streaming_route.capabilities.partial_results);
+        assert!(streaming_route.capabilities.final_results);
+        assert!(transcription_model_route(
+            elevenlabs::PROVIDER_ID,
+            "scribe_v2",
+            TranscriptionMode::Streaming,
+        )
         .is_none());
+        assert!(transcription_model_route(
+            elevenlabs::PROVIDER_ID,
+            "scribe_v1",
+            TranscriptionMode::Streaming,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn elevenlabs_streaming_resolution_rejects_saved_batch_model() {
+        let err = resolve_model_for_mode(
+            elevenlabs::PROVIDER_ID,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some("scribe_v2".to_string()),
+                transcription_mode: None,
+            }),
+            TranscriptionMode::Streaming,
+        )
+        .expect_err("scribe_v2 should remain batch only");
+
+        assert_eq!(err.code, "invalid_provider_request");
+        assert!(err
+            .message
+            .contains("elevenlabs model scribe_v2 does not support streaming transcription"));
+    }
+
+    #[test]
+    fn elevenlabs_streaming_resolution_uses_realtime_default() {
+        let resolved =
+            resolve_model_for_mode(elevenlabs::PROVIDER_ID, None, TranscriptionMode::Streaming)
+                .expect("elevenlabs streaming default should resolve");
+
+        assert_eq!(resolved.as_deref(), Some("scribe_v2_realtime"));
+    }
+
+    #[test]
+    fn smallest_pulse_is_streaming_capable_without_remapping_pulse_pro() {
+        let streaming_route =
+            transcription_model_route(smallest::PROVIDER_ID, "pulse", TranscriptionMode::Streaming)
+                .expect("smallest pulse streaming route");
+
+        assert_eq!(streaming_route.provider_model_id, "pulse");
+        assert_eq!(
+            streaming_route.endpoint_profile_id,
+            "smallest-waves-stt-live"
+        );
+        assert_eq!(
+            streaming_route.audio_profile_id,
+            "smallest-streaming-linear16-16khz"
+        );
+        assert!(streaming_route.default_for_mode);
+        assert!(streaming_route.capabilities.partial_results);
+        assert!(streaming_route.capabilities.final_results);
+        assert!(transcription_model_route(
+            smallest::PROVIDER_ID,
+            "pulse-pro",
+            TranscriptionMode::Streaming,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn smallest_streaming_resolution_rejects_saved_pulse_pro_model() {
+        let err = resolve_model_for_mode(
+            smallest::PROVIDER_ID,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some("pulse-pro".to_string()),
+                transcription_mode: None,
+            }),
+            TranscriptionMode::Streaming,
+        )
+        .expect_err("pulse-pro should remain batch only");
+
+        assert_eq!(err.code, "invalid_provider_request");
+        assert!(err
+            .message
+            .contains("smallest model pulse-pro does not support streaming transcription"));
+    }
+
+    #[test]
+    fn smallest_streaming_resolution_uses_pulse_default() {
+        let resolved =
+            resolve_model_for_mode(smallest::PROVIDER_ID, None, TranscriptionMode::Streaming)
+                .expect("smallest streaming default should resolve");
+
+        assert_eq!(resolved.as_deref(), Some("pulse"));
     }
 
     #[test]
@@ -1231,17 +1380,30 @@ const ASSEMBLYAI_UNIVERSAL_STREAMING_MULTILINGUAL_ROUTES: &[TranscriptionModelRo
         test_profile_id: "assemblyai-universal-streaming-multilingual-streaming",
     }];
 
-const DEEPGRAM_NOVA_3_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
-    mode: TranscriptionMode::Batch,
-    provider_model_id: "nova-3",
-    default_for_mode: true,
-    endpoint_profile_id: "deepgram-listen",
-    audio_profile_id: "deepgram-batch-file",
-    capabilities: BATCH_LANGUAGE_FINAL,
-    retry_policy_id: "http-file",
-    billing_unit: BillingUnit::AudioDuration,
-    test_profile_id: "deepgram-nova-3-batch",
-}];
+const DEEPGRAM_NOVA_3_ROUTES: &[TranscriptionModelRoute] = &[
+    TranscriptionModelRoute {
+        mode: TranscriptionMode::Batch,
+        provider_model_id: "nova-3",
+        default_for_mode: true,
+        endpoint_profile_id: "deepgram-listen",
+        audio_profile_id: "deepgram-batch-file",
+        capabilities: BATCH_LANGUAGE_FINAL,
+        retry_policy_id: "http-file",
+        billing_unit: BillingUnit::AudioDuration,
+        test_profile_id: "deepgram-nova-3-batch",
+    },
+    TranscriptionModelRoute {
+        mode: TranscriptionMode::Streaming,
+        provider_model_id: "nova-3",
+        default_for_mode: true,
+        endpoint_profile_id: "deepgram-live-listen",
+        audio_profile_id: "deepgram-streaming-linear16-16khz",
+        capabilities: STREAMING_LANGUAGE_PARTIAL_FINAL,
+        retry_policy_id: "websocket-session",
+        billing_unit: BillingUnit::AudioDuration,
+        test_profile_id: "deepgram-nova-3-streaming",
+    },
+];
 const ELEVENLABS_SCRIBE_V2_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
     mode: TranscriptionMode::Batch,
     provider_model_id: "scribe_v2",
@@ -1264,17 +1426,42 @@ const ELEVENLABS_SCRIBE_V1_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionM
     billing_unit: BillingUnit::AudioDuration,
     test_profile_id: "elevenlabs-scribe-v1-batch",
 }];
-const SMALLEST_PULSE_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
-    mode: TranscriptionMode::Batch,
-    provider_model_id: "pulse",
-    default_for_mode: true,
-    endpoint_profile_id: "smallest-waves-stt",
-    audio_profile_id: "smallest-batch-file",
-    capabilities: BATCH_LANGUAGE_FINAL,
-    retry_policy_id: "http-file",
-    billing_unit: BillingUnit::AudioDuration,
-    test_profile_id: "smallest-pulse-batch",
-}];
+const ELEVENLABS_SCRIBE_V2_REALTIME_ROUTES: &[TranscriptionModelRoute] =
+    &[TranscriptionModelRoute {
+        mode: TranscriptionMode::Streaming,
+        provider_model_id: "scribe_v2_realtime",
+        default_for_mode: true,
+        endpoint_profile_id: "elevenlabs-realtime-stt",
+        audio_profile_id: "elevenlabs-streaming-pcm16-16khz-json-base64",
+        capabilities: STREAMING_LANGUAGE_PARTIAL_FINAL,
+        retry_policy_id: "websocket-session",
+        billing_unit: BillingUnit::SessionDuration,
+        test_profile_id: "elevenlabs-scribe-v2-realtime-streaming",
+    }];
+const SMALLEST_PULSE_ROUTES: &[TranscriptionModelRoute] = &[
+    TranscriptionModelRoute {
+        mode: TranscriptionMode::Batch,
+        provider_model_id: "pulse",
+        default_for_mode: true,
+        endpoint_profile_id: "smallest-waves-stt",
+        audio_profile_id: "smallest-batch-file",
+        capabilities: BATCH_LANGUAGE_FINAL,
+        retry_policy_id: "http-file",
+        billing_unit: BillingUnit::AudioDuration,
+        test_profile_id: "smallest-pulse-batch",
+    },
+    TranscriptionModelRoute {
+        mode: TranscriptionMode::Streaming,
+        provider_model_id: "pulse",
+        default_for_mode: true,
+        endpoint_profile_id: "smallest-waves-stt-live",
+        audio_profile_id: "smallest-streaming-linear16-16khz",
+        capabilities: STREAMING_LANGUAGE_PARTIAL_FINAL,
+        retry_policy_id: "websocket-session",
+        billing_unit: BillingUnit::SessionDuration,
+        test_profile_id: "smallest-pulse-streaming",
+    },
+];
 const SMALLEST_PULSE_PRO_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
     mode: TranscriptionMode::Batch,
     provider_model_id: "pulse-pro",
@@ -1371,6 +1558,12 @@ pub(crate) const TRANSCRIPTION_MODEL_CATALOG: &[TranscriptionModelDefinition] = 
         id: "scribe_v1",
         label: "Scribe v1",
         routes: ELEVENLABS_SCRIBE_V1_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: elevenlabs::PROVIDER_ID,
+        id: "scribe_v2_realtime",
+        label: "Scribe v2 Realtime",
+        routes: ELEVENLABS_SCRIBE_V2_REALTIME_ROUTES,
     },
     TranscriptionModelDefinition {
         provider_id: smallest::PROVIDER_ID,

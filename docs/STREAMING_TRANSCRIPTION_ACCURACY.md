@@ -2,7 +2,7 @@
 
 Vaak treats streaming transcription as the default low-latency path when the selected provider supports it. The streaming path must preserve the same spoken content as the recorded-file path; latency optimizations must not clip words, remove useful silence, or replace earlier finalized text.
 
-This document starts with AssemblyAI because that is the first production streaming provider. The same constraints should be reused for Deepgram, OpenAI Realtime, or any future websocket provider through provider-specific adapters behind one internal streaming contract.
+This document starts with AssemblyAI and Smallest AI because they are the first production streaming providers. The same constraints should be reused for ElevenLabs, Deepgram, OpenAI Realtime, or any future websocket provider through provider-specific adapters behind one internal streaming contract.
 
 ## AssemblyAI Requirements
 
@@ -85,8 +85,60 @@ The streaming adapter uses the saved selected model exactly when that model supp
 The dictation pipeline remains resilient:
 
 - `standard` mode uses the async provider path.
-- `auto` and `streaming` attempt streaming for AssemblyAI.
-- `auto` and `streaming` fall back to async AssemblyAI when streaming fails before a final transcript or the selected model is not streaming-capable.
+- `auto` and `streaming` attempt streaming for providers with an implemented streaming route.
+- `auto` and `streaming` fall back to async transcription when streaming fails before a final transcript or the selected model is not streaming-capable.
+
+## Smallest AI Implementation
+
+Current Smallest AI streaming defaults:
+
+```text
+model=pulse
+sample_rate=16000
+encoding=linear16
+language=en
+frame_bytes=4096
+```
+
+Smallest AI's live endpoint uses a provider-specific websocket shape:
+
+- endpoint: `wss://api.smallest.ai/waves/v1/stt/live?model=pulse`
+- auth: `Authorization: Bearer {api_key}`
+- audio: mono 16-bit PCM binary frames
+- sample rate: 16 kHz
+- chunk size: 4096 bytes
+- termination: send `{"type":"close_stream"}` and keep reading until an event with `is_last=true`
+
+Vaak treats `pulse` as the only Smallest streaming model. `pulse-pro` remains batch-only and must never silently remap to `pulse` for streaming. If the saved Smallest model is `pulse-pro`, streaming startup returns an unsupported-route error and the dictation loop can fall back to the batch path.
+
+## ElevenLabs Implementation
+
+ElevenLabs realtime speech-to-text uses the shared streaming contract with a provider-specific websocket codec:
+
+```text
+model=scribe_v2_realtime
+sample_rate=16000
+audio_format=pcm_16000
+commit_strategy=manual
+frame_bytes=3200
+transport=json_base64
+```
+
+ElevenLabs differs from AssemblyAI and Smallest AI because its realtime API sends audio through JSON `input_audio_chunk` messages with base64 audio, not raw binary websocket frames. The adapter keeps that detail inside `elevenlabs_streaming.rs`; the frontend still sends normalized 16 kHz mono PCM and aggregates normalized partial/final events.
+
+Vaak keeps `scribe_v2` and `scribe_v1` as batch routes. `scribe_v2_realtime` is a streaming-only route. Do not silently remap a saved `scribe_v2` or `scribe_v1` batch model to `scribe_v2_realtime`.
+
+See [ELEVENLABS_STREAMING_PLAN.md](ELEVENLABS_STREAMING_PLAN.md) for the provider-specific implementation plan.
+
+## Deepgram Plan
+
+Deepgram streaming should use Nova-3 on `wss://api.deepgram.com/v1/listen` with raw 16 kHz mono `linear16` PCM binary frames, `interim_results=true`, `smart_format=true`, and explicit JSON text control messages for `Finalize` and `CloseStream`.
+
+Unlike ElevenLabs, Deepgram does not require base64 JSON audio. Unlike AssemblyAI, Deepgram's finalization is controlled by `Finalize` and `CloseStream` messages. The adapter should keep those details behind the shared streaming event contract.
+
+Deepgram final results should be accumulated by final result segment, not by partial text. The adapter should ignore empty interim results and de-duplicate any repeated final segment that arrives during finalization or close.
+
+See [DEEPGRAM_STREAMING_PLAN.md](DEEPGRAM_STREAMING_PLAN.md) for the provider-specific implementation plan.
 
 ## Replicating To Other Providers
 

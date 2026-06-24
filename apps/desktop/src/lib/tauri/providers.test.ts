@@ -11,11 +11,19 @@ import {
   getProviderStatus,
   getSelectedSpeechProvider,
   cleanupAssemblyAiStreamingSessions,
+  cleanupDeepgramStreamingSessions,
+  cleanupElevenLabsStreamingSessions,
   saveSpeechProviderSetup,
   sendAssemblyAiStreamingAudio,
+  sendDeepgramStreamingAudio,
+  sendElevenLabsStreamingAudio,
   testSpeechProvider,
   startAssemblyAiStreamingSession,
+  startDeepgramStreamingSession,
+  startElevenLabsStreamingSession,
   stopAssemblyAiStreamingSession,
+  stopDeepgramStreamingSession,
+  stopElevenLabsStreamingSession,
   transcribeRecording,
 } from "./providers";
 
@@ -197,5 +205,67 @@ describe("provider Tauri API", () => {
     });
     expectTauriCommand(tauri, "stop_assemblyai_streaming_session", undefined);
     expectTauriCommand(tauri, "cleanup_assemblyai_streaming_sessions", undefined);
+  });
+
+  it("maps ElevenLabs streaming commands to the backend", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("start_elevenlabs_streaming_session", {
+      providerId: "elevenlabs",
+      modelId: "scribe_v2_realtime",
+      providerMode: "streaming",
+      providerEvents: [],
+    });
+    tauri.resolveCommand("send_elevenlabs_streaming_audio", {
+      bytesSent: 4,
+      frameCount: 1,
+      droppedFrames: 0,
+    });
+    tauri.resolveCommand("stop_elevenlabs_streaming_session", true);
+    tauri.resolveCommand("cleanup_elevenlabs_streaming_sessions", false);
+
+    await startElevenLabsStreamingSession({ onEvent: () => {} });
+    await sendElevenLabsStreamingAudio(new Uint8Array([1, 2, 3, 4]));
+    await stopElevenLabsStreamingSession();
+    await cleanupElevenLabsStreamingSessions();
+
+    expectTauriCommand(tauri, "start_elevenlabs_streaming_session", {
+      events: expect.objectContaining({ onmessage: expect.any(Function) }),
+    });
+    expectTauriCommand(tauri, "send_elevenlabs_streaming_audio", {
+      audioBytes: [1, 2, 3, 4],
+    });
+    expectTauriCommand(tauri, "stop_elevenlabs_streaming_session", undefined);
+    expectTauriCommand(tauri, "cleanup_elevenlabs_streaming_sessions", undefined);
+  });
+
+  it("maps Deepgram streaming commands to the backend", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("start_deepgram_streaming_session", {
+      providerId: "deepgram",
+      modelId: "nova-3",
+      providerMode: "streaming",
+      providerEvents: [],
+    });
+    tauri.resolveCommand("send_deepgram_streaming_audio", {
+      bytesSent: 4,
+      frameCount: 1,
+      droppedFrames: 0,
+    });
+    tauri.resolveCommand("stop_deepgram_streaming_session", true);
+    tauri.resolveCommand("cleanup_deepgram_streaming_sessions", false);
+
+    await startDeepgramStreamingSession({ onEvent: () => {} });
+    await sendDeepgramStreamingAudio(new Uint8Array([1, 2, 3, 4]));
+    await stopDeepgramStreamingSession();
+    await cleanupDeepgramStreamingSessions();
+
+    expectTauriCommand(tauri, "start_deepgram_streaming_session", {
+      events: expect.objectContaining({ onmessage: expect.any(Function) }),
+    });
+    expectTauriCommand(tauri, "send_deepgram_streaming_audio", {
+      audioBytes: [1, 2, 3, 4],
+    });
+    expectTauriCommand(tauri, "stop_deepgram_streaming_session", undefined);
+    expectTauriCommand(tauri, "cleanup_deepgram_streaming_sessions", undefined);
   });
 });

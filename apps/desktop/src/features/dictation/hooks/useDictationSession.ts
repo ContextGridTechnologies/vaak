@@ -13,6 +13,9 @@ import { normalizeError } from "@/lib/errors";
 import {
   captureDictationTarget,
   cleanupAssemblyAiStreamingSessions,
+  cleanupDeepgramStreamingSessions,
+  cleanupElevenLabsStreamingSessions,
+  cleanupSmallestStreamingSessions,
   getHotkeyBindings,
   getSelectedSpeechProvider,
   getSystemSettings,
@@ -22,13 +25,24 @@ import {
   isTauriRuntime,
   listenToTauriEvent,
   sendAssemblyAiStreamingAudio,
+  sendDeepgramStreamingAudio,
+  sendElevenLabsStreamingAudio,
+  sendSmallestStreamingAudio,
   type SessionHotkeyEvent,
   SPEECH_PROVIDER_CHANGED_EVENT,
   SYSTEM_SETTINGS_CHANGED_EVENT,
   startAssemblyAiStreamingSession,
+  startDeepgramStreamingSession,
+  startElevenLabsStreamingSession,
+  startSmallestStreamingSession,
   stopAssemblyAiStreamingSession,
+  stopDeepgramStreamingSession,
+  stopElevenLabsStreamingSession,
+  stopSmallestStreamingSession,
   type ProviderTimelineEvent,
   type SpeechProviderId,
+  type StreamingProviderEvent,
+  type StreamingProviderId,
 } from "@/lib/tauri";
 
 type ActiveMode = "idle" | "dictation" | "command";
@@ -36,7 +50,52 @@ type DictationTrigger = "hotkey" | "manual" | null;
 
 const HOTKEY_STOP_TAIL_MS = 250;
 const DEFAULT_DICTATION_MODE: DictationMode = "auto";
-const ASSEMBLYAI_STREAMING_FRAME_BYTES = 1_600;
+const STREAMING_PROVIDER_PROFILES = {
+  assemblyai: {
+    frameBytes: 1_600,
+    label: "AssemblyAI",
+    start: startAssemblyAiStreamingSession,
+    send: sendAssemblyAiStreamingAudio,
+    stop: stopAssemblyAiStreamingSession,
+    cleanup: cleanupAssemblyAiStreamingSessions,
+  },
+  deepgram: {
+    frameBytes: 3_200,
+    label: "Deepgram",
+    start: startDeepgramStreamingSession,
+    send: sendDeepgramStreamingAudio,
+    stop: stopDeepgramStreamingSession,
+    cleanup: cleanupDeepgramStreamingSessions,
+  },
+  elevenlabs: {
+    frameBytes: 3_200,
+    label: "ElevenLabs",
+    start: startElevenLabsStreamingSession,
+    send: sendElevenLabsStreamingAudio,
+    stop: stopElevenLabsStreamingSession,
+    cleanup: cleanupElevenLabsStreamingSessions,
+  },
+  smallest: {
+    frameBytes: 4_096,
+    label: "Smallest AI",
+    start: startSmallestStreamingSession,
+    send: sendSmallestStreamingAudio,
+    stop: stopSmallestStreamingSession,
+    cleanup: cleanupSmallestStreamingSessions,
+  },
+} satisfies Record<
+  StreamingProviderId,
+  {
+    frameBytes: number;
+    label: string;
+    start: (input: {
+      onEvent: (event: StreamingProviderEvent) => void;
+    }) => Promise<{ providerEvents?: ProviderTimelineEvent[] }>;
+    send: (audioBytes: Uint8Array) => Promise<{ droppedFrames: number }>;
+    stop: () => Promise<boolean>;
+    cleanup: () => Promise<boolean>;
+  }
+>;
 
 export function useDictationSession({
   enabled = true,
@@ -101,6 +160,7 @@ export function useDictationSession({
   const streamingQueueRef = useRef<Uint8Array[]>([]);
   const streamingPendingPcmRef = useRef<Uint8Array>(new Uint8Array(0));
   const streamingFinalTurnsRef = useRef<Map<number, string>>(new Map());
+  const streamingProviderRef = useRef<StreamingProviderId | null>(null);
 
   const appendStreamingEvents = useCallback((events?: ProviderTimelineEvent[]) => {
     if (!events || events.length === 0) {
@@ -116,6 +176,7 @@ export function useDictationSession({
     streamingQueueRef.current = [];
     streamingPendingPcmRef.current = new Uint8Array(0);
     streamingFinalTurnsRef.current = new Map();
+    streamingProviderRef.current = null;
     setStreamingError(null);
     setStreamingProviderEvents([]);
     setStreamingTranscript(null);
@@ -127,10 +188,11 @@ export function useDictationSession({
     streamingFailedRef.current = true;
     streamingQueueRef.current = [];
     streamingPendingPcmRef.current = new Uint8Array(0);
+    streamingProviderRef.current = null;
     setStreamingError(normalizeError(err));
   }, []);
 
-  const ensureAssemblyAiStreamingStarted = useCallback(async () => {
+  const ensureStreamingStarted = useCallback(async (provider: StreamingProviderId) => {
     if (streamingStartedRef.current) {
       return;
     }
@@ -139,14 +201,15 @@ export function useDictationSession({
       return;
     }
 
-    const startPromise = startAssemblyAiStreamingSession({
+    const profile = STREAMING_PROVIDER_PROFILES[provider];
+    const startPromise = profile.start({
       onEvent: (event) => {
         appendStreamingEvents(event.providerEvents);
         if (event.eventType === "final" && event.text?.trim()) {
-          const turnOrder =
-            typeof event.turnOrder === "number"
-              ? event.turnOrder
-              : streamingFinalTurnsRef.current.size;
+          const turnOrder = streamingFinalTurnOrder(
+            event,
+            streamingFinalTurnsRef.current.size,
+          );
           streamingFinalTurnsRef.current.set(turnOrder, event.text.trim());
           setStreamingTranscript(
             Array.from(streamingFinalTurnsRef.current.entries())
@@ -158,15 +221,17 @@ export function useDictationSession({
         }
         if (event.eventType === "terminated") {
           streamingStartedRef.current = false;
+          streamingProviderRef.current = null;
         }
         if (event.eventType === "error") {
-          failStreaming("AssemblyAI streaming failed");
+          failStreaming(`${profile.label} streaming failed`);
         }
       },
     })
       .then((result) => {
         appendStreamingEvents(result.providerEvents);
         streamingStartedRef.current = true;
+        streamingProviderRef.current = provider;
       })
       .catch((err) => {
         failStreaming(err);
@@ -178,38 +243,42 @@ export function useDictationSession({
     await startPromise;
   }, [appendStreamingEvents, failStreaming]);
 
-  const sendAssemblyAiStreamingFrame = useCallback(async (chunk: Uint8Array) => {
-    const result = await sendAssemblyAiStreamingAudio(chunk);
+  const sendStreamingFrame = useCallback(async (
+    provider: StreamingProviderId,
+    chunk: Uint8Array,
+  ) => {
+    const profile = STREAMING_PROVIDER_PROFILES[provider];
+    const result = await profile.send(chunk);
     if (result.droppedFrames > 0) {
       throw new Error(
-        `AssemblyAI streaming dropped ${result.droppedFrames} audio frame(s).`,
+        `${profile.label} streaming dropped ${result.droppedFrames} audio frame(s).`,
       );
     }
   }, []);
 
   const handlePcm16Chunk = useCallback(
     (chunk: Uint8Array) => {
-      if (
-        selectedSpeechProvider !== "assemblyai" ||
-        dictationMode === null ||
-        dictationMode === "standard" ||
-        !processingEnabled ||
-        streamingFailedRef.current
-      ) {
+      const provider = streamingProviderForSettings(
+        selectedSpeechProvider,
+        dictationMode,
+        processingEnabled,
+      );
+      if (!provider || streamingFailedRef.current) {
         return;
       }
 
+      const profile = STREAMING_PROVIDER_PROFILES[provider];
       streamingQueueRef.current.push(
-        ...appendAssemblyAiStreamingFrames(chunk, streamingPendingPcmRef),
+        ...appendStreamingFrames(chunk, streamingPendingPcmRef, profile.frameBytes),
       );
-      void ensureAssemblyAiStreamingStarted()
+      void ensureStreamingStarted(provider)
         .then(async () => {
           if (!streamingStartedRef.current) {
             return;
           }
           const queued = streamingQueueRef.current.splice(0);
           for (const queuedChunk of queued) {
-            await sendAssemblyAiStreamingFrame(queuedChunk);
+            await sendStreamingFrame(provider, queuedChunk);
           }
         })
         .catch((err) => {
@@ -217,59 +286,63 @@ export function useDictationSession({
         });
     },
     [
-      ensureAssemblyAiStreamingStarted,
+      ensureStreamingStarted,
       failStreaming,
       dictationMode,
       processingEnabled,
-      sendAssemblyAiStreamingFrame,
+      sendStreamingFrame,
       selectedSpeechProvider,
     ],
   );
 
-  const flushAssemblyAiStreamingAudio = useCallback(async () => {
-    if (
-      selectedSpeechProvider !== "assemblyai" ||
-      dictationMode === null ||
-      dictationMode === "standard" ||
-      !processingEnabled ||
-      streamingFailedRef.current
-    ) {
+  const flushStreamingAudio = useCallback(async (provider: StreamingProviderId) => {
+    if (streamingFailedRef.current) {
       return;
     }
 
+    const profile = STREAMING_PROVIDER_PROFILES[provider];
     const pending = streamingPendingPcmRef.current;
     if (pending.length > 0) {
-      const padded = new Uint8Array(ASSEMBLYAI_STREAMING_FRAME_BYTES);
+      const padded = new Uint8Array(profile.frameBytes);
       padded.set(pending);
       streamingPendingPcmRef.current = new Uint8Array(0);
       streamingQueueRef.current.push(padded);
     }
 
-    await ensureAssemblyAiStreamingStarted();
+    await ensureStreamingStarted(provider);
     if (!streamingStartedRef.current) {
       return;
     }
 
     const queued = streamingQueueRef.current.splice(0);
     for (const queuedChunk of queued) {
-      await sendAssemblyAiStreamingFrame(queuedChunk);
+      await sendStreamingFrame(provider, queuedChunk);
     }
   }, [
-    dictationMode,
-    ensureAssemblyAiStreamingStarted,
-    processingEnabled,
-    sendAssemblyAiStreamingFrame,
-    selectedSpeechProvider,
+    ensureStreamingStarted,
+    sendStreamingFrame,
   ]);
 
-  const stopAssemblyAiStreaming = useCallback(async () => {
+  const stopStreaming = useCallback(async () => {
+    const provider =
+      streamingProviderRef.current ??
+      streamingProviderForSettings(
+        selectedSpeechProvider,
+        dictationMode,
+        processingEnabled,
+      );
+    if (!provider) {
+      return;
+    }
+
     try {
-      await flushAssemblyAiStreamingAudio();
-      await stopAssemblyAiStreamingSession();
+      await flushStreamingAudio(provider);
+      await STREAMING_PROVIDER_PROFILES[provider].stop();
+      streamingProviderRef.current = null;
     } catch (err) {
       setStreamingError(normalizeError(err));
     }
-  }, [flushAssemblyAiStreamingAudio]);
+  }, [dictationMode, flushStreamingAudio, processingEnabled, selectedSpeechProvider]);
 
   const {
     status,
@@ -410,11 +483,11 @@ export function useDictationSession({
       hotkeyStopTimerRef.current = globalThis.setTimeout(() => {
         setRecordingEndedAt(new Date().toISOString());
         stop();
-        void stopAssemblyAiStreaming();
+        void stopStreaming();
         hotkeyStopTimerRef.current = null;
       }, HOTKEY_STOP_TAIL_MS);
     },
-    [clearPendingHotkeyStop, enabled, stop, stopAssemblyAiStreaming],
+    [clearPendingHotkeyStop, enabled, stop, stopStreaming],
   );
 
   const startManualDictation = useCallback(async () => {
@@ -436,8 +509,8 @@ export function useDictationSession({
     setActiveMode("idle");
     setRecordingEndedAt(new Date().toISOString());
     stop();
-    void stopAssemblyAiStreaming();
-  }, [clearPendingHotkeyStop, enabled, stop, stopAssemblyAiStreaming]);
+    void stopStreaming();
+  }, [clearPendingHotkeyStop, enabled, stop, stopStreaming]);
 
   const selectDevice = useCallback((value: string) => {
     if (value === "default" || value === "system") {
@@ -655,7 +728,11 @@ export function useDictationSession({
   useEffect(() => {
     return () => {
       clearPendingHotkeyStop();
-      void cleanupAssemblyAiStreamingSessions().catch(() => {});
+      void Promise.all(
+        Object.values(STREAMING_PROVIDER_PROFILES).map((profile) =>
+          profile.cleanup().catch(() => false),
+        ),
+      ).catch(() => {});
     };
   }, [clearPendingHotkeyStop]);
 
@@ -721,9 +798,39 @@ function getStatusLabel(status: "idle" | "recording" | "stopped" | "error") {
   }
 }
 
-function appendAssemblyAiStreamingFrames(
+function streamingProviderForSettings(
+  providerId: SpeechProviderId | null,
+  dictationMode: DictationMode | null,
+  processingEnabled: boolean,
+): StreamingProviderId | null {
+  if (!processingEnabled || dictationMode === null || dictationMode === "standard") {
+    return null;
+  }
+  return providerId === "assemblyai" ||
+    providerId === "deepgram" ||
+    providerId === "elevenlabs" ||
+    providerId === "smallest"
+    ? providerId
+    : null;
+}
+
+function streamingFinalTurnOrder(
+  event: StreamingProviderEvent,
+  fallback: number,
+) {
+  if (typeof event.turnOrder === "number") {
+    return event.turnOrder;
+  }
+  if (typeof event.sequence === "number") {
+    return event.sequence;
+  }
+  return fallback;
+}
+
+function appendStreamingFrames(
   chunk: Uint8Array,
   pendingRef: MutableRefObject<Uint8Array>,
+  frameBytes: number,
 ) {
   if (chunk.length === 0) {
     return [];
@@ -733,17 +840,13 @@ function appendAssemblyAiStreamingFrames(
   combined.set(pendingRef.current);
   combined.set(chunk, pendingRef.current.length);
 
-  const frameCount = Math.floor(
-    combined.length / ASSEMBLYAI_STREAMING_FRAME_BYTES,
-  );
+  const frameCount = Math.floor(combined.length / frameBytes);
   const frames: Uint8Array[] = [];
   for (let index = 0; index < frameCount; index += 1) {
-    const start = index * ASSEMBLYAI_STREAMING_FRAME_BYTES;
-    frames.push(combined.slice(start, start + ASSEMBLYAI_STREAMING_FRAME_BYTES));
+    const start = index * frameBytes;
+    frames.push(combined.slice(start, start + frameBytes));
   }
 
-  pendingRef.current = combined.slice(
-    frameCount * ASSEMBLYAI_STREAMING_FRAME_BYTES,
-  );
+  pendingRef.current = combined.slice(frameCount * frameBytes);
   return frames;
 }

@@ -6,8 +6,21 @@ use crate::providers::credentials;
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use crate::providers::speech::assemblyai_streaming::{
     self, AssemblyAiStreamingCommandEvent, AssemblyAiStreamingStartResult,
-    ManagedAssemblyAiStreamingState, StreamingAudioWrite,
+    ManagedAssemblyAiStreamingState,
 };
+use crate::providers::speech::deepgram_streaming::{
+    self, DeepgramStreamingCommandEvent, DeepgramStreamingStartResult,
+    ManagedDeepgramStreamingState,
+};
+use crate::providers::speech::elevenlabs_streaming::{
+    self, ElevenLabsStreamingCommandEvent, ElevenLabsStreamingStartResult,
+    ManagedElevenLabsStreamingState,
+};
+use crate::providers::speech::smallest_streaming::{
+    self, ManagedSmallestStreamingState, SmallestStreamingCommandEvent,
+    SmallestStreamingStartResult,
+};
+use crate::providers::speech::streaming_common::StreamingAudioWrite;
 use crate::providers::{
     speech, ProviderConfig, ProviderStatus, TranscriptResult, TranscriptionInput,
 };
@@ -58,6 +71,18 @@ fn command_window_policy(command: &str) -> Option<CommandWindowPolicy> {
         | "send_assemblyai_streaming_audio"
         | "stop_assemblyai_streaming_session"
         | "cleanup_assemblyai_streaming_sessions"
+        | "start_deepgram_streaming_session"
+        | "send_deepgram_streaming_audio"
+        | "stop_deepgram_streaming_session"
+        | "cleanup_deepgram_streaming_sessions"
+        | "start_elevenlabs_streaming_session"
+        | "send_elevenlabs_streaming_audio"
+        | "stop_elevenlabs_streaming_session"
+        | "cleanup_elevenlabs_streaming_sessions"
+        | "start_smallest_streaming_session"
+        | "send_smallest_streaming_audio"
+        | "stop_smallest_streaming_session"
+        | "cleanup_smallest_streaming_sessions"
         | "get_onboarding_state"
         | "get_voice_capsule_placement"
         | "save_voice_capsule_placement"
@@ -1011,6 +1036,174 @@ pub fn cleanup_assemblyai_streaming_sessions(
     Ok(stopped)
 }
 
+#[tauri::command]
+pub async fn start_deepgram_streaming_session(
+    window: WebviewWindow,
+    events: Channel<DeepgramStreamingCommandEvent>,
+    streaming: State<'_, Arc<ManagedDeepgramStreamingState>>,
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<DeepgramStreamingStartResult, ProviderError> {
+    ensure_command_allowed_for_window("start_deepgram_streaming_session", window.label())?;
+    let api_key = credentials::provider_key("deepgram")?;
+    let provider_config = settings.provider_config_or_migrate("deepgram", || {
+        credentials::legacy_provider_config("deepgram")
+    })?;
+    let model = speech::resolve_model_for_mode(
+        "deepgram",
+        provider_config,
+        speech::TranscriptionMode::Streaming,
+    )?;
+    deepgram_streaming::start_managed_session(
+        &api_key,
+        Arc::clone(streaming.inner()),
+        events,
+        model,
+    )
+    .await
+}
+
+#[tauri::command]
+pub fn send_deepgram_streaming_audio(
+    window: WebviewWindow,
+    audio_bytes: Vec<u8>,
+    streaming: State<'_, Arc<ManagedDeepgramStreamingState>>,
+) -> Result<StreamingAudioWrite, ProviderError> {
+    ensure_command_allowed_for_window("send_deepgram_streaming_audio", window.label())?;
+    streaming.send_pcm16(audio_bytes)
+}
+
+#[tauri::command]
+pub fn stop_deepgram_streaming_session(
+    window: WebviewWindow,
+    streaming: State<'_, Arc<ManagedDeepgramStreamingState>>,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("stop_deepgram_streaming_session", window.label())?;
+    Ok(streaming.request_stop())
+}
+
+#[tauri::command]
+pub fn cleanup_deepgram_streaming_sessions(
+    window: WebviewWindow,
+    streaming: State<'_, Arc<ManagedDeepgramStreamingState>>,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("cleanup_deepgram_streaming_sessions", window.label())?;
+    let stopped = streaming.request_stop();
+    let _ = streaming.take_active();
+    Ok(stopped)
+}
+
+#[tauri::command]
+pub async fn start_elevenlabs_streaming_session(
+    window: WebviewWindow,
+    events: Channel<ElevenLabsStreamingCommandEvent>,
+    streaming: State<'_, Arc<ManagedElevenLabsStreamingState>>,
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<ElevenLabsStreamingStartResult, ProviderError> {
+    ensure_command_allowed_for_window("start_elevenlabs_streaming_session", window.label())?;
+    let api_key = credentials::provider_key("elevenlabs")?;
+    let provider_config = settings.provider_config_or_migrate("elevenlabs", || {
+        credentials::legacy_provider_config("elevenlabs")
+    })?;
+    let model = speech::resolve_model_for_mode(
+        "elevenlabs",
+        provider_config,
+        speech::TranscriptionMode::Streaming,
+    )?;
+    elevenlabs_streaming::start_managed_session(
+        &api_key,
+        Arc::clone(streaming.inner()),
+        events,
+        model,
+    )
+    .await
+}
+
+#[tauri::command]
+pub fn send_elevenlabs_streaming_audio(
+    window: WebviewWindow,
+    audio_bytes: Vec<u8>,
+    streaming: State<'_, Arc<ManagedElevenLabsStreamingState>>,
+) -> Result<StreamingAudioWrite, ProviderError> {
+    ensure_command_allowed_for_window("send_elevenlabs_streaming_audio", window.label())?;
+    streaming.send_pcm16(audio_bytes)
+}
+
+#[tauri::command]
+pub fn stop_elevenlabs_streaming_session(
+    window: WebviewWindow,
+    streaming: State<'_, Arc<ManagedElevenLabsStreamingState>>,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("stop_elevenlabs_streaming_session", window.label())?;
+    Ok(streaming.request_stop())
+}
+
+#[tauri::command]
+pub fn cleanup_elevenlabs_streaming_sessions(
+    window: WebviewWindow,
+    streaming: State<'_, Arc<ManagedElevenLabsStreamingState>>,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("cleanup_elevenlabs_streaming_sessions", window.label())?;
+    let stopped = streaming.request_stop();
+    let _ = streaming.take_active();
+    Ok(stopped)
+}
+
+#[tauri::command]
+pub async fn start_smallest_streaming_session(
+    window: WebviewWindow,
+    events: Channel<SmallestStreamingCommandEvent>,
+    streaming: State<'_, Arc<ManagedSmallestStreamingState>>,
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<SmallestStreamingStartResult, ProviderError> {
+    ensure_command_allowed_for_window("start_smallest_streaming_session", window.label())?;
+    let api_key = credentials::provider_key("smallest")?;
+    let provider_config = settings.provider_config_or_migrate("smallest", || {
+        credentials::legacy_provider_config("smallest")
+    })?;
+    let model = speech::resolve_model_for_mode(
+        "smallest",
+        provider_config,
+        speech::TranscriptionMode::Streaming,
+    )?;
+    smallest_streaming::start_managed_session(
+        &api_key,
+        Arc::clone(streaming.inner()),
+        events,
+        model,
+    )
+    .await
+}
+
+#[tauri::command]
+pub fn send_smallest_streaming_audio(
+    window: WebviewWindow,
+    audio_bytes: Vec<u8>,
+    streaming: State<'_, Arc<ManagedSmallestStreamingState>>,
+) -> Result<StreamingAudioWrite, ProviderError> {
+    ensure_command_allowed_for_window("send_smallest_streaming_audio", window.label())?;
+    streaming.send_pcm16(audio_bytes)
+}
+
+#[tauri::command]
+pub fn stop_smallest_streaming_session(
+    window: WebviewWindow,
+    streaming: State<'_, Arc<ManagedSmallestStreamingState>>,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("stop_smallest_streaming_session", window.label())?;
+    Ok(streaming.request_stop())
+}
+
+#[tauri::command]
+pub fn cleanup_smallest_streaming_sessions(
+    window: WebviewWindow,
+    streaming: State<'_, Arc<ManagedSmallestStreamingState>>,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("cleanup_smallest_streaming_sessions", window.label())?;
+    let stopped = streaming.request_stop();
+    let _ = streaming.take_active();
+    Ok(stopped)
+}
+
 fn ensure_provider_ready(status: ProviderStatus) -> Result<ProviderStatus, ProviderError> {
     if !status.configured {
         return Err(crate::providers::errors::ProviderFailure::MissingCredential.into());
@@ -1102,6 +1295,18 @@ mod tests {
             "send_assemblyai_streaming_audio",
             "stop_assemblyai_streaming_session",
             "cleanup_assemblyai_streaming_sessions",
+            "start_deepgram_streaming_session",
+            "send_deepgram_streaming_audio",
+            "stop_deepgram_streaming_session",
+            "cleanup_deepgram_streaming_sessions",
+            "start_elevenlabs_streaming_session",
+            "send_elevenlabs_streaming_audio",
+            "stop_elevenlabs_streaming_session",
+            "cleanup_elevenlabs_streaming_sessions",
+            "start_smallest_streaming_session",
+            "send_smallest_streaming_audio",
+            "stop_smallest_streaming_session",
+            "cleanup_smallest_streaming_sessions",
             "persist_dictation_audio",
             "save_dictation_record",
             "save_voice_capsule_placement",

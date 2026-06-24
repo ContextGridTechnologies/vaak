@@ -69,6 +69,15 @@ pub fn run() {
         .manage(Arc::new(
             providers::speech::assemblyai_streaming::ManagedAssemblyAiStreamingState::default(),
         ))
+        .manage(Arc::new(
+            providers::speech::deepgram_streaming::ManagedDeepgramStreamingState::default(),
+        ))
+        .manage(Arc::new(
+            providers::speech::elevenlabs_streaming::ManagedElevenLabsStreamingState::default(),
+        ))
+        .manage(Arc::new(
+            providers::speech::smallest_streaming::ManagedSmallestStreamingState::default(),
+        ))
         .manage(stability::RendererHealth::default())
         .manage(stability::VoiceCapsuleReadiness::new(
             startup_diagnostics.run_id(),
@@ -267,7 +276,19 @@ pub fn run() {
             commands::start_assemblyai_streaming_session,
             commands::send_assemblyai_streaming_audio,
             commands::stop_assemblyai_streaming_session,
-            commands::cleanup_assemblyai_streaming_sessions
+            commands::cleanup_assemblyai_streaming_sessions,
+            commands::start_deepgram_streaming_session,
+            commands::send_deepgram_streaming_audio,
+            commands::stop_deepgram_streaming_session,
+            commands::cleanup_deepgram_streaming_sessions,
+            commands::start_elevenlabs_streaming_session,
+            commands::send_elevenlabs_streaming_audio,
+            commands::stop_elevenlabs_streaming_session,
+            commands::cleanup_elevenlabs_streaming_sessions,
+            commands::start_smallest_streaming_session,
+            commands::send_smallest_streaming_audio,
+            commands::stop_smallest_streaming_session,
+            commands::cleanup_smallest_streaming_sessions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

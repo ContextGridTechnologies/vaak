@@ -40,28 +40,56 @@ export type ProviderTimelineEvent = {
   metadata?: Record<string, unknown> | null;
 };
 
-export type AssemblyAiStreamingEvent = {
+export type StreamingProviderId =
+  | "assemblyai"
+  | "deepgram"
+  | "elevenlabs"
+  | "smallest";
+
+export type StreamingProviderEvent = {
   eventType: "began" | "partial" | "final" | "terminated" | "error" | "ignored";
   sessionId?: string | null;
   turnOrder?: number | null;
+  sequence?: number | null;
   text?: string | null;
   audioDurationMs?: number | null;
   sessionDurationMs?: number | null;
   providerEvents?: ProviderTimelineEvent[];
 };
 
-export type AssemblyAiStreamingStartResult = {
-  providerId: "assemblyai";
+export type StreamingStartResult = {
+  providerId: StreamingProviderId;
   modelId: string;
   providerMode: "streaming";
   providerEvents?: ProviderTimelineEvent[];
 };
 
-export type AssemblyAiStreamingAudioWrite = {
+export type StreamingAudioWrite = {
   bytesSent: number;
   frameCount: number;
   droppedFrames: number;
 };
+
+export type AssemblyAiStreamingEvent = StreamingProviderEvent;
+export type AssemblyAiStreamingStartResult = StreamingStartResult & {
+  providerId: "assemblyai";
+};
+export type AssemblyAiStreamingAudioWrite = StreamingAudioWrite;
+export type SmallestStreamingEvent = StreamingProviderEvent;
+export type SmallestStreamingStartResult = StreamingStartResult & {
+  providerId: "smallest";
+};
+export type SmallestStreamingAudioWrite = StreamingAudioWrite;
+export type DeepgramStreamingEvent = StreamingProviderEvent;
+export type DeepgramStreamingStartResult = StreamingStartResult & {
+  providerId: "deepgram";
+};
+export type DeepgramStreamingAudioWrite = StreamingAudioWrite;
+export type ElevenLabsStreamingEvent = StreamingProviderEvent;
+export type ElevenLabsStreamingStartResult = StreamingStartResult & {
+  providerId: "elevenlabs";
+};
+export type ElevenLabsStreamingAudioWrite = StreamingAudioWrite;
 
 export type SpeechProviderId =
   | "openai"
@@ -174,4 +202,82 @@ export async function stopAssemblyAiStreamingSession(): Promise<boolean> {
 
 export async function cleanupAssemblyAiStreamingSessions(): Promise<boolean> {
   return invokeTauri("cleanup_assemblyai_streaming_sessions");
+}
+
+export async function startDeepgramStreamingSession(input: {
+  onEvent: (event: DeepgramStreamingEvent) => void;
+}): Promise<DeepgramStreamingStartResult> {
+  const { Channel } = await import("@tauri-apps/api/core");
+  const events = new Channel<DeepgramStreamingEvent>();
+  events.onmessage = input.onEvent;
+
+  return invokeTauri("start_deepgram_streaming_session", { events });
+}
+
+export async function sendDeepgramStreamingAudio(
+  audioBytes: Uint8Array,
+): Promise<DeepgramStreamingAudioWrite> {
+  return invokeTauri("send_deepgram_streaming_audio", {
+    audioBytes: Array.from(audioBytes),
+  });
+}
+
+export async function stopDeepgramStreamingSession(): Promise<boolean> {
+  return invokeTauri("stop_deepgram_streaming_session");
+}
+
+export async function cleanupDeepgramStreamingSessions(): Promise<boolean> {
+  return invokeTauri("cleanup_deepgram_streaming_sessions");
+}
+
+export async function startElevenLabsStreamingSession(input: {
+  onEvent: (event: ElevenLabsStreamingEvent) => void;
+}): Promise<ElevenLabsStreamingStartResult> {
+  const { Channel } = await import("@tauri-apps/api/core");
+  const events = new Channel<ElevenLabsStreamingEvent>();
+  events.onmessage = input.onEvent;
+
+  return invokeTauri("start_elevenlabs_streaming_session", { events });
+}
+
+export async function sendElevenLabsStreamingAudio(
+  audioBytes: Uint8Array,
+): Promise<ElevenLabsStreamingAudioWrite> {
+  return invokeTauri("send_elevenlabs_streaming_audio", {
+    audioBytes: Array.from(audioBytes),
+  });
+}
+
+export async function stopElevenLabsStreamingSession(): Promise<boolean> {
+  return invokeTauri("stop_elevenlabs_streaming_session");
+}
+
+export async function cleanupElevenLabsStreamingSessions(): Promise<boolean> {
+  return invokeTauri("cleanup_elevenlabs_streaming_sessions");
+}
+
+export async function startSmallestStreamingSession(input: {
+  onEvent: (event: SmallestStreamingEvent) => void;
+}): Promise<SmallestStreamingStartResult> {
+  const { Channel } = await import("@tauri-apps/api/core");
+  const events = new Channel<SmallestStreamingEvent>();
+  events.onmessage = input.onEvent;
+
+  return invokeTauri("start_smallest_streaming_session", { events });
+}
+
+export async function sendSmallestStreamingAudio(
+  audioBytes: Uint8Array,
+): Promise<SmallestStreamingAudioWrite> {
+  return invokeTauri("send_smallest_streaming_audio", {
+    audioBytes: Array.from(audioBytes),
+  });
+}
+
+export async function stopSmallestStreamingSession(): Promise<boolean> {
+  return invokeTauri("stop_smallest_streaming_session");
+}
+
+export async function cleanupSmallestStreamingSessions(): Promise<boolean> {
+  return invokeTauri("cleanup_smallest_streaming_sessions");
 }

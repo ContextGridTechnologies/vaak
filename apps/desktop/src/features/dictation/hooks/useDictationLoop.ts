@@ -21,6 +21,7 @@ import {
   type DictationTimeline,
   type DictationMode,
   type SpeechProviderId,
+  type StreamingProviderId,
   type TextInsertResult,
 } from "@/lib/tauri";
 import type { FocusedFieldInfo } from "@/lib/tauri";
@@ -345,8 +346,11 @@ export function useDictationLoop(
             modelId: string | null;
           }
         | undefined;
+      const streamingProvider = isStreamingProvider(providerId)
+        ? providerId
+        : null;
       const streamingTranscript =
-        providerId === "assemblyai" &&
+        streamingProvider &&
         dictationMode !== "standard"
           ? session.streamingTranscript?.trim() ?? ""
           : "";
@@ -357,12 +361,12 @@ export function useDictationLoop(
         recordDictationLoopCheckpoint("dictation_loop_transcription_started", {
           providerId,
           segmentCount: transcriptionSegments.length,
-          streamingFallback: Boolean(providerId === "assemblyai" && session.streamingError),
+          streamingFallback: Boolean(streamingProvider && session.streamingError),
           dictationMode,
           streamingTranscriptChars: streamingTranscript.length,
         });
         if (
-          providerId === "assemblyai" &&
+          streamingProvider &&
           dictationMode !== "standard" &&
           finalStreamingTranscript.length === 0 &&
           shouldWaitForStreamingFinal(session)
@@ -376,28 +380,31 @@ export function useDictationLoop(
         if (finalStreamingTranscript.length > 0) {
           transcriptionContext = {
             providerId,
-            modelId: assemblyAiStreamingModelId(session),
+            modelId: streamingModelId(session),
           };
           text = finalStreamingTranscript;
           transcriptionMs = elapsedMs(transcriptionStartedAt);
           timeline.transcriptionCompletedAt = isoNow();
         } else {
           if (
-            providerId === "assemblyai" &&
+            streamingProvider &&
             dictationMode === "streaming" &&
             !session.streamingError
           ) {
             throw new Error(
-              "AssemblyAI streaming did not return a final transcript.",
+              `${label} streaming did not return a final transcript.`,
             );
           }
           if (
-            providerId === "assemblyai" &&
+            streamingProvider &&
             dictationMode !== "standard" &&
             session.streamingError
           ) {
             timeline.providerEvents?.push(
-              streamingFallbackAsyncStartedEvent(session.streamingError),
+              streamingFallbackAsyncStartedEvent(
+                streamingProvider,
+                session.streamingError,
+              ),
             );
           }
           const transcriptionAttempts = await Promise.all(
@@ -797,7 +804,7 @@ function shouldPreferRawAudio(
   captureAnalysis: CaptureAnalysis | null,
 ) {
   return (
-    providerId === "assemblyai" ||
+    isStreamingProvider(providerId) ||
     shouldFallbackToRawTranscription(captureAnalysis)
   ) && captureAnalysis !== null;
 }
@@ -837,7 +844,10 @@ function localSpeechGateEvent(
   };
 }
 
-function streamingFallbackAsyncStartedEvent(reason: string) {
+function streamingFallbackAsyncStartedEvent(
+  providerId: StreamingProviderId,
+  reason: string,
+) {
   return {
     durationMs: null,
     eventType: "stream_fallback_async_started",
@@ -845,7 +855,7 @@ function streamingFallbackAsyncStartedEvent(reason: string) {
       reason,
     },
     modelId: null,
-    providerId: "assemblyai",
+    providerId,
     providerMode: "streaming" as const,
     sessionId: null,
     stage: "fallback_async",
@@ -853,7 +863,7 @@ function streamingFallbackAsyncStartedEvent(reason: string) {
   };
 }
 
-function assemblyAiStreamingModelId(session: DictationLoopSession) {
+function streamingModelId(session: DictationLoopSession) {
   const events = session.streamingProviderEvents ?? [];
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const modelId = events[index]?.modelId;
@@ -862,6 +872,17 @@ function assemblyAiStreamingModelId(session: DictationLoopSession) {
     }
   }
   return null;
+}
+
+function isStreamingProvider(
+  providerId: SpeechProviderId,
+): providerId is StreamingProviderId {
+  return (
+    providerId === "assemblyai" ||
+    providerId === "deepgram" ||
+    providerId === "elevenlabs" ||
+    providerId === "smallest"
+  );
 }
 
 function shouldWaitForStreamingFinal(session: DictationLoopSession) {
