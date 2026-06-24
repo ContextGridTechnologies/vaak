@@ -28,7 +28,6 @@ type ActiveMode = "idle" | "dictation" | "command";
 type DictationTrigger = "hotkey" | "manual" | null;
 
 const HOTKEY_STOP_TAIL_MS = 250;
-const STREAMING_SPEECH_SAMPLE_THRESHOLD = 1_500;
 const DEFAULT_DICTATION_MODE: DictationMode = "auto";
 
 export function useDictationSession({
@@ -90,7 +89,9 @@ export function useDictationSession({
   > | null>(null);
   const streamingStartedRef = useRef(false);
   const streamingStartPromiseRef = useRef<Promise<void> | null>(null);
+  const streamingFailedRef = useRef(false);
   const streamingQueueRef = useRef<Uint8Array[]>([]);
+  const streamingFinalTurnsRef = useRef<Map<number, string>>(new Map());
 
   const appendStreamingEvents = useCallback((events?: ProviderTimelineEvent[]) => {
     if (!events || events.length === 0) {
@@ -102,7 +103,9 @@ export function useDictationSession({
   const resetStreamingState = useCallback(() => {
     streamingStartedRef.current = false;
     streamingStartPromiseRef.current = null;
+    streamingFailedRef.current = false;
     streamingQueueRef.current = [];
+    streamingFinalTurnsRef.current = new Map();
     setStreamingError(null);
     setStreamingProviderEvents([]);
     setStreamingTranscript(null);
@@ -111,6 +114,7 @@ export function useDictationSession({
   const failStreaming = useCallback((err: unknown) => {
     streamingStartedRef.current = false;
     streamingStartPromiseRef.current = null;
+    streamingFailedRef.current = true;
     streamingQueueRef.current = [];
     setStreamingError(normalizeError(err));
   }, []);
@@ -128,7 +132,18 @@ export function useDictationSession({
       onEvent: (event) => {
         appendStreamingEvents(event.providerEvents);
         if (event.eventType === "final" && event.text?.trim()) {
-          setStreamingTranscript(event.text.trim());
+          const turnOrder =
+            typeof event.turnOrder === "number"
+              ? event.turnOrder
+              : streamingFinalTurnsRef.current.size;
+          streamingFinalTurnsRef.current.set(turnOrder, event.text.trim());
+          setStreamingTranscript(
+            Array.from(streamingFinalTurnsRef.current.entries())
+              .sort(([left], [right]) => left - right)
+              .map(([, text]) => text)
+              .join(" ")
+              .trim(),
+          );
         }
         if (event.eventType === "terminated") {
           streamingStartedRef.current = false;
@@ -159,7 +174,7 @@ export function useDictationSession({
         dictationMode === null ||
         dictationMode === "standard" ||
         !processingEnabled ||
-        !isLikelySpeechPcm16(chunk)
+        streamingFailedRef.current
       ) {
         return;
       }
@@ -639,14 +654,4 @@ function getStatusLabel(status: "idle" | "recording" | "stopped" | "error") {
     default:
       return "Idle";
   }
-}
-
-function isLikelySpeechPcm16(chunk: Uint8Array) {
-  const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-  for (let offset = 0; offset + 1 < chunk.byteLength; offset += 2) {
-    if (Math.abs(view.getInt16(offset, true)) >= STREAMING_SPEECH_SAMPLE_THRESHOLD) {
-      return true;
-    }
-  }
-  return false;
 }

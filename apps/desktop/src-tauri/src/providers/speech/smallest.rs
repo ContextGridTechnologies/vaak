@@ -13,7 +13,7 @@ pub const PROVIDER_ID: &str = "smallest";
 pub const DEFAULT_MODEL: &str = "pulse";
 const LOG_TARGET: &str = "vaak::providers::speech::smallest";
 
-const TRANSCRIPTIONS_URL: &str = "https://api.smallest.ai/waves/v1/pulse/get_text";
+const TRANSCRIPTIONS_URL: &str = "https://api.smallest.ai/waves/v1/stt/";
 const DEFAULT_LANGUAGE: &str = "en";
 const RAW_AUDIO_CONTENT_TYPE: &str = "application/octet-stream";
 
@@ -52,6 +52,7 @@ impl SpeechProvider for SmallestSpeechProvider {
                 &api_key,
                 &input.audio,
                 &input.mime_type,
+                &model,
                 input.language.as_deref(),
             )
         })
@@ -94,6 +95,7 @@ fn build_transcription_request(
     api_key: &str,
     audio: &[u8],
     _mime_type: &str,
+    model: &str,
     language: Option<&str>,
 ) -> Result<reqwest::Request, ProviderError> {
     client
@@ -101,6 +103,7 @@ fn build_transcription_request(
         .bearer_auth(api_key)
         .header(CONTENT_TYPE, RAW_AUDIO_CONTENT_TYPE)
         .query(&[
+            ("model", model),
             ("language", resolve_language(language)),
             ("word_timestamps", "false"),
             ("format", "true"),
@@ -232,13 +235,14 @@ mod tests {
             "smallest-test",
             &[1, 2, 3],
             "audio/flac",
+            "pulse",
             Some("en"),
         )
         .expect("request to build");
 
         assert_eq!(
             request.url().as_str(),
-            "https://api.smallest.ai/waves/v1/pulse/get_text?language=en&word_timestamps=false&format=true&punctuate=true&capitalize=true"
+            "https://api.smallest.ai/waves/v1/stt/?model=pulse&language=en&word_timestamps=false&format=true&punctuate=true&capitalize=true"
         );
         assert_eq!(
             request
@@ -263,13 +267,38 @@ mod tests {
     #[test]
     fn request_defaults_missing_language_to_english() {
         let client = reqwest::Client::new();
-        let request =
-            build_transcription_request(&client, "smallest-test", &[1], "audio/webm", None)
-                .expect("request to build");
+        let request = build_transcription_request(
+            &client,
+            "smallest-test",
+            &[1],
+            "audio/webm",
+            "pulse",
+            None,
+        )
+        .expect("request to build");
 
         assert_eq!(
             request.url().query(),
-            Some("language=en&word_timestamps=false&format=true&punctuate=true&capitalize=true")
+            Some("model=pulse&language=en&word_timestamps=false&format=true&punctuate=true&capitalize=true")
+        );
+    }
+
+    #[test]
+    fn request_sends_selected_pulse_pro_model() {
+        let client = reqwest::Client::new();
+        let request = build_transcription_request(
+            &client,
+            "smallest-test",
+            &[1],
+            "audio/webm",
+            "pulse-pro",
+            Some("en"),
+        )
+        .expect("request to build");
+
+        assert_eq!(
+            request.url().query(),
+            Some("model=pulse-pro&language=en&word_timestamps=false&format=true&punctuate=true&capitalize=true")
         );
     }
 

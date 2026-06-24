@@ -19,6 +19,7 @@ export {
   DEFAULT_SMALLEST_MODEL,
   ELEVENLABS_MODELS,
   OPENAI_MODELS,
+  SMALLEST_MODELS,
   providerLabels,
   type ProviderErrors,
   type ProviderStatuses,

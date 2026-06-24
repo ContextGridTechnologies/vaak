@@ -12,22 +12,22 @@ export const OPENAI_MODELS = [
     label: "GPT-4o Transcribe",
   },
   {
-    value: "gpt-4o-transcribe-diarize",
-    label: "GPT-4o Transcribe Diarize",
-  },
-  {
     value: "whisper-1",
     label: "Whisper-1",
   },
 ] as const;
 export const ASSEMBLYAI_MODELS = [
   {
+    value: "universal-3-5-pro",
+    label: "Universal-3.5 Pro",
+  },
+  {
     value: "universal-3-pro",
     label: "Universal-3 Pro",
   },
   {
-    value: "universal-2",
-    label: "Universal-2",
+    value: "u3-rt-pro",
+    label: "Universal-3 Realtime Pro",
   },
 ] as const;
 export const ELEVENLABS_MODELS = [
@@ -40,11 +40,21 @@ export const ELEVENLABS_MODELS = [
     label: "Scribe v1",
   },
 ] as const;
+export const SMALLEST_MODELS = [
+  {
+    value: "pulse",
+    label: "Pulse",
+  },
+  {
+    value: "pulse-pro",
+    label: "Pulse Pro",
+  },
+] as const;
 export const DEFAULT_OPENAI_MODEL = OPENAI_MODELS[0].value;
-export const DEFAULT_ASSEMBLYAI_MODEL = ASSEMBLYAI_MODELS[0].value;
+export const DEFAULT_ASSEMBLYAI_MODEL = "universal-3-pro";
 export const DEFAULT_ELEVENLABS_MODEL = ELEVENLABS_MODELS[0].value;
 export const DEFAULT_DEEPGRAM_MODEL = "nova-3";
-export const DEFAULT_SMALLEST_MODEL = "pulse";
+export const DEFAULT_SMALLEST_MODEL = SMALLEST_MODELS[0].value;
 
 export const providerLabels: Record<SpeechProviderId, string> = {
   openai: "OpenAI",

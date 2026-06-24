@@ -16,6 +16,8 @@ use crate::providers::ProviderTimelineEvent;
 
 const DEFAULT_STREAMING_HOST: &str = "streaming.assemblyai.com";
 const DEFAULT_STREAMING_MODEL: &str = "u3-rt-pro";
+const DEFAULT_STREAMING_MODE: &str = "max_accuracy";
+const DEFAULT_STREAMING_LANGUAGE_CODE: &str = "en";
 const DEFAULT_SAMPLE_RATE_HZ: u32 = 16_000;
 const DEFAULT_FRAME_MS: u32 = 50;
 const AUDIO_CHANNEL_CAPACITY: usize = 64;
@@ -57,8 +59,11 @@ pub(crate) async fn start_managed_session(
     api_key: &str,
     state: Arc<ManagedAssemblyAiStreamingState>,
     events: tauri::ipc::Channel<AssemblyAiStreamingCommandEvent>,
+    model: Option<String>,
 ) -> Result<AssemblyAiStreamingStartResult, ProviderError> {
-    let session = AssemblyAiStreamingSession::connect(api_key).await?;
+    let config = AssemblyAiStreamingConfig::with_model(model)?;
+    let model_id = config.speech_model.clone();
+    let session = AssemblyAiStreamingSession::connect_with_config(api_key, config).await?;
     let snapshot = AssemblyAiStreamingSnapshot::new("pending".to_string());
     let started_events = snapshot.provider_events.clone();
     let (handle, mut events_rx) = session.into_handle_and_events(snapshot.session_id.clone());
@@ -79,7 +84,7 @@ pub(crate) async fn start_managed_session(
 
     Ok(AssemblyAiStreamingStartResult {
         provider_id: PROVIDER_ID.to_string(),
-        model_id: DEFAULT_STREAMING_MODEL.to_string(),
+        model_id,
         provider_mode: PROVIDER_MODE.to_string(),
         provider_events: started_events,
     })
@@ -624,6 +629,9 @@ impl AssemblyAiStreamingOutput {
                 audio_duration_ms: audio_duration_seconds.saturating_mul(1_000),
                 session_duration_ms: session_duration_seconds.saturating_mul(1_000),
             },
+            AssemblyAiStreamingEvent::Error { error_code, error } => Self::Error {
+                message: format!("AssemblyAI streaming error {error_code}: {error}"),
+            },
             _ => Self::Ignored,
         }
     }
@@ -638,6 +646,8 @@ pub(crate) struct AssemblyAiStreamingConfig {
     host: String,
     speech_model: String,
     sample_rate_hz: u32,
+    mode: String,
+    language_code: String,
 }
 
 impl Default for AssemblyAiStreamingConfig {
@@ -646,19 +656,32 @@ impl Default for AssemblyAiStreamingConfig {
             host: DEFAULT_STREAMING_HOST.to_string(),
             speech_model: DEFAULT_STREAMING_MODEL.to_string(),
             sample_rate_hz: DEFAULT_SAMPLE_RATE_HZ,
+            mode: DEFAULT_STREAMING_MODE.to_string(),
+            language_code: DEFAULT_STREAMING_LANGUAGE_CODE.to_string(),
         }
     }
 }
 
 impl AssemblyAiStreamingConfig {
+    pub(crate) fn with_model(model: Option<String>) -> Result<Self, ProviderError> {
+        let mut config = Self::default();
+        if let Some(model) = model
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        {
+            config.speech_model = model;
+        }
+        Ok(config)
+    }
+
     pub(crate) fn build_request(&self, api_key: &str) -> Result<Request, ProviderError> {
         if api_key.trim().is_empty() {
             return Err(ProviderFailure::MissingCredential.into());
         }
 
         let url = format!(
-            "wss://{}/v3/ws?speech_model={}&sample_rate={}",
-            self.host, self.speech_model, self.sample_rate_hz
+            "wss://{}/v3/ws?speech_model={}&sample_rate={}&mode={}&language_code={}",
+            self.host, self.speech_model, self.sample_rate_hz, self.mode, self.language_code
         );
         let mut request = url
             .into_client_request()
@@ -754,6 +777,10 @@ pub(crate) enum AssemblyAiStreamingEvent {
         audio_duration_seconds: u64,
         session_duration_seconds: u64,
     },
+    Error {
+        error_code: u32,
+        error: String,
+    },
     #[serde(other)]
     Unknown,
 }
@@ -823,7 +850,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn streaming_config_builds_edge_websocket_request_without_bearer_prefix() {
+    fn streaming_config_builds_accuracy_oriented_websocket_request_without_bearer_prefix() {
         let config = AssemblyAiStreamingConfig::default();
 
         let request = config
@@ -832,7 +859,7 @@ mod tests {
 
         assert_eq!(
             request.uri().to_string(),
-            "wss://streaming.assemblyai.com/v3/ws?speech_model=u3-rt-pro&sample_rate=16000"
+            "wss://streaming.assemblyai.com/v3/ws?speech_model=u3-rt-pro&sample_rate=16000&mode=max_accuracy&language_code=en"
         );
         assert_eq!(
             request
@@ -927,6 +954,24 @@ mod tests {
             AssemblyAiStreamingOutput::Final {
                 turn_order: 2,
                 text: "final text".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn converts_provider_error_events_to_streaming_errors() {
+        let output = AssemblyAiStreamingOutput::from_event(
+            parse_streaming_event(
+                r#"{"type":"Error","error_code":3007,"error":"Audio transmission rate exceeded"}"#,
+            )
+            .expect("error event"),
+        );
+
+        assert_eq!(
+            output,
+            AssemblyAiStreamingOutput::Error {
+                message: "AssemblyAI streaming error 3007: Audio transmission rate exceeded"
+                    .to_string(),
             }
         );
     }

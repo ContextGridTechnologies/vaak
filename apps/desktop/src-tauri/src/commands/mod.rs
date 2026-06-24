@@ -960,11 +960,25 @@ pub async fn start_assemblyai_streaming_session(
     window: WebviewWindow,
     events: Channel<AssemblyAiStreamingCommandEvent>,
     streaming: State<'_, Arc<ManagedAssemblyAiStreamingState>>,
+    settings: State<'_, LocalSettingsStore>,
 ) -> Result<AssemblyAiStreamingStartResult, ProviderError> {
     ensure_command_allowed_for_window("start_assemblyai_streaming_session", window.label())?;
     let api_key = credentials::provider_key("assemblyai")?;
-    assemblyai_streaming::start_managed_session(&api_key, Arc::clone(streaming.inner()), events)
-        .await
+    let provider_config = settings.provider_config_or_migrate("assemblyai", || {
+        credentials::legacy_provider_config("assemblyai")
+    })?;
+    let model = speech::resolve_model_for_mode(
+        "assemblyai",
+        provider_config,
+        speech::TranscriptionMode::Streaming,
+    )?;
+    assemblyai_streaming::start_managed_session(
+        &api_key,
+        Arc::clone(streaming.inner()),
+        events,
+        model,
+    )
+    .await
 }
 
 #[tauri::command]

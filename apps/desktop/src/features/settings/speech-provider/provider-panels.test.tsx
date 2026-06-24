@@ -8,7 +8,7 @@ import { AzureOpenAiProviderPanel } from "./AzureOpenAiProviderPanel";
 import { ElevenLabsProviderPanel } from "./ElevenLabsProviderPanel";
 import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
 import { SmallestProviderPanel } from "./SmallestProviderPanel";
-import { SAVED_KEY_PLACEHOLDER } from "./types";
+import { ASSEMBLYAI_MODELS, SAVED_KEY_PLACEHOLDER } from "./types";
 
 describe("speech provider panels", () => {
   it("shows a saved OpenAI key as a non-copyable star placeholder", () => {
@@ -116,6 +116,45 @@ describe("speech provider panels", () => {
     expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
   });
 
+  it("keeps the AssemblyAI model picker focused on dictation models", () => {
+    expect(ASSEMBLYAI_MODELS.map((model) => model.value)).toEqual([
+      "universal-3-5-pro",
+      "universal-3-pro",
+      "u3-rt-pro",
+    ]);
+    expect(ASSEMBLYAI_MODELS.map((model) => Object.keys(model))).toEqual([
+      ["value", "label"],
+      ["value", "label"],
+      ["value", "label"],
+    ]);
+    expect(ASSEMBLYAI_MODELS.map((model) => model.label)).toContain(
+      "Universal-3 Realtime Pro",
+    );
+
+    renderApp(
+      <AssemblyAiProviderPanel
+        apiKey=""
+        isLoading={false}
+        isSaving={false}
+        isTesting={false}
+        model="universal-3-5-pro"
+        status={{
+          providerId: "assemblyai",
+          configured: true,
+          configComplete: true,
+        }}
+        onApiKeyChange={vi.fn()}
+        onModelChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onTest={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent(
+      "Universal-3.5 Pro",
+    );
+  });
+
   it("shows a saved Smallest AI key as a non-copyable star placeholder", () => {
     renderApp(
       <SmallestProviderPanel
@@ -123,6 +162,7 @@ describe("speech provider panels", () => {
         isLoading={false}
         isSaving={false}
         isTesting={false}
+        model="pulse"
         testResult={undefined}
         status={{
           providerId: "smallest",
@@ -130,6 +170,7 @@ describe("speech provider panels", () => {
           configComplete: true,
         }}
         onApiKeyChange={vi.fn()}
+        onModelChange={vi.fn()}
         onSubmit={vi.fn()}
         onTest={vi.fn()}
       />,
@@ -139,6 +180,6 @@ describe("speech provider panels", () => {
 
     expect(input).toHaveAttribute("placeholder", SAVED_KEY_PLACEHOLDER);
     expect(input).toHaveValue("");
-    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent("Pulse");
   });
 });

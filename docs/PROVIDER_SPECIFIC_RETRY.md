@@ -70,14 +70,34 @@ Speech flow:
 2. `POST https://api.assemblyai.com/v2/transcript`
 3. Poll `GET https://api.assemblyai.com/v2/transcript/{id}`
 
-Defaults and limits:
+Async defaults and limits:
 
 - default model: `universal-3-pro`
+- supported models: `universal-3-5-pro`, `universal-3-pro`, `universal-2`
 - max audio: 2.2 GB
 - poll interval: 3 seconds
 - max poll attempts: 40
 - blank completed transcript is `invalid_provider_response`
 - provider `error` status maps to `provider_request_failed`
+
+Streaming flow:
+
+1. Open `wss://streaming.assemblyai.com/v3/ws`
+2. Send mono 16-bit PCM binary frames at the declared sample rate.
+3. Receive `Turn` events for partial and final transcripts.
+4. Send `{"type":"Terminate"}` and continue reading until `Termination`.
+
+Streaming defaults and limits:
+
+- default model: `u3-rt-pro`
+- supported models: `universal-3-5-pro`, `u3-rt-pro`, `universal-streaming-english`, `universal-streaming-multilingual`
+- sample rate: 16 kHz
+- frame size: 50 ms / 1600 bytes
+- mode: `max_accuracy`
+- language code: `en`
+- websocket `Error` events map to `provider_request_failed`
+- the frontend must send continuous PCM, including silence, and aggregate final turns by `turn_order`
+- the streaming adapter must use the saved selected streaming-capable model exactly; if the saved model is pre-recorded only, streaming start fails and the dictation loop falls back to the async path
 
 Retry notes:
 
@@ -86,6 +106,7 @@ Retry notes:
 - Upload retry must not create duplicate transcript jobs after a successful upload.
 - Transcript creation retry must be safe only until a transcript id has been accepted.
 - Polling already repeats while status is `queued` or `processing`; that progress polling is separate from per-request HTTP retry.
+- Websocket streaming sessions do not use HTTP transport retry after connect; Fast/streaming dictation may fall back to the async path if streaming fails before a final transcript or the selected model is not streaming-capable.
 - Activity retry uses the original saved audio for AssemblyAI instead of locally reprocessed retry segments.
 
 ### Deepgram
@@ -143,15 +164,16 @@ Provider id: `smallest`
 
 Speech endpoint:
 
-- `POST https://api.smallest.ai/waves/v1/pulse/get_text`
+- `POST https://api.smallest.ai/waves/v1/stt/`
 - bearer auth
 - raw audio body
 - `Content-Type: application/octet-stream`
-- query parameters include `language`, `word_timestamps=false`, `format=true`, `punctuate=true`, and `capitalize=true`
+- query parameters include `model`, `language`, `word_timestamps=false`, `format=true`, `punctuate=true`, and `capitalize=true`
 
 Defaults and limits:
 
 - default model: `pulse`
+- selectable batch models: `pulse`, `pulse-pro`
 - default language: `en`
 - empty audio is an invalid local request
 - blank `transcription` is `invalid_provider_response`

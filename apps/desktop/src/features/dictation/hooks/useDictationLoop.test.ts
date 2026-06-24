@@ -1073,7 +1073,7 @@ describe("useDictationLoop", () => {
               eventType: "stream_final_received",
               providerId: "assemblyai",
               providerMode: "streaming",
-              modelId: "u3-rt-pro",
+              modelId: "universal-3-5-pro",
               sessionId: "session-1",
               stage: "receive_final",
               status: "succeeded",
@@ -1092,7 +1092,7 @@ describe("useDictationLoop", () => {
     expect(saveDictationRecord).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: {
-          modelId: "u3-rt-pro",
+          modelId: "universal-3-5-pro",
           providerId: "assemblyai",
         },
         transcript: {
@@ -1251,13 +1251,19 @@ describe("useDictationLoop", () => {
     });
   });
 
-  it("does not fall back to async AssemblyAI when streaming is forced", async () => {
+  it("falls back to async AssemblyAI when forced streaming is unavailable", async () => {
     const audioBlob = recordingBlob();
     getSelectedSpeechProvider.mockResolvedValue("assemblyai");
     getSystemSettings.mockResolvedValue({
       dictationMode: "streaming",
       launchOnStartup: true,
       showSkippedTranscripts: false,
+    });
+    transcribeRecording.mockResolvedValueOnce({
+      durationMs: 1200,
+      model: "universal-3-pro",
+      providerId: "assemblyai",
+      text: "normal fallback",
     });
 
     renderHook(() =>
@@ -1282,18 +1288,14 @@ describe("useDictationLoop", () => {
     );
 
     await waitFor(() => {
-      expect(saveDictationRecord).toHaveBeenCalledWith(
-        expect.objectContaining({
-          insertion: expect.objectContaining({
-            errorCode: "transcription_failed",
-            status: "failed",
-          }),
-        }),
-      );
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith("normal fallback");
     });
 
-    expect(transcribeRecording).not.toHaveBeenCalled();
-    expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+    expect(transcribeRecording).toHaveBeenCalledWith({
+      providerId: "assemblyai",
+      audioBlob,
+      language: "en",
+    });
   });
 
   it("continues saving the dictation record when audio persistence fails", async () => {

@@ -241,7 +241,7 @@ describe("SpeechProviderSettings", () => {
     const user = userEvent.setup();
     providerApi.getProviderConfig.mockImplementation((providerId: string) => {
       if (providerId === "elevenlabs") {
-        return Promise.resolve({ model: "scribe_v1" });
+        return Promise.resolve({ model: "scribe_v2" });
       }
 
       return Promise.resolve(null);
@@ -257,9 +257,8 @@ describe("SpeechProviderSettings", () => {
     await user.click(await screen.findByRole("button", { name: "ElevenLabs" }));
     const modelCombobox = await screen.findByRole("combobox", { name: "Model" });
     await waitFor(() => {
-      expect(modelCombobox).toHaveTextContent("Scribe v1");
+      expect(modelCombobox).toHaveTextContent("Scribe v2");
     });
-    await selectComboboxOption(user, modelCombobox, "Scribe v2");
     await user.type(screen.getByLabelText("API key"), "el-test");
     await user.click(screen.getByRole("button", { name: "Save and use ElevenLabs" }));
 
@@ -284,7 +283,7 @@ describe("SpeechProviderSettings", () => {
     providerApi.getProviderConfig.mockImplementation((providerId: string) => {
       if (providerId === "assemblyai") {
         return Promise.resolve({
-          model: "universal-2",
+          model: "universal-3-5-pro",
         });
       }
 
@@ -306,7 +305,7 @@ describe("SpeechProviderSettings", () => {
     await user.click(await screen.findByRole("button", { name: "AssemblyAI" }));
     const modelCombobox = await screen.findByRole("combobox", { name: "Model" });
     await waitFor(() => {
-      expect(modelCombobox).toHaveTextContent("Universal-2");
+      expect(modelCombobox).toHaveTextContent("Universal-3.5 Pro");
     });
     await selectComboboxOption(user, modelCombobox, "Universal-3 Pro");
     await user.type(screen.getByLabelText("API key"), "aa-test");
@@ -328,8 +327,15 @@ describe("SpeechProviderSettings", () => {
     ).toBeInTheDocument();
   });
 
-  it("saves Smallest AI with Pulse and scopes provider test errors to that panel", async () => {
+  it("saves Smallest AI with its selected model and scopes provider test errors to that panel", async () => {
     const user = userEvent.setup();
+    providerApi.getProviderConfig.mockImplementation((providerId: string) => {
+      if (providerId === "smallest") {
+        return Promise.resolve({ model: "pulse" });
+      }
+
+      return Promise.resolve(null);
+    });
     providerApi.saveSpeechProviderSetup.mockResolvedValue({
       providerId: "smallest",
       configured: true,
@@ -343,7 +349,9 @@ describe("SpeechProviderSettings", () => {
 
     await user.click(await screen.findByRole("button", { name: "Smallest AI" }));
     expect(screen.getByRole("heading", { name: "Smallest AI" })).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    const modelCombobox = await screen.findByRole("combobox", { name: "Model" });
+    expect(modelCombobox).toHaveTextContent("Pulse");
+    await selectComboboxOption(user, modelCombobox, "Pulse Pro");
     await user.type(screen.getByLabelText("Smallest AI API key"), "sm-test");
     await user.click(screen.getByRole("button", { name: "Save and use Smallest AI" }));
 
@@ -351,7 +359,7 @@ describe("SpeechProviderSettings", () => {
       expect(providerApi.saveSpeechProviderSetup).toHaveBeenCalledWith({
         providerId: "smallest",
         apiKey: "sm-test",
-        config: { model: "pulse" },
+        config: { model: "pulse-pro" },
         activate: true,
       });
     });

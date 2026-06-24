@@ -68,6 +68,9 @@ export function SpeechProviderSettings({
   const [elevenLabsModel, setElevenLabsModel] = useState<string>(
     DEFAULT_ELEVENLABS_MODEL,
   );
+  const [smallestModel, setSmallestModel] = useState<string>(
+    DEFAULT_SMALLEST_MODEL,
+  );
   const [azureEndpoint, setAzureEndpoint] = useState("");
   const [azureDeploymentId, setAzureDeploymentId] = useState("");
   const [azureApiVersion, setAzureApiVersion] = useState(
@@ -111,6 +114,7 @@ export function SpeechProviderSettings({
           azureConfig,
           assemblyAiConfig,
           elevenLabsConfig,
+          smallestConfig,
           selectedProvider,
         ] =
           await Promise.all([
@@ -124,6 +128,7 @@ export function SpeechProviderSettings({
             getProviderConfig("azure-openai"),
             getProviderConfig("assemblyai"),
             getProviderConfig("elevenlabs"),
+            getProviderConfig("smallest"),
             getSelectedSpeechProvider(),
           ]);
         if (!disposed) {
@@ -147,6 +152,7 @@ export function SpeechProviderSettings({
           setElevenLabsModel(
             elevenLabsConfig?.model ?? DEFAULT_ELEVENLABS_MODEL,
           );
+          setSmallestModel(smallestConfig?.model ?? DEFAULT_SMALLEST_MODEL);
           setSelectedProviderId(selectedProvider);
         }
       } catch (err) {
@@ -241,6 +247,11 @@ export function SpeechProviderSettings({
   const handleElevenLabsModelChange = (value: string) => {
     clearOnboardingVerification("elevenlabs");
     setElevenLabsModel(value);
+  };
+
+  const handleSmallestModelChange = (value: string) => {
+    clearOnboardingVerification("smallest");
+    setSmallestModel(value);
   };
 
   const handleSmallestApiKeyChange = (value: string) => {
@@ -487,7 +498,7 @@ export function SpeechProviderSettings({
         providerId: "smallest",
         apiKey: smallestApiKey,
         config: {
-          model: DEFAULT_SMALLEST_MODEL,
+          model: smallestModel,
         },
         activate: true,
       });
@@ -680,10 +691,12 @@ export function SpeechProviderSettings({
           isLoading={isLoading}
           isSaving={savingProviderId === "smallest"}
           isTesting={testingProviderId === "smallest"}
+          model={smallestModel}
           showTestButton={!isOnboarding}
           testResult={providerTestResults.smallest}
           status={providerStatuses.smallest}
           onApiKeyChange={handleSmallestApiKeyChange}
+          onModelChange={handleSmallestModelChange}
           onSubmit={saveSmallestKey}
           onTest={testSelectedProvider}
         />

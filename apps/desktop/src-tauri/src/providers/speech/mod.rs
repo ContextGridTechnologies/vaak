@@ -28,33 +28,55 @@ pub trait SpeechProvider {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SpeechTranscriptionMode {
-    Async,
+pub enum TranscriptionMode {
+    Batch,
     Streaming,
 }
 
-impl SpeechTranscriptionMode {
+impl TranscriptionMode {
     fn as_str(self) -> &'static str {
         match self {
-            Self::Async => "async",
+            Self::Batch => "batch",
             Self::Streaming => "streaming",
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SpeechModelCapability {
-    pub provider_id: &'static str,
-    pub model_id: &'static str,
-    pub mode: SpeechTranscriptionMode,
+#[allow(dead_code)]
+pub enum BillingUnit {
+    AudioDuration,
+    SessionDuration,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TranscriptionModelCapabilities {
+    pub language_hint: bool,
+    pub prompt_or_keyterms: bool,
+    pub partial_results: bool,
+    pub final_results: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TranscriptionModelRoute {
+    pub mode: TranscriptionMode,
+    pub provider_model_id: &'static str,
     pub default_for_mode: bool,
+    pub endpoint_profile_id: &'static str,
     pub audio_profile_id: &'static str,
-    pub supports_language_hint: bool,
-    pub supports_prompt_or_keyterms: bool,
-    pub supports_partial_results: bool,
-    pub supports_final_results: bool,
-    pub retry_class: &'static str,
-    pub billing_mode: &'static str,
+    pub capabilities: TranscriptionModelCapabilities,
+    pub retry_policy_id: &'static str,
+    pub billing_unit: BillingUnit,
+    pub test_profile_id: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TranscriptionModelDefinition {
+    pub provider_id: &'static str,
+    pub id: &'static str,
+    pub label: &'static str,
+    pub routes: &'static [TranscriptionModelRoute],
 }
 
 pub fn provider_status(
@@ -84,7 +106,7 @@ pub async fn transcribe(
         provider_id,
         input,
         provider_config.clone(),
-        SpeechTranscriptionMode::Async,
+        TranscriptionMode::Batch,
     )?;
 
     match provider_id {
@@ -180,15 +202,15 @@ fn resolve_transcription_input(
     input: TranscriptionInput,
     config: Option<crate::providers::ProviderConfig>,
 ) -> TranscriptionInput {
-    resolve_transcription_input_for_mode(provider_id, input, config, SpeechTranscriptionMode::Async)
-        .expect("async transcription input should resolve in tests")
+    resolve_transcription_input_for_mode(provider_id, input, config, TranscriptionMode::Batch)
+        .expect("batch transcription input should resolve in tests")
 }
 
 fn resolve_transcription_input_for_mode(
     provider_id: &str,
     mut input: TranscriptionInput,
     config: Option<crate::providers::ProviderConfig>,
-    mode: SpeechTranscriptionMode,
+    mode: TranscriptionMode,
 ) -> Result<TranscriptionInput, ProviderError> {
     let has_explicit_model = input
         .model
@@ -203,13 +225,13 @@ fn resolve_transcription_input_for_mode(
     if has_explicit_model {
         validate_model_for_mode(provider_id, input.model.as_deref(), mode)?;
     } else if let Some(model) = saved_model {
-        if model_capability(provider_id, &model, mode).is_some() {
-            input.model = Some(model);
-        } else if let Some(default_model) = default_model_for_mode(provider_id, mode) {
-            input.model = Some(default_model.model_id.to_string());
+        if let Some(route) = transcription_model_route(provider_id, &model, mode) {
+            input.model = Some(route.provider_model_id.to_string());
+        } else {
+            return Err(unsupported_model_route_error(provider_id, &model, mode));
         }
-    } else if let Some(default_model) = default_model_for_mode(provider_id, mode) {
-        input.model = Some(default_model.model_id.to_string());
+    } else if let Some((_definition, route)) = default_model_route_for_mode(provider_id, mode) {
+        input.model = Some(route.provider_model_id.to_string());
     }
 
     if input
@@ -226,6 +248,28 @@ fn resolve_transcription_input_for_mode(
     }
 
     Ok(input)
+}
+
+pub(crate) fn resolve_model_for_mode(
+    provider_id: &str,
+    config: Option<crate::providers::ProviderConfig>,
+    mode: TranscriptionMode,
+) -> Result<Option<String>, ProviderError> {
+    validate_provider_id(provider_id)?;
+    let saved_model = config
+        .and_then(|provider_config| provider_config.model)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    if let Some(model) = saved_model {
+        if let Some(route) = transcription_model_route(provider_id, &model, mode) {
+            return Ok(Some(route.provider_model_id.to_string()));
+        }
+        return Err(unsupported_model_route_error(provider_id, &model, mode));
+    }
+
+    Ok(default_model_route_for_mode(provider_id, mode)
+        .map(|(_definition, route)| route.provider_model_id.to_string()))
 }
 
 fn normalize_transcription_input(
@@ -249,8 +293,8 @@ fn model_supports_prompt(provider_id: &str, model: Option<&str>) -> bool {
         return false;
     };
 
-    model_capability(provider_id, model, SpeechTranscriptionMode::Async)
-        .map(|capability| capability.supports_prompt_or_keyterms)
+    transcription_model_route(provider_id, model, TranscriptionMode::Batch)
+        .map(|route| route.capabilities.prompt_or_keyterms)
         .unwrap_or(false)
 }
 
@@ -415,6 +459,31 @@ mod tests {
         );
 
         assert_eq!(resolved.model.as_deref(), Some("pulse"));
+    }
+
+    #[test]
+    fn applies_saved_smallest_pulse_pro_model_when_transcription_input_omits_one() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/webm".to_string(),
+            language: None,
+            prompt: None,
+            model: None,
+        };
+
+        let resolved = resolve_transcription_input(
+            "smallest",
+            input,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some("pulse-pro".to_string()),
+                transcription_mode: None,
+            }),
+        );
+
+        assert_eq!(resolved.model.as_deref(), Some("pulse-pro"));
     }
 
     #[test]
@@ -611,31 +680,136 @@ mod tests {
     }
 
     #[test]
-    fn assemblyai_registry_separates_async_and_streaming_models() {
-        let async_model = model_capability(
+    fn catalog_resolves_batch_streaming_and_both_route_models() {
+        let batch_route = transcription_model_route(
             assemblyai::PROVIDER_ID,
             "universal-3-pro",
-            SpeechTranscriptionMode::Async,
+            TranscriptionMode::Batch,
         )
-        .expect("assemblyai async model");
-        let streaming_model = model_capability(
+        .expect("assemblyai batch route");
+        let streaming_route = transcription_model_route(
             assemblyai::PROVIDER_ID,
             "u3-rt-pro",
-            SpeechTranscriptionMode::Streaming,
+            TranscriptionMode::Streaming,
         )
-        .expect("assemblyai streaming model");
+        .expect("assemblyai streaming route");
+        let both_route_definition =
+            transcription_model_definition(assemblyai::PROVIDER_ID, "universal-3-5-pro")
+                .expect("assemblyai both-route model");
 
-        assert_eq!(async_model.audio_profile_id, "assemblyai-async-file");
+        assert_eq!(batch_route.endpoint_profile_id, "assemblyai-v2-transcript");
+        assert_eq!(batch_route.audio_profile_id, "assemblyai-batch-file");
         assert_eq!(
-            streaming_model.audio_profile_id,
+            streaming_route.audio_profile_id,
             "assemblyai-streaming-pcm16-16khz"
         );
-        assert!(async_model.default_for_mode);
-        assert!(streaming_model.default_for_mode);
+        assert!(batch_route.default_for_mode);
+        assert!(streaming_route.default_for_mode);
+        assert!(both_route_definition
+            .routes
+            .iter()
+            .any(|route| route.mode == TranscriptionMode::Batch));
+        assert!(both_route_definition
+            .routes
+            .iter()
+            .any(|route| route.mode == TranscriptionMode::Streaming));
     }
 
     #[test]
-    fn async_resolution_falls_back_when_saved_model_is_streaming_only() {
+    fn assemblyai_streaming_resolution_rejects_saved_batch_only_model() {
+        let err = resolve_model_for_mode(
+            assemblyai::PROVIDER_ID,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some("universal-3-pro".to_string()),
+                transcription_mode: None,
+            }),
+            TranscriptionMode::Streaming,
+        )
+        .expect_err("batch-only model should not resolve for streaming");
+
+        assert_eq!(err.code, "invalid_provider_request");
+        assert!(err
+            .message
+            .contains("universal-3-pro does not support streaming transcription"));
+    }
+
+    #[test]
+    fn assemblyai_streaming_resolution_uses_default_when_no_model_is_saved() {
+        let resolved = resolve_model_for_mode(
+            assemblyai::PROVIDER_ID,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: None,
+                transcription_mode: None,
+            }),
+            TranscriptionMode::Streaming,
+        )
+        .expect("streaming default should resolve");
+
+        assert_eq!(resolved.as_deref(), Some("u3-rt-pro"));
+    }
+
+    #[test]
+    fn assemblyai_streaming_resolution_honors_saved_streaming_model() {
+        let resolved = resolve_model_for_mode(
+            assemblyai::PROVIDER_ID,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some("u3-rt-pro".to_string()),
+                transcription_mode: None,
+            }),
+            TranscriptionMode::Streaming,
+        )
+        .expect("streaming model should resolve");
+
+        assert_eq!(resolved.as_deref(), Some("u3-rt-pro"));
+    }
+
+    #[test]
+    fn assemblyai_streaming_resolution_honors_selected_universal_35_pro() {
+        let resolved = resolve_model_for_mode(
+            assemblyai::PROVIDER_ID,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some("universal-3-5-pro".to_string()),
+                transcription_mode: None,
+            }),
+            TranscriptionMode::Streaming,
+        )
+        .expect("streaming model should resolve");
+
+        assert_eq!(resolved.as_deref(), Some("universal-3-5-pro"));
+    }
+
+    #[test]
+    fn assemblyai_streaming_resolution_honors_selected_streaming_english_model() {
+        let resolved = resolve_model_for_mode(
+            assemblyai::PROVIDER_ID,
+            Some(ProviderConfig {
+                endpoint: None,
+                deployment_id: None,
+                api_version: None,
+                model: Some("universal-streaming-english".to_string()),
+                transcription_mode: None,
+            }),
+            TranscriptionMode::Streaming,
+        )
+        .expect("streaming model should resolve");
+
+        assert_eq!(resolved.as_deref(), Some("universal-streaming-english"));
+    }
+
+    #[test]
+    fn batch_resolution_rejects_saved_streaming_only_model() {
         let input = TranscriptionInput {
             audio: vec![1],
             mime_type: "audio/webm".to_string(),
@@ -644,7 +818,7 @@ mod tests {
             model: None,
         };
 
-        let resolved = resolve_transcription_input_for_mode(
+        let err = resolve_transcription_input_for_mode(
             assemblyai::PROVIDER_ID,
             input,
             Some(ProviderConfig {
@@ -654,15 +828,18 @@ mod tests {
                 model: Some("u3-rt-pro".to_string()),
                 transcription_mode: None,
             }),
-            SpeechTranscriptionMode::Async,
+            TranscriptionMode::Batch,
         )
-        .expect("resolved async model");
+        .expect_err("streaming-only model should not resolve for batch");
 
-        assert_eq!(resolved.model.as_deref(), Some("universal-3-pro"));
+        assert_eq!(err.code, "invalid_provider_request");
+        assert!(err
+            .message
+            .contains("u3-rt-pro does not support batch transcription"));
     }
 
     #[test]
-    fn explicit_streaming_model_is_rejected_for_async_transcription() {
+    fn explicit_streaming_model_is_rejected_for_batch_transcription() {
         let input = TranscriptionInput {
             audio: vec![1],
             mime_type: "audio/webm".to_string(),
@@ -675,240 +852,536 @@ mod tests {
             assemblyai::PROVIDER_ID,
             input,
             None,
-            SpeechTranscriptionMode::Async,
+            TranscriptionMode::Batch,
         )
-        .expect_err("streaming-only model should not resolve for async");
+        .expect_err("streaming-only model should not resolve for batch");
 
         assert_eq!(err.code, "invalid_provider_request");
-        assert!(err.message.contains("does not support async transcription"));
+        assert!(err.message.contains("does not support batch transcription"));
     }
 
     #[test]
     fn openai_realtime_transcription_model_is_streaming_capable() {
-        let capability = model_capability(
+        let route = transcription_model_route(
             openai::PROVIDER_ID,
             "gpt-realtime-whisper",
-            SpeechTranscriptionMode::Streaming,
+            TranscriptionMode::Streaming,
         )
         .expect("openai realtime model");
 
-        assert_eq!(capability.audio_profile_id, "openai-realtime-pcm-24khz");
-        assert!(capability.supports_final_results);
-        assert!(capability.supports_partial_results);
+        assert_eq!(route.audio_profile_id, "openai-realtime-pcm-24khz");
+        assert!(route.capabilities.final_results);
+        assert!(route.capabilities.partial_results);
+    }
+
+    #[test]
+    fn openai_catalog_matches_current_speech_to_text_models() {
+        let batch_models = [
+            "gpt-4o-mini-transcribe",
+            "gpt-4o-transcribe",
+            "gpt-4o-transcribe-diarize",
+            "whisper-1",
+        ];
+
+        for model in batch_models {
+            assert!(
+                transcription_model_route(openai::PROVIDER_ID, model, TranscriptionMode::Batch)
+                    .is_some(),
+                "{model} should support OpenAI batch transcription"
+            );
+        }
+
+        assert!(transcription_model_route(
+            openai::PROVIDER_ID,
+            "gpt-4o-transcribe-latest",
+            TranscriptionMode::Batch,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn deepgram_catalog_keeps_dictation_model_list_focused() {
+        let route =
+            transcription_model_route(deepgram::PROVIDER_ID, "nova-3", TranscriptionMode::Batch)
+                .expect("nova-3 should support Deepgram batch transcription");
+
+        assert_eq!(route.provider_model_id, "nova-3");
+        assert_eq!(route.endpoint_profile_id, "deepgram-listen");
+        assert!(route.default_for_mode);
+        assert!(transcription_model_route(
+            deepgram::PROVIDER_ID,
+            "nova-3",
+            TranscriptionMode::Streaming,
+        )
+        .is_none());
+
+        for model in [
+            "nova-2-finance",
+            "nova-2-video",
+            "nova-2-drivethru",
+            "nova-2-atc",
+            "whisper-large",
+            "flux-general-en",
+        ] {
+            assert!(
+                transcription_model_definition(deepgram::PROVIDER_ID, model).is_none(),
+                "{model} should not be a user-selectable Vaak dictation model"
+            );
+        }
+    }
+
+    #[test]
+    fn catalog_does_not_resolve_unimplemented_provider_streaming_models() {
+        assert!(transcription_model_route(
+            deepgram::PROVIDER_ID,
+            "flux-general-en",
+            TranscriptionMode::Streaming,
+        )
+        .is_none());
+        assert!(transcription_model_route(
+            deepgram::PROVIDER_ID,
+            "flux-general-multi",
+            TranscriptionMode::Streaming,
+        )
+        .is_none());
+        assert!(transcription_model_route(
+            elevenlabs::PROVIDER_ID,
+            "scribe_v2_realtime",
+            TranscriptionMode::Streaming,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn universal_3_pro_never_resolves_to_u3_rt_pro() {
+        assert_eq!(
+            transcription_model_route(
+                assemblyai::PROVIDER_ID,
+                "universal-3-pro",
+                TranscriptionMode::Batch,
+            )
+            .map(|route| route.provider_model_id),
+            Some("universal-3-pro")
+        );
+        assert!(transcription_model_route(
+            assemblyai::PROVIDER_ID,
+            "universal-3-pro",
+            TranscriptionMode::Streaming,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn future_test_runner_can_select_models_by_test_profile_id() {
+        let (definition, route) =
+            transcription_model_route_for_test_profile("assemblyai-universal-3-5-pro-streaming")
+                .expect("test profile route");
+
+        assert_eq!(definition.id, "universal-3-5-pro");
+        assert_eq!(route.mode, TranscriptionMode::Streaming);
+        assert_eq!(route.provider_model_id, "universal-3-5-pro");
     }
 }
 
 fn validate_model_for_mode(
     provider_id: &str,
     model: Option<&str>,
-    mode: SpeechTranscriptionMode,
+    mode: TranscriptionMode,
 ) -> Result<(), ProviderError> {
     let Some(model) = model.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(());
     };
 
-    if model_capability(provider_id, model, mode).is_some() {
+    if transcription_model_route(provider_id, model, mode).is_some() {
         return Ok(());
     }
 
-    Err(ProviderFailure::InvalidRequest(format!(
+    Err(unsupported_model_route_error(provider_id, model, mode))
+}
+
+fn unsupported_model_route_error(
+    provider_id: &str,
+    model: &str,
+    mode: TranscriptionMode,
+) -> ProviderError {
+    ProviderFailure::InvalidRequest(format!(
         "{provider_id} model {model} does not support {} transcription",
         mode.as_str()
     ))
-    .into())
+    .into()
 }
 
-fn model_capability(
+pub(crate) fn transcription_model_route(
     provider_id: &str,
     model_id: &str,
-    mode: SpeechTranscriptionMode,
-) -> Option<&'static SpeechModelCapability> {
-    SPEECH_MODEL_CAPABILITIES.iter().find(|capability| {
-        capability.provider_id == provider_id
-            && capability.model_id == model_id
-            && capability.mode == mode
-    })
+    mode: TranscriptionMode,
+) -> Option<&'static TranscriptionModelRoute> {
+    transcription_model_definition(provider_id, model_id)
+        .and_then(|definition| definition.routes.iter().find(|route| route.mode == mode))
 }
 
-fn default_model_for_mode(
+pub(crate) fn transcription_model_definition(
     provider_id: &str,
-    mode: SpeechTranscriptionMode,
-) -> Option<&'static SpeechModelCapability> {
-    SPEECH_MODEL_CAPABILITIES.iter().find(|capability| {
-        capability.provider_id == provider_id
-            && capability.mode == mode
-            && capability.default_for_mode
+    model_id: &str,
+) -> Option<&'static TranscriptionModelDefinition> {
+    TRANSCRIPTION_MODEL_CATALOG
+        .iter()
+        .find(|definition| definition.provider_id == provider_id && definition.id == model_id)
+}
+
+fn default_model_route_for_mode(
+    provider_id: &str,
+    mode: TranscriptionMode,
+) -> Option<(
+    &'static TranscriptionModelDefinition,
+    &'static TranscriptionModelRoute,
+)> {
+    TRANSCRIPTION_MODEL_CATALOG
+        .iter()
+        .filter(|definition| definition.provider_id == provider_id)
+        .find_map(|definition| {
+            definition
+                .routes
+                .iter()
+                .find(|route| route.mode == mode && route.default_for_mode)
+                .map(|route| (definition, route))
+        })
+}
+
+#[allow(dead_code)]
+pub(crate) fn transcription_model_route_for_test_profile(
+    test_profile_id: &str,
+) -> Option<(
+    &'static TranscriptionModelDefinition,
+    &'static TranscriptionModelRoute,
+)> {
+    TRANSCRIPTION_MODEL_CATALOG.iter().find_map(|definition| {
+        definition
+            .routes
+            .iter()
+            .find(|route| route.test_profile_id == test_profile_id)
+            .map(|route| (definition, route))
     })
 }
 
-const SPEECH_MODEL_CAPABILITIES: &[SpeechModelCapability] = &[
-    SpeechModelCapability {
-        provider_id: openai::PROVIDER_ID,
-        model_id: "gpt-4o-mini-transcribe",
-        mode: SpeechTranscriptionMode::Async,
+const BATCH_LANGUAGE_PROMPT_FINAL: TranscriptionModelCapabilities =
+    TranscriptionModelCapabilities {
+        language_hint: true,
+        prompt_or_keyterms: true,
+        partial_results: false,
+        final_results: true,
+    };
+const BATCH_LANGUAGE_FINAL: TranscriptionModelCapabilities = TranscriptionModelCapabilities {
+    language_hint: true,
+    prompt_or_keyterms: false,
+    partial_results: false,
+    final_results: true,
+};
+const STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL: TranscriptionModelCapabilities =
+    TranscriptionModelCapabilities {
+        language_hint: true,
+        prompt_or_keyterms: true,
+        partial_results: true,
+        final_results: true,
+    };
+const STREAMING_LANGUAGE_PARTIAL_FINAL: TranscriptionModelCapabilities =
+    TranscriptionModelCapabilities {
+        language_hint: true,
+        prompt_or_keyterms: false,
+        partial_results: true,
+        final_results: true,
+    };
+
+const OPENAI_GPT_4O_MINI_TRANSCRIBE_ROUTES: &[TranscriptionModelRoute] =
+    &[TranscriptionModelRoute {
+        mode: TranscriptionMode::Batch,
+        provider_model_id: "gpt-4o-mini-transcribe",
         default_for_mode: true,
-        audio_profile_id: "openai-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: true,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-file",
-        billing_mode: "audio_duration",
-    },
-    SpeechModelCapability {
-        provider_id: openai::PROVIDER_ID,
-        model_id: "gpt-4o-transcribe",
-        mode: SpeechTranscriptionMode::Async,
+        endpoint_profile_id: "openai-audio-transcriptions",
+        audio_profile_id: "openai-batch-file",
+        capabilities: BATCH_LANGUAGE_PROMPT_FINAL,
+        retry_policy_id: "http-file",
+        billing_unit: BillingUnit::AudioDuration,
+        test_profile_id: "openai-gpt-4o-mini-transcribe-batch",
+    }];
+const OPENAI_GPT_4O_TRANSCRIBE_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Batch,
+    provider_model_id: "gpt-4o-transcribe",
+    default_for_mode: false,
+    endpoint_profile_id: "openai-audio-transcriptions",
+    audio_profile_id: "openai-batch-file",
+    capabilities: BATCH_LANGUAGE_PROMPT_FINAL,
+    retry_policy_id: "http-file",
+    billing_unit: BillingUnit::AudioDuration,
+    test_profile_id: "openai-gpt-4o-transcribe-batch",
+}];
+const OPENAI_GPT_4O_TRANSCRIBE_DIARIZE_ROUTES: &[TranscriptionModelRoute] =
+    &[TranscriptionModelRoute {
+        mode: TranscriptionMode::Batch,
+        provider_model_id: "gpt-4o-transcribe-diarize",
         default_for_mode: false,
-        audio_profile_id: "openai-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: true,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-file",
-        billing_mode: "audio_duration",
-    },
-    SpeechModelCapability {
-        provider_id: openai::PROVIDER_ID,
-        model_id: "gpt-4o-transcribe-latest",
-        mode: SpeechTranscriptionMode::Async,
+        endpoint_profile_id: "openai-audio-transcriptions",
+        audio_profile_id: "openai-batch-file",
+        capabilities: BATCH_LANGUAGE_FINAL,
+        retry_policy_id: "http-file",
+        billing_unit: BillingUnit::AudioDuration,
+        test_profile_id: "openai-gpt-4o-transcribe-diarize-batch",
+    }];
+const OPENAI_WHISPER_1_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Batch,
+    provider_model_id: "whisper-1",
+    default_for_mode: false,
+    endpoint_profile_id: "openai-audio-transcriptions",
+    audio_profile_id: "openai-batch-file",
+    capabilities: BATCH_LANGUAGE_PROMPT_FINAL,
+    retry_policy_id: "http-file",
+    billing_unit: BillingUnit::AudioDuration,
+    test_profile_id: "openai-whisper-1-batch",
+}];
+const OPENAI_GPT_REALTIME_WHISPER_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Streaming,
+    provider_model_id: "gpt-realtime-whisper",
+    default_for_mode: true,
+    endpoint_profile_id: "openai-realtime-transcription",
+    audio_profile_id: "openai-realtime-pcm-24khz",
+    capabilities: STREAMING_LANGUAGE_PARTIAL_FINAL,
+    retry_policy_id: "websocket-session",
+    billing_unit: BillingUnit::SessionDuration,
+    test_profile_id: "openai-gpt-realtime-whisper-streaming",
+}];
+const ASSEMBLYAI_UNIVERSAL_3_PRO_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Batch,
+    provider_model_id: "universal-3-pro",
+    default_for_mode: true,
+    endpoint_profile_id: "assemblyai-v2-transcript",
+    audio_profile_id: "assemblyai-batch-file",
+    capabilities: BATCH_LANGUAGE_FINAL,
+    retry_policy_id: "http-async-job",
+    billing_unit: BillingUnit::AudioDuration,
+    test_profile_id: "assemblyai-universal-3-pro-batch",
+}];
+const ASSEMBLYAI_UNIVERSAL_3_5_PRO_ROUTES: &[TranscriptionModelRoute] = &[
+    TranscriptionModelRoute {
+        mode: TranscriptionMode::Batch,
+        provider_model_id: "universal-3-5-pro",
         default_for_mode: false,
-        audio_profile_id: "openai-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: true,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-file",
-        billing_mode: "audio_duration",
+        endpoint_profile_id: "assemblyai-v2-transcript",
+        audio_profile_id: "assemblyai-batch-file",
+        capabilities: BATCH_LANGUAGE_PROMPT_FINAL,
+        retry_policy_id: "http-async-job",
+        billing_unit: BillingUnit::AudioDuration,
+        test_profile_id: "assemblyai-universal-3-5-pro-batch",
     },
-    SpeechModelCapability {
-        provider_id: openai::PROVIDER_ID,
-        model_id: "gpt-4o-transcribe-diarize",
-        mode: SpeechTranscriptionMode::Async,
+    TranscriptionModelRoute {
+        mode: TranscriptionMode::Streaming,
+        provider_model_id: "universal-3-5-pro",
         default_for_mode: false,
-        audio_profile_id: "openai-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: false,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-file",
-        billing_mode: "audio_duration",
-    },
-    SpeechModelCapability {
-        provider_id: openai::PROVIDER_ID,
-        model_id: "whisper-1",
-        mode: SpeechTranscriptionMode::Async,
-        default_for_mode: false,
-        audio_profile_id: "openai-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: true,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-file",
-        billing_mode: "audio_duration",
-    },
-    SpeechModelCapability {
-        provider_id: openai::PROVIDER_ID,
-        model_id: "gpt-realtime-whisper",
-        mode: SpeechTranscriptionMode::Streaming,
-        default_for_mode: true,
-        audio_profile_id: "openai-realtime-pcm-24khz",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: false,
-        supports_partial_results: true,
-        supports_final_results: true,
-        retry_class: "websocket-session",
-        billing_mode: "session_duration",
-    },
-    SpeechModelCapability {
-        provider_id: assemblyai::PROVIDER_ID,
-        model_id: "universal-3-pro",
-        mode: SpeechTranscriptionMode::Async,
-        default_for_mode: true,
-        audio_profile_id: "assemblyai-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: false,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-async-job",
-        billing_mode: "audio_duration",
-    },
-    SpeechModelCapability {
-        provider_id: assemblyai::PROVIDER_ID,
-        model_id: "universal-2",
-        mode: SpeechTranscriptionMode::Async,
-        default_for_mode: false,
-        audio_profile_id: "assemblyai-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: false,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-async-job",
-        billing_mode: "audio_duration",
-    },
-    SpeechModelCapability {
-        provider_id: assemblyai::PROVIDER_ID,
-        model_id: "u3-rt-pro",
-        mode: SpeechTranscriptionMode::Streaming,
-        default_for_mode: true,
+        endpoint_profile_id: "assemblyai-v3-streaming-ws",
         audio_profile_id: "assemblyai-streaming-pcm16-16khz",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: true,
-        supports_partial_results: true,
-        supports_final_results: true,
-        retry_class: "websocket-session",
-        billing_mode: "session_duration",
+        capabilities: STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL,
+        retry_policy_id: "websocket-session",
+        billing_unit: BillingUnit::SessionDuration,
+        test_profile_id: "assemblyai-universal-3-5-pro-streaming",
     },
-    SpeechModelCapability {
-        provider_id: deepgram::PROVIDER_ID,
-        model_id: "nova-3",
-        mode: SpeechTranscriptionMode::Async,
-        default_for_mode: true,
-        audio_profile_id: "deepgram-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: false,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-file",
-        billing_mode: "audio_duration",
-    },
-    SpeechModelCapability {
-        provider_id: elevenlabs::PROVIDER_ID,
-        model_id: "scribe_v2",
-        mode: SpeechTranscriptionMode::Async,
-        default_for_mode: true,
-        audio_profile_id: "elevenlabs-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: false,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-file",
-        billing_mode: "audio_duration",
-    },
-    SpeechModelCapability {
-        provider_id: elevenlabs::PROVIDER_ID,
-        model_id: "scribe_v1",
-        mode: SpeechTranscriptionMode::Async,
+];
+const ASSEMBLYAI_UNIVERSAL_2_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Batch,
+    provider_model_id: "universal-2",
+    default_for_mode: false,
+    endpoint_profile_id: "assemblyai-v2-transcript",
+    audio_profile_id: "assemblyai-batch-file",
+    capabilities: BATCH_LANGUAGE_FINAL,
+    retry_policy_id: "http-async-job",
+    billing_unit: BillingUnit::AudioDuration,
+    test_profile_id: "assemblyai-universal-2-batch",
+}];
+const ASSEMBLYAI_U3_RT_PRO_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Streaming,
+    provider_model_id: "u3-rt-pro",
+    default_for_mode: true,
+    endpoint_profile_id: "assemblyai-v3-streaming-ws",
+    audio_profile_id: "assemblyai-streaming-pcm16-16khz",
+    capabilities: STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL,
+    retry_policy_id: "websocket-session",
+    billing_unit: BillingUnit::SessionDuration,
+    test_profile_id: "assemblyai-u3-rt-pro-streaming",
+}];
+const ASSEMBLYAI_UNIVERSAL_STREAMING_ENGLISH_ROUTES: &[TranscriptionModelRoute] =
+    &[TranscriptionModelRoute {
+        mode: TranscriptionMode::Streaming,
+        provider_model_id: "universal-streaming-english",
         default_for_mode: false,
-        audio_profile_id: "elevenlabs-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: false,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-file",
-        billing_mode: "audio_duration",
+        endpoint_profile_id: "assemblyai-v3-streaming-ws",
+        audio_profile_id: "assemblyai-streaming-pcm16-16khz",
+        capabilities: STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL,
+        retry_policy_id: "websocket-session",
+        billing_unit: BillingUnit::SessionDuration,
+        test_profile_id: "assemblyai-universal-streaming-english-streaming",
+    }];
+const ASSEMBLYAI_UNIVERSAL_STREAMING_MULTILINGUAL_ROUTES: &[TranscriptionModelRoute] =
+    &[TranscriptionModelRoute {
+        mode: TranscriptionMode::Streaming,
+        provider_model_id: "universal-streaming-multilingual",
+        default_for_mode: false,
+        endpoint_profile_id: "assemblyai-v3-streaming-ws",
+        audio_profile_id: "assemblyai-streaming-pcm16-16khz",
+        capabilities: STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL,
+        retry_policy_id: "websocket-session",
+        billing_unit: BillingUnit::SessionDuration,
+        test_profile_id: "assemblyai-universal-streaming-multilingual-streaming",
+    }];
+
+const DEEPGRAM_NOVA_3_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Batch,
+    provider_model_id: "nova-3",
+    default_for_mode: true,
+    endpoint_profile_id: "deepgram-listen",
+    audio_profile_id: "deepgram-batch-file",
+    capabilities: BATCH_LANGUAGE_FINAL,
+    retry_policy_id: "http-file",
+    billing_unit: BillingUnit::AudioDuration,
+    test_profile_id: "deepgram-nova-3-batch",
+}];
+const ELEVENLABS_SCRIBE_V2_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Batch,
+    provider_model_id: "scribe_v2",
+    default_for_mode: true,
+    endpoint_profile_id: "elevenlabs-speech-to-text",
+    audio_profile_id: "elevenlabs-batch-file",
+    capabilities: BATCH_LANGUAGE_FINAL,
+    retry_policy_id: "http-file",
+    billing_unit: BillingUnit::AudioDuration,
+    test_profile_id: "elevenlabs-scribe-v2-batch",
+}];
+const ELEVENLABS_SCRIBE_V1_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Batch,
+    provider_model_id: "scribe_v1",
+    default_for_mode: false,
+    endpoint_profile_id: "elevenlabs-speech-to-text",
+    audio_profile_id: "elevenlabs-batch-file",
+    capabilities: BATCH_LANGUAGE_FINAL,
+    retry_policy_id: "http-file",
+    billing_unit: BillingUnit::AudioDuration,
+    test_profile_id: "elevenlabs-scribe-v1-batch",
+}];
+const SMALLEST_PULSE_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Batch,
+    provider_model_id: "pulse",
+    default_for_mode: true,
+    endpoint_profile_id: "smallest-waves-stt",
+    audio_profile_id: "smallest-batch-file",
+    capabilities: BATCH_LANGUAGE_FINAL,
+    retry_policy_id: "http-file",
+    billing_unit: BillingUnit::AudioDuration,
+    test_profile_id: "smallest-pulse-batch",
+}];
+const SMALLEST_PULSE_PRO_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
+    mode: TranscriptionMode::Batch,
+    provider_model_id: "pulse-pro",
+    default_for_mode: false,
+    endpoint_profile_id: "smallest-waves-stt",
+    audio_profile_id: "smallest-batch-file",
+    capabilities: BATCH_LANGUAGE_FINAL,
+    retry_policy_id: "http-file",
+    billing_unit: BillingUnit::AudioDuration,
+    test_profile_id: "smallest-pulse-pro-batch",
+}];
+
+pub(crate) const TRANSCRIPTION_MODEL_CATALOG: &[TranscriptionModelDefinition] = &[
+    TranscriptionModelDefinition {
+        provider_id: openai::PROVIDER_ID,
+        id: "gpt-4o-mini-transcribe",
+        label: "GPT-4o mini Transcribe",
+        routes: OPENAI_GPT_4O_MINI_TRANSCRIBE_ROUTES,
     },
-    SpeechModelCapability {
+    TranscriptionModelDefinition {
+        provider_id: openai::PROVIDER_ID,
+        id: "gpt-4o-transcribe",
+        label: "GPT-4o Transcribe",
+        routes: OPENAI_GPT_4O_TRANSCRIBE_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: openai::PROVIDER_ID,
+        id: "gpt-4o-transcribe-diarize",
+        label: "GPT-4o Transcribe Diarize",
+        routes: OPENAI_GPT_4O_TRANSCRIBE_DIARIZE_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: openai::PROVIDER_ID,
+        id: "whisper-1",
+        label: "Whisper-1",
+        routes: OPENAI_WHISPER_1_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: openai::PROVIDER_ID,
+        id: "gpt-realtime-whisper",
+        label: "GPT Realtime Whisper",
+        routes: OPENAI_GPT_REALTIME_WHISPER_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: assemblyai::PROVIDER_ID,
+        id: "universal-3-5-pro",
+        label: "Universal-3.5 Pro",
+        routes: ASSEMBLYAI_UNIVERSAL_3_5_PRO_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: assemblyai::PROVIDER_ID,
+        id: "universal-3-pro",
+        label: "Universal-3 Pro",
+        routes: ASSEMBLYAI_UNIVERSAL_3_PRO_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: assemblyai::PROVIDER_ID,
+        id: "universal-2",
+        label: "Universal-2",
+        routes: ASSEMBLYAI_UNIVERSAL_2_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: assemblyai::PROVIDER_ID,
+        id: "u3-rt-pro",
+        label: "Universal-3 Realtime Pro",
+        routes: ASSEMBLYAI_U3_RT_PRO_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: assemblyai::PROVIDER_ID,
+        id: "universal-streaming-english",
+        label: "Universal Streaming English",
+        routes: ASSEMBLYAI_UNIVERSAL_STREAMING_ENGLISH_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: assemblyai::PROVIDER_ID,
+        id: "universal-streaming-multilingual",
+        label: "Universal Streaming Multilingual",
+        routes: ASSEMBLYAI_UNIVERSAL_STREAMING_MULTILINGUAL_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: deepgram::PROVIDER_ID,
+        id: "nova-3",
+        label: "Nova-3",
+        routes: DEEPGRAM_NOVA_3_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: elevenlabs::PROVIDER_ID,
+        id: "scribe_v2",
+        label: "Scribe v2",
+        routes: ELEVENLABS_SCRIBE_V2_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: elevenlabs::PROVIDER_ID,
+        id: "scribe_v1",
+        label: "Scribe v1",
+        routes: ELEVENLABS_SCRIBE_V1_ROUTES,
+    },
+    TranscriptionModelDefinition {
         provider_id: smallest::PROVIDER_ID,
-        model_id: "pulse",
-        mode: SpeechTranscriptionMode::Async,
-        default_for_mode: true,
-        audio_profile_id: "smallest-async-file",
-        supports_language_hint: true,
-        supports_prompt_or_keyterms: false,
-        supports_partial_results: false,
-        supports_final_results: true,
-        retry_class: "http-file",
-        billing_mode: "audio_duration",
+        id: "pulse",
+        label: "Pulse",
+        routes: SMALLEST_PULSE_ROUTES,
+    },
+    TranscriptionModelDefinition {
+        provider_id: smallest::PROVIDER_ID,
+        id: "pulse-pro",
+        label: "Pulse Pro",
+        routes: SMALLEST_PULSE_PRO_ROUTES,
     },
 ];

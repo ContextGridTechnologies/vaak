@@ -376,7 +376,7 @@ export function useDictationLoop(
         if (finalStreamingTranscript.length > 0) {
           transcriptionContext = {
             providerId,
-            modelId: "u3-rt-pro",
+            modelId: assemblyAiStreamingModelId(session),
           };
           text = finalStreamingTranscript;
           transcriptionMs = elapsedMs(transcriptionStartedAt);
@@ -384,12 +384,11 @@ export function useDictationLoop(
         } else {
           if (
             providerId === "assemblyai" &&
-            dictationMode === "streaming"
+            dictationMode === "streaming" &&
+            !session.streamingError
           ) {
             throw new Error(
-              session.streamingError
-                ? `AssemblyAI streaming failed: ${session.streamingError}`
-                : "AssemblyAI streaming did not return a final transcript.",
+              "AssemblyAI streaming did not return a final transcript.",
             );
           }
           if (
@@ -845,13 +844,24 @@ function streamingFallbackAsyncStartedEvent(reason: string) {
     metadata: {
       reason,
     },
-    modelId: "u3-rt-pro",
+    modelId: null,
     providerId: "assemblyai",
     providerMode: "streaming" as const,
     sessionId: null,
     stage: "fallback_async",
     status: "started",
   };
+}
+
+function assemblyAiStreamingModelId(session: DictationLoopSession) {
+  const events = session.streamingProviderEvents ?? [];
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const modelId = events[index]?.modelId;
+    if (typeof modelId === "string" && modelId.trim().length > 0) {
+      return modelId;
+    }
+  }
+  return null;
 }
 
 function shouldWaitForStreamingFinal(session: DictationLoopSession) {

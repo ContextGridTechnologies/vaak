@@ -9,10 +9,17 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { ProviderStatus } from "@/lib/tauri";
 
 import { providerStatusLabel, providerStatusTone } from "./status";
-import { SAVED_KEY_PLACEHOLDER } from "./types";
+import { SAVED_KEY_PLACEHOLDER, SMALLEST_MODELS } from "./types";
 
 type SmallestProviderPanelProps = {
   apiKey: string;
@@ -20,10 +27,12 @@ type SmallestProviderPanelProps = {
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
+  model: string;
   showTestButton?: boolean;
   testResult?: string;
   status?: ProviderStatus;
   onApiKeyChange: (value: string) => void;
+  onModelChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onTest: () => void;
 };
@@ -34,10 +43,12 @@ export function SmallestProviderPanel({
   isLoading,
   isSaving,
   isTesting,
+  model,
   showTestButton = true,
   testResult,
   status,
   onApiKeyChange,
+  onModelChange,
   onSubmit,
   onTest,
 }: SmallestProviderPanelProps) {
@@ -54,7 +65,7 @@ export function SmallestProviderPanel({
           <div className="flex min-w-0 flex-col gap-1">
             <h3 className="text-base font-semibold">Smallest AI</h3>
             <p className="text-sm text-muted-foreground">
-              Use Smallest AI Pulse transcription with your own API key.
+              Use Smallest AI speech-to-text with your own API key.
             </p>
           </div>
           <StatusBadge tone={providerStatusTone(status)}>
@@ -63,8 +74,19 @@ export function SmallestProviderPanel({
         </div>
 
         <Field className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-center">
-          <FieldLabel>Model</FieldLabel>
-          <p className="text-sm text-foreground">Pulse</p>
+          <FieldLabel htmlFor="smallest-model">Model</FieldLabel>
+          <Select value={model} onValueChange={onModelChange} disabled={isLoading || isSaving}>
+            <SelectTrigger id="smallest-model" aria-label="Model" className="w-full">
+              <SelectValue placeholder="Select model" />
+            </SelectTrigger>
+            <SelectContent>
+              {SMALLEST_MODELS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
 
         <Field
