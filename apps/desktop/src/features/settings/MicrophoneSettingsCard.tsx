@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { FieldGroup } from "@/components/ui/field";
+import { Separator } from "@/components/ui/separator";
 import {
   DeviceSelector,
   microphoneDisplayName,
@@ -40,11 +41,11 @@ export function MicrophoneSettingsCard() {
       : "border-destructive/20 bg-destructive/10 text-destructive";
   const activeMicrophoneLabel =
     activeMicrophone && selection.mode === "system"
-      ? `${microphoneDisplayName(activeMicrophone.label)} (system default)`
+      ? microphoneDisplayName(activeMicrophone.label)
       : activeMicrophone?.label;
   const summary = hasPermission
-      ? "Vaak can access microphone devices."
-      : "Microphone access has not been granted yet.";
+    ? "Vaak can access microphone devices."
+    : "Microphone access has not been granted yet.";
   const description = activeMicrophone
     ? "This input will be used for local dictation capture."
     : hasPermission
@@ -54,43 +55,58 @@ export function MicrophoneSettingsCard() {
   return (
     <Card size="sm" className="rounded-lg bg-transparent py-0 shadow-none ring-0">
       <CardContent className="px-0">
-        <FieldGroup className="gap-4 rounded-lg bg-muted/35 p-4">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h3 className="text-base font-semibold">Microphone</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Select the input source used for local voice capture.
-              </p>
-            </div>
-            <Badge
-              variant="outline"
-              className={`mt-0.5 ${readinessTone}`}
-            >
-              {readinessLabel}
-            </Badge>
-          </div>
+        <FieldGroup className="gap-0">
+          <Separator className="mb-6 bg-border/70" />
 
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-3 rounded-md bg-background/45 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <section
+            aria-labelledby="microphone-input-device-heading"
+            className="flex flex-col gap-4"
+          >
+            <div className="flex min-w-0 items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                {activeMicrophoneLabel ? (
-                  <>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Currently using
+                <h3
+                  id="microphone-input-device-heading"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Input device
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Select the microphone used for local voice capture.
+                </p>
+              </div>
+              <Badge
+                variant="outline"
+                className={`mt-0.5 ${readinessTone}`}
+              >
+                {readinessLabel}
+              </Badge>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-md border border-border/70 bg-background/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 flex-1 gap-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-foreground">
+                  <MicIcon className="size-5" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  {activeMicrophoneLabel ? (
+                    <>
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Currently using
+                      </p>
+                      <p
+                        className="truncate text-sm font-semibold text-foreground"
+                        title={activeMicrophoneLabel}
+                      >
+                        {activeMicrophoneLabel}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm font-medium text-foreground">
+                      {summary}
                     </p>
-                    <p
-                      className="truncate text-sm font-medium text-foreground"
-                      title={activeMicrophoneLabel}
-                    >
-                      {activeMicrophoneLabel}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-sm font-medium text-foreground">
-                    {summary}
-                  </p>
-                )}
-                <p className="text-sm text-muted-foreground">{description}</p>
+                  )}
+                  <p className="text-sm text-muted-foreground">{description}</p>
+                </div>
               </div>
               <Button
                 type="button"
@@ -104,25 +120,49 @@ export function MicrophoneSettingsCard() {
                 {hasPermission ? "Test microphone" : "Allow microphone access"}
               </Button>
             </div>
+          </section>
 
-            <DeviceSelector
-              deviceOptions={devices}
-              hasPermission={hasPermission}
-              isLoading={isLoading}
-              manualUnavailableMessage={manualUnavailableMessage}
-              selection={selection}
-              compactRefresh
-              onRefresh={() => void refresh()}
-              onRequestPermission={() => void requestPermission()}
-              onSelectManual={(deviceId) => void selectManual(deviceId)}
-              onSelectSystem={() => void selectSystem()}
-            />
-          </div>
+          <Separator className="my-6 bg-border/70" />
+
+          <section
+            aria-labelledby="microphone-device-selection-heading"
+            className="flex flex-col gap-4"
+          >
+            <div>
+              <h3
+                id="microphone-device-selection-heading"
+                className="text-base font-semibold text-foreground"
+              >
+                Device selection
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Vaak follows the OS default unless you choose a specific microphone.
+              </p>
+            </div>
+
+            <div className="rounded-md border border-border/70 bg-background/70 p-4">
+              <DeviceSelector
+                deviceOptions={devices}
+                hasPermission={hasPermission}
+                isLoading={isLoading}
+                manualUnavailableMessage={manualUnavailableMessage}
+                selection={selection}
+                compactRefresh
+                showDescription={false}
+                onRefresh={() => void refresh()}
+                onRequestPermission={() => void requestPermission()}
+                onSelectManual={(deviceId) => void selectManual(deviceId)}
+                onSelectSystem={() => void selectSystem()}
+              />
+            </div>
+          </section>
 
           {error ? (
-            <PermissionCallout tone="warning" title="Needs attention">
-              {error}
-            </PermissionCallout>
+            <div className="pt-4">
+              <PermissionCallout tone="warning" title="Needs attention">
+                {error}
+              </PermissionCallout>
+            </div>
           ) : null}
         </FieldGroup>
       </CardContent>

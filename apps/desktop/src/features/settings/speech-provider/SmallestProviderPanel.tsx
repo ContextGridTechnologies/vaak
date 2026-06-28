@@ -58,67 +58,71 @@ export function SmallestProviderPanel({
 
   return (
     <form onSubmit={onSubmit}>
-      <FieldGroup className="gap-4 rounded-lg bg-muted/45 p-4">
+      <FieldGroup className="gap-4">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <h3 className="text-base font-semibold">Smallest AI</h3>
           {headerMeta ? (
-            <p className="text-right text-xs font-medium text-muted-foreground">
+            <p className="text-right text-sm font-medium text-muted-foreground">
               {headerMeta}
             </p>
           ) : null}
         </div>
 
-        <Field className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-center">
-          <FieldLabel htmlFor="smallest-model">Model</FieldLabel>
-          <Select value={model} onValueChange={onModelChange} disabled={isLoading || isSaving}>
-            <SelectTrigger id="smallest-model" aria-label="Model" className="w-full">
-              <SelectValue placeholder="Select model" />
-            </SelectTrigger>
-            <SelectContent>
-              {SMALLEST_MODELS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+        <div className="rounded-md border border-border/70 bg-background/70 p-4">
+          <FieldGroup className="gap-4">
+            <Field className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-center">
+              <FieldLabel htmlFor="smallest-model">Model</FieldLabel>
+              <Select value={model} onValueChange={onModelChange} disabled={isLoading || isSaving}>
+                <SelectTrigger id="smallest-model" aria-label="Model" className="w-full">
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SMALLEST_MODELS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
 
-        <Field
-          data-invalid={Boolean(error)}
-          className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-start"
-        >
-          <FieldLabel htmlFor="smallest-api-key">Smallest AI API key</FieldLabel>
-          <div className="flex flex-col gap-2">
-            <Input
-              id="smallest-api-key"
-              type="password"
-              autoComplete="off"
-              placeholder={status?.configured ? SAVED_KEY_PLACEHOLDER : "Smallest AI API key"}
-              value={apiKey}
-              onChange={(event) => onApiKeyChange(event.target.value)}
-              disabled={isLoading || isSaving}
-              aria-invalid={Boolean(error)}
-            />
-            <FieldError>{error}</FieldError>
-          </div>
-        </Field>
-
-        <div className="flex flex-wrap gap-2 md:pl-[9rem]">
-          <Button type="submit" className="w-fit" disabled={disabled}>
-            {isSaving ? "Saving..." : "Save and use Smallest AI"}
-          </Button>
-          {showTestButton ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-fit"
-              disabled={isLoading || isSaving || isTesting}
-              onClick={onTest}
+            <Field
+              data-invalid={Boolean(error)}
+              className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-start"
             >
-              {isTesting ? "Testing..." : "Test provider"}
-            </Button>
-          ) : null}
+              <FieldLabel htmlFor="smallest-api-key">Smallest AI API key</FieldLabel>
+              <div className="flex flex-col gap-2">
+                <Input
+                  id="smallest-api-key"
+                  type="password"
+                  autoComplete="off"
+                  placeholder={status?.configured ? SAVED_KEY_PLACEHOLDER : "Smallest AI API key"}
+                  value={apiKey}
+                  onChange={(event) => onApiKeyChange(event.target.value)}
+                  disabled={isLoading || isSaving}
+                  aria-invalid={Boolean(error)}
+                />
+                <FieldError>{error}</FieldError>
+              </div>
+            </Field>
+
+            <div className="flex flex-wrap gap-2 md:pl-[9rem]">
+              <Button type="submit" className="w-fit" disabled={disabled}>
+                {isSaving ? "Saving..." : "Save and use Smallest AI"}
+              </Button>
+              {showTestButton ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-fit"
+                  disabled={isLoading || isSaving || isTesting}
+                  onClick={onTest}
+                >
+                  {isTesting ? "Testing..." : "Test provider"}
+                </Button>
+              ) : null}
+            </div>
+          </FieldGroup>
         </div>
       </FieldGroup>
     </form>

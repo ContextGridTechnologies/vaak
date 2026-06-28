@@ -26,35 +26,38 @@ describe("ProviderSelector", () => {
     const elevenLabs = screen.getByRole("button", { name: "ElevenLabs" });
     const smallest = screen.getByRole("button", { name: "Smallest AI" });
 
+    expect(
+      screen.getByText("Select the transcription service used for dictation."),
+    ).toBeInTheDocument();
     expect(openAi).toHaveAttribute("aria-pressed", "false");
     expect(assemblyAi).toHaveAttribute("aria-pressed", "false");
     expect(azureOpenAi).toHaveAttribute("aria-pressed", "true");
     expect(deepgram).toHaveAttribute("aria-pressed", "false");
     expect(elevenLabs).toHaveAttribute("aria-pressed", "false");
     expect(smallest).toHaveAttribute("aria-pressed", "false");
-    expect(openAi).toHaveClass("min-h-8", "px-2.5", "py-1.5", "shadow-none");
+    expect(openAi).toHaveClass("min-h-12", "px-4", "py-2", "shadow-none");
     expect(assemblyAi).toHaveClass(
-      "min-h-8",
-      "px-2.5",
-      "py-1.5",
+      "min-h-12",
+      "px-4",
+      "py-2",
       "shadow-none",
     );
     expect(azureOpenAi).toHaveClass(
-      "min-h-8",
-      "px-2.5",
-      "py-1.5",
-      "border-primary/20",
-      "bg-primary/12",
+      "min-h-12",
+      "px-4",
+      "py-2",
+      "border-primary",
+      "bg-primary/10",
       "shadow-none",
     );
-    expect(deepgram).toHaveClass("min-h-8", "px-2.5", "py-1.5", "shadow-none");
+    expect(deepgram).toHaveClass("min-h-12", "px-4", "py-2", "shadow-none");
     expect(elevenLabs).toHaveClass(
-      "min-h-8",
-      "px-2.5",
-      "py-1.5",
+      "min-h-12",
+      "px-4",
+      "py-2",
       "shadow-none",
     );
-    expect(smallest).toHaveClass("min-h-8", "px-2.5", "py-1.5", "shadow-none");
+    expect(smallest).toHaveClass("min-h-12", "px-4", "py-2", "shadow-none");
     expect(openAi.querySelector("svg")).not.toBeInTheDocument();
     expect(assemblyAi.querySelector("svg")).not.toBeInTheDocument();
     expect(azureOpenAi.querySelector("svg")).not.toBeInTheDocument();

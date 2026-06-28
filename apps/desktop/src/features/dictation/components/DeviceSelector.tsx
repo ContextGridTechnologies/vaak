@@ -36,6 +36,7 @@ type DeviceSelectorProps = {
   onRefresh: () => void;
   onRequestPermission: () => void;
   compactRefresh?: boolean;
+  showDescription?: boolean;
 };
 
 export function DeviceSelector({
@@ -49,6 +50,7 @@ export function DeviceSelector({
   onRefresh,
   onRequestPermission,
   compactRefresh = false,
+  showDescription = true,
 }: DeviceSelectorProps) {
   const selectableDevices = deviceOptions.filter(
     (device) =>
@@ -161,11 +163,13 @@ export function DeviceSelector({
                 )}
               </div>
             </div>
-            <FieldDescription>
-              {selection.mode === "manual"
-                ? "Pinned to this input until you switch back to automatic mode."
-                : "Vaak follows this OS default unless you choose a specific microphone."}
-            </FieldDescription>
+            {showDescription ? (
+              <FieldDescription>
+                {selection.mode === "manual"
+                  ? "Pinned to this input until you switch back to automatic mode."
+                  : "Vaak follows this OS default unless you choose a specific microphone."}
+              </FieldDescription>
+            ) : null}
             {manualUnavailableMessage ? (
               <FieldDescription className="text-destructive">
                 {manualUnavailableMessage}

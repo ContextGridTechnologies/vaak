@@ -1,11 +1,14 @@
 import {
   Field,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { ProviderSetupCard, providerCatalog } from "@/features/providers";
+import { Button } from "@/components/ui/button";
+import { providerCatalog } from "@/features/providers";
 import type { ProviderCatalogItem } from "@/features/providers";
 import type { SpeechProviderId } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 
 type ProviderSelectorProps = {
   selectedProviderId: SpeechProviderId;
@@ -22,15 +25,25 @@ export function ProviderSelector({
     <FieldGroup>
       <Field>
         <FieldLabel>Provider</FieldLabel>
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-5">
+        <FieldDescription>
+          Select the transcription service used for dictation.
+        </FieldDescription>
+        <div className="grid grid-cols-2 gap-2 pt-2 md:grid-cols-3 lg:grid-cols-5">
           {speechProviderCatalog.map((provider) => (
-            <ProviderSetupCard
+            <Button
               key={provider.id}
-              provider={provider}
-              mode="select"
-              selected={selectedProviderId === provider.id}
-              onSelect={() => onSelectProvider(provider.id)}
-            />
+              type="button"
+              variant="outline"
+              aria-pressed={selectedProviderId === provider.id}
+              className={cn(
+                "min-h-12 justify-center rounded-md px-4 py-2 text-sm font-medium shadow-none",
+                selectedProviderId === provider.id &&
+                  "border-primary bg-primary/10 text-foreground hover:bg-primary/10",
+              )}
+              onClick={() => onSelectProvider(provider.id)}
+            >
+              {provider.name}
+            </Button>
           ))}
         </div>
       </Field>

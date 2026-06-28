@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
 import {
@@ -662,6 +663,8 @@ export function SpeechProviderSettings({
         onSelectProvider={selectProvider}
       />
 
+      <Separator className="bg-border/70" />
+
       {isOnboarding && selectedProviderReadyMessage ? (
         <Alert className="border-success/30 bg-success/5 text-foreground">
           <CheckCircle2Icon aria-hidden={true} className="text-success" />
@@ -818,7 +821,8 @@ export function SpeechProviderSettings({
   return (
     <div className="flex flex-col gap-4">
       <Card size="sm" className="rounded-lg bg-transparent py-0 shadow-none ring-0">
-        <CardContent className="flex flex-col gap-3 px-0">
+        <CardContent className="flex flex-col gap-6 px-0">
+          <Separator className="bg-border/70" />
           {providerSetup}
         </CardContent>
       </Card>

@@ -11,6 +11,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { normalizeError } from "@/lib/errors";
 import {
   getHotkeyBindings,
@@ -89,41 +90,53 @@ export function KeyboardShortcutSettingsCard() {
   return (
     <Card size="sm" className="rounded-lg bg-transparent py-0 shadow-none ring-0">
       <CardContent className="px-0">
-        <FieldGroup className="gap-4 rounded-lg bg-muted/45 p-4">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h3 className="text-base font-semibold">Keyboard shortcut</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Change the hold-to-talk shortcut used by the voice capsule.
+        <FieldGroup className="gap-0">
+          <Separator className="mb-6 bg-border/70" />
+
+          <section
+            aria-labelledby="keyboard-shortcut-heading"
+            className="flex flex-col gap-4"
+          >
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h3
+                  id="keyboard-shortcut-heading"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Shortcut
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Choose the key combination used for hold-to-talk.
+                </p>
+              </div>
+              <p className="text-right text-sm font-medium text-muted-foreground">
+                Hold to talk
               </p>
             </div>
-            <p className="text-right text-xs font-medium text-muted-foreground">
-              Hold to talk
-            </p>
-          </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 flex-col gap-2">
-              <p className="text-sm font-medium text-foreground">
-                Current dictation shortcut
-              </p>
-              <ShortcutKeys shortcut={bindings.dictation} />
+            <div className="flex flex-col gap-3 rounded-md border border-border/70 bg-background/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 flex-col gap-2">
+                <p className="text-sm font-medium text-foreground">
+                  Current dictation shortcut
+                </p>
+                <ShortcutKeys shortcut={bindings.dictation} />
+              </div>
+
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="w-fit sm:shrink-0"
+                onClick={openEditor}
+              >
+                <KeyboardIcon data-icon="inline-start" aria-hidden="true" />
+                Change shortcut
+              </Button>
             </div>
-
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="w-fit sm:shrink-0"
-              onClick={openEditor}
-            >
-              <KeyboardIcon data-icon="inline-start" aria-hidden="true" />
-              Change shortcut
-            </Button>
-          </div>
+          </section>
 
           {isEditing ? (
-            <FieldGroup>
+            <FieldGroup className="pt-4">
               <Field data-invalid={Boolean(shortcutValidationError)}>
                 <FieldLabel htmlFor="settings-dictation-shortcut">
                   Press a new shortcut
@@ -183,9 +196,11 @@ export function KeyboardShortcutSettingsCard() {
           ) : null}
 
           {error ? (
-            <PermissionCallout tone="warning" title="Shortcut update failed">
-              {error}
-            </PermissionCallout>
+            <div className="pt-4">
+              <PermissionCallout tone="warning" title="Shortcut update failed">
+                {error}
+              </PermissionCallout>
+            </div>
           ) : null}
         </FieldGroup>
       </CardContent>

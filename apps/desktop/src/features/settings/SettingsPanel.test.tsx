@@ -271,24 +271,27 @@ describe("SettingsPanel provider setup", () => {
     expect(screen.queryByText("Speech provider")).not.toBeInTheDocument();
     expect(screen.queryByText("Transcription mode")).not.toBeInTheDocument();
 
-    const microphoneCard = lastItem(
-      screen.getAllByText("Select the input source used for local voice capture."),
-    )?.closest('[data-slot="card"]') as HTMLElement | null;
+    const microphoneCard = (
+      await screen.findByRole("heading", { name: "Input device" })
+    ).closest('[data-slot="card"]') as HTMLElement | null;
     expect(microphoneCard).not.toBeNull();
-    expect(within(microphoneCard!).getAllByText("Microphone").length).toBeGreaterThan(
-      0,
-    );
+    expect(within(microphoneCard!).getByText("Device selection")).toBeInTheDocument();
     expect(
       within(microphoneCard!).getByRole("button", { name: "Test microphone" }),
     ).toBeInTheDocument();
     expect(
-      within(microphoneCard!).getByText("Studio USB microphone (system default)"),
+      within(microphoneCard!).getByText("Studio USB microphone"),
     ).toBeInTheDocument();
     expect(
       within(microphoneCard!).getByText(
-        "Vaak follows this OS default unless you choose a specific microphone.",
+        "Vaak follows the OS default unless you choose a specific microphone.",
       ),
     ).toBeInTheDocument();
+    expect(
+      within(microphoneCard!).queryByText(
+        "Vaak follows this OS default unless you choose a specific microphone.",
+      ),
+    ).not.toBeInTheDocument();
     expect(
       within(microphoneCard!).queryByText("System selected"),
     ).not.toBeInTheDocument();
@@ -484,12 +487,20 @@ describe("SettingsPanel provider setup", () => {
     const user = userEvent.setup();
     renderApp(<SettingsPanel activeSection="keyboard-shortcut" />);
 
-    const shortcutCard = lastItem(
-      await screen.findAllByText(
-        "Change the hold-to-talk shortcut used by the voice capsule.",
-      ),
-    )?.closest('[data-slot="card"]') as HTMLElement | null;
+    const shortcutCard = (
+      await screen.findByRole("heading", { name: "Shortcut" })
+    ).closest('[data-slot="card"]') as HTMLElement | null;
     expect(shortcutCard).not.toBeNull();
+    expect(within(shortcutCard!).getByText("Shortcut")).toBeInTheDocument();
+    expect(
+      within(shortcutCard!).getByText(
+        "Choose the key combination used for hold-to-talk.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(shortcutCard!).queryByText("Behavior")).not.toBeInTheDocument();
+    expect(
+      within(shortcutCard!).queryByText("Shortcut mode"),
+    ).not.toBeInTheDocument();
 
     await user.click(
       within(shortcutCard!).getByRole("button", { name: "Change shortcut" }),
@@ -512,9 +523,12 @@ describe("SettingsPanel provider setup", () => {
     renderApp(<SettingsPanel activeSection="voice-capsule" />);
 
     const voiceCapsuleCard = (
-      await screen.findByText("Manage the floating dictation control.")
+      await screen.findByRole("heading", { name: "Visibility" })
     ).closest('[data-slot="card"]') as HTMLElement | null;
     expect(voiceCapsuleCard).not.toBeNull();
+    expect(
+      within(voiceCapsuleCard!).queryByText("Last saved position: Bottom right"),
+    ).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(
@@ -533,8 +547,11 @@ describe("SettingsPanel provider setup", () => {
       expect(providerApi.restartVoiceCapsule).toHaveBeenCalled();
     });
     expect(
-      await within(voiceCapsuleCard!).findByText("Voice capsule restarted."),
-    ).toBeInTheDocument();
+      within(voiceCapsuleCard!).queryByText("Voice capsule restarted."),
+    ).not.toBeInTheDocument();
+    expect(
+      within(voiceCapsuleCard!).queryByText("Voice capsule updated"),
+    ).not.toBeInTheDocument();
 
     await user.click(
       within(voiceCapsuleCard!).getByRole("button", {
@@ -545,8 +562,11 @@ describe("SettingsPanel provider setup", () => {
       expect(providerApi.resetVoiceCapsulePosition).toHaveBeenCalled();
     });
     expect(
-      await within(voiceCapsuleCard!).findByText("Voice capsule position reset."),
-    ).toBeInTheDocument();
+      within(voiceCapsuleCard!).queryByText("Voice capsule position reset."),
+    ).not.toBeInTheDocument();
+    expect(
+      within(voiceCapsuleCard!).queryByText("Voice capsule updated"),
+    ).not.toBeInTheDocument();
 
     await user.click(
       within(voiceCapsuleCard!).getByRole("switch", {
