@@ -80,6 +80,8 @@ export function useAudioRecorder(
   const onPcm16ChunkRef = useRef(options.onPcm16Chunk);
   const recordingAnalysisActiveRef = useRef(false);
   const preparePromiseRef = useRef<Promise<MediaStream> | null>(null);
+  const recorderGenerationRef = useRef(0);
+  const stoppedStreamsRef = useRef<WeakSet<MediaStream>>(new WeakSet());
   const chunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof globalThis.setInterval> | null>(
@@ -114,8 +116,16 @@ export function useAudioRecorder(
     if (!stream) {
       return;
     }
+    if (stoppedStreamsRef.current.has(stream)) {
+      return;
+    }
+    stoppedStreamsRef.current.add(stream);
     stream.getTracks().forEach((track) => track.stop());
   };
+
+  const advanceRecorderGeneration = useCallback(() => {
+    recorderGenerationRef.current += 1;
+  }, []);
 
   const clearTrackLifecycleListeners = useCallback(() => {
     trackCleanupRef.current?.();
@@ -137,12 +147,15 @@ export function useAudioRecorder(
 
   const invalidateStream = useCallback(
     (reason: string) => {
+      advanceRecorderGeneration();
       const recorder = recorderRef.current;
-      if (recorder?.state === "recording") {
+      if (recorder) {
         recorder.ondataavailable = null;
         recorder.onerror = null;
         recorder.onstop = null;
-        recorder.stop();
+        if (recorder.state === "recording") {
+          recorder.stop();
+        }
         recorderRef.current = null;
         chunksRef.current = [];
         startTimeRef.current = null;
@@ -169,6 +182,7 @@ export function useAudioRecorder(
       microphoneSelection,
       releaseAudioUrl,
       teardownCaptureAnalysis,
+      advanceRecorderGeneration,
     ],
   );
 
@@ -300,24 +314,49 @@ export function useAudioRecorder(
 
   const ensureStream = useCallback(
     async ({ reportErrors }: { reportErrors: boolean }) => {
+      let generation = recorderGenerationRef.current;
+      const abortIfStale = (stream: MediaStream) => {
+        if (generation === recorderGenerationRef.current) {
+          return;
+        }
+        if (hasLiveAudioTrack(stream)) {
+          stopTracks(stream);
+        }
+        throw new StaleRecorderStartError();
+      };
+
       if (streamRef.current) {
-        await ensureCaptureAnalysis(streamRef.current);
-        return {
-          stream: streamRef.current,
-          acquisitionMs: 0,
-          reusedWarmStream: true,
-        };
+        if (!hasLiveAudioTrack(streamRef.current)) {
+          invalidateStream("stale-warm-stream");
+          generation = recorderGenerationRef.current;
+        } else {
+          await ensureCaptureAnalysis(streamRef.current);
+          abortIfStale(streamRef.current);
+          return {
+            stream: streamRef.current,
+            acquisitionMs: 0,
+            reusedWarmStream: true,
+          };
+        }
       }
 
       if (preparePromiseRef.current) {
         const startedAt = now();
         const stream = await preparePromiseRef.current;
-        await ensureCaptureAnalysis(stream);
-        return {
-          stream,
-          acquisitionMs: now() - startedAt,
-          reusedWarmStream: true,
-        };
+        abortIfStale(stream);
+        if (!hasLiveAudioTrack(stream)) {
+          stopTracks(stream);
+          invalidateStream("stale-in-flight-warm-stream");
+          generation = recorderGenerationRef.current;
+        } else {
+          await ensureCaptureAnalysis(stream);
+          abortIfStale(stream);
+          return {
+            stream,
+            acquisitionMs: now() - startedAt,
+            reusedWarmStream: true,
+          };
+        }
       }
 
       const startedAt = now();
@@ -325,12 +364,16 @@ export function useAudioRecorder(
         microphoneConstraints(microphoneSelection),
       );
       preparePromiseRef.current = streamPromise;
+      let acquiredStream: MediaStream | null = null;
 
       try {
         const stream = await streamPromise;
+        acquiredStream = stream;
+        abortIfStale(stream);
         streamRef.current = stream;
         attachTrackLifecycleListeners(stream);
         await ensureCaptureAnalysis(stream);
+        abortIfStale(stream);
         setActiveMicrophone(activeMicrophoneFromStream(stream));
         console.info("[vaak][recorder] stream_ready", {
           acquisitionMs: Math.round(now() - startedAt),
@@ -343,6 +386,17 @@ export function useAudioRecorder(
           reusedWarmStream: false,
         };
       } catch (err) {
+        if (err instanceof StaleRecorderStartError) {
+          throw err;
+        }
+        if (acquiredStream) {
+          clearTrackLifecycleListeners();
+          stopTracks(acquiredStream);
+          if (streamRef.current === acquiredStream) {
+            streamRef.current = null;
+          }
+          teardownCaptureAnalysis();
+        }
         if (reportErrors) {
           setStatus("error");
           setError(
@@ -355,7 +409,14 @@ export function useAudioRecorder(
         preparePromiseRef.current = null;
       }
     },
-    [attachTrackLifecycleListeners, ensureCaptureAnalysis, microphoneSelection],
+    [
+      attachTrackLifecycleListeners,
+      clearTrackLifecycleListeners,
+      ensureCaptureAnalysis,
+      invalidateStream,
+      microphoneSelection,
+      teardownCaptureAnalysis,
+    ],
   );
 
   const prepare = useCallback(async () => {
@@ -410,15 +471,31 @@ export function useAudioRecorder(
       releaseAudioUrl(null);
 
       recorder.ondataavailable = (event) => {
+        if (recorderRef.current !== recorder) {
+          return;
+        }
         if (event.data.size > 0) {
           chunksRef.current.push(event.data);
         }
       };
 
       recorder.onerror = (event) => {
+        if (recorderRef.current !== recorder) {
+          return;
+        }
         setStatus("error");
         setError(event.error?.message ?? "Recording error.");
         clearTimer();
+        recorder.ondataavailable = null;
+        recorder.onerror = null;
+        recorder.onstop = null;
+        recorderRef.current = null;
+        chunksRef.current = [];
+        startTimeRef.current = null;
+        setAudioBlob(null);
+        releaseAudioUrl(null);
+        setElapsedMs(0);
+        setCaptureAnalysis(null);
         recordingAnalysisActiveRef.current = false;
         setAudioLevel(0);
         clearTrackLifecycleListeners();
@@ -429,6 +506,9 @@ export function useAudioRecorder(
       };
 
       recorder.onstop = () => {
+        if (recorderRef.current !== recorder) {
+          return;
+        }
         clearTimer();
         recordingAnalysisActiveRef.current = false;
         const durationMs = startTimeRef.current
@@ -478,6 +558,9 @@ export function useAudioRecorder(
       }, 250);
       setStatus("recording");
     } catch (err) {
+      if (err instanceof StaleRecorderStartError) {
+        return;
+      }
       setStatus("error");
       setError(err instanceof Error ? err.message : "Microphone access failed.");
       setActiveMicrophone(null);
@@ -490,12 +573,16 @@ export function useAudioRecorder(
   ]);
 
   const stop = useCallback(() => {
+    advanceRecorderGeneration();
     const recorder = recorderRef.current;
     if (recorder?.state !== "recording") {
       return;
     }
+    recordingAnalysisActiveRef.current = false;
+    clearTimer();
+    setAudioLevel(0);
     recorder.stop();
-  }, []);
+  }, [advanceRecorderGeneration]);
 
   useEffect(() => {
     if (typeof navigator.mediaDevices?.addEventListener !== "function") {
@@ -518,7 +605,20 @@ export function useAudioRecorder(
   }, [invalidateStream, status]);
 
   const reset = useCallback(() => {
+    advanceRecorderGeneration();
     clearTimer();
+    const recorder = recorderRef.current;
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onerror = null;
+      recorder.onstop = null;
+      if (recorder.state === "recording") {
+        recorder.stop();
+      }
+      recorderRef.current = null;
+    }
+    chunksRef.current = [];
+    startTimeRef.current = null;
     setAudioBlob(null);
     releaseAudioUrl(null);
     setAudioLevel(0);
@@ -534,17 +634,25 @@ export function useAudioRecorder(
     teardownCaptureAnalysis();
     preparePromiseRef.current = null;
     recordingAnalysisActiveRef.current = false;
-  }, [clearTrackLifecycleListeners, releaseAudioUrl, teardownCaptureAnalysis]);
+  }, [
+    advanceRecorderGeneration,
+    clearTrackLifecycleListeners,
+    releaseAudioUrl,
+    teardownCaptureAnalysis,
+  ]);
 
   useEffect(() => {
+    advanceRecorderGeneration();
     const recorder = recorderRef.current;
-    if (recorder?.state === "recording") {
+    if (recorder) {
       clearTimer();
       recorder.ondataavailable = null;
       recorder.onerror = null;
       recorder.onstop = null;
       recordingAnalysisActiveRef.current = false;
-      recorder.stop();
+      if (recorder.state === "recording") {
+        recorder.stop();
+      }
       recorderRef.current = null;
       chunksRef.current = [];
       startTimeRef.current = null;
@@ -570,15 +678,25 @@ export function useAudioRecorder(
     releaseAudioUrl,
     selectionKey,
     teardownCaptureAnalysis,
+    advanceRecorderGeneration,
   ]);
 
   useEffect(() => {
     return () => {
+      advanceRecorderGeneration();
       clearTimer();
       const recorder = recorderRef.current;
-      if (recorder?.state === "recording") {
+      if (recorder) {
         recordingAnalysisActiveRef.current = false;
-        recorder.stop();
+        recorder.ondataavailable = null;
+        recorder.onerror = null;
+        recorder.onstop = null;
+        if (recorder.state === "recording") {
+          recorder.stop();
+        }
+        recorderRef.current = null;
+        chunksRef.current = [];
+        startTimeRef.current = null;
       }
       clearTrackLifecycleListeners();
       stopTracks(streamRef.current);
@@ -589,7 +707,12 @@ export function useAudioRecorder(
       setActiveMicrophone(null);
       setAudioLevel(0);
     };
-  }, [clearTrackLifecycleListeners, releaseAudioUrl, teardownCaptureAnalysis]);
+  }, [
+    advanceRecorderGeneration,
+    clearTrackLifecycleListeners,
+    releaseAudioUrl,
+    teardownCaptureAnalysis,
+  ]);
 
   return {
     status,
@@ -619,6 +742,18 @@ function combineAnalysisSamples(chunks: Float32Array[]) {
   }
 
   return combined;
+}
+
+function hasLiveAudioTrack(stream: MediaStream) {
+  const tracks = stream.getAudioTracks();
+  return tracks.length > 0 && tracks.some((track) => track.readyState === "live");
+}
+
+class StaleRecorderStartError extends Error {
+  constructor() {
+    super("Recorder startup was superseded.");
+    this.name = "StaleRecorderStartError";
+  }
 }
 
 function now() {

@@ -161,8 +161,16 @@ export function useDictationSession({
   const streamingPendingPcmRef = useRef<Uint8Array>(new Uint8Array(0));
   const streamingFinalTurnsRef = useRef<Map<number, string>>(new Map());
   const streamingProviderRef = useRef<StreamingProviderId | null>(null);
+  const streamingStartingProviderRef = useRef<StreamingProviderId | null>(null);
+  const streamingGenerationRef = useRef(0);
   const selectedSpeechProviderRef = useRef<SpeechProviderId | null>(null);
   const dictationModeRef = useRef<DictationMode>(DEFAULT_DICTATION_MODE);
+  const streamingSuppressedRef = useRef(false);
+  const enabledRef = useRef(enabled);
+
+  useEffect(() => {
+    enabledRef.current = enabled;
+  }, [enabled]);
 
   const appendStreamingEvents = useCallback((events?: ProviderTimelineEvent[]) => {
     if (!events || events.length === 0) {
@@ -172,6 +180,7 @@ export function useDictationSession({
   }, []);
 
   const resetStreamingState = useCallback(() => {
+    streamingGenerationRef.current += 1;
     streamingStartedRef.current = false;
     streamingStartPromiseRef.current = null;
     streamingFailedRef.current = false;
@@ -179,9 +188,18 @@ export function useDictationSession({
     streamingPendingPcmRef.current = new Uint8Array(0);
     streamingFinalTurnsRef.current = new Map();
     streamingProviderRef.current = null;
+    streamingStartingProviderRef.current = null;
     setStreamingError(null);
     setStreamingProviderEvents([]);
     setStreamingTranscript(null);
+  }, []);
+
+  const cleanupStreamingSessions = useCallback(async () => {
+    await Promise.all(
+      Object.values(STREAMING_PROVIDER_PROFILES).map((profile) =>
+        profile.cleanup().catch(() => false),
+      ),
+    );
   }, []);
 
   const failStreaming = useCallback((err: unknown) => {
@@ -191,6 +209,7 @@ export function useDictationSession({
     streamingQueueRef.current = [];
     streamingPendingPcmRef.current = new Uint8Array(0);
     streamingProviderRef.current = null;
+    streamingStartingProviderRef.current = null;
     setStreamingError(normalizeError(err));
   }, []);
 
@@ -204,8 +223,13 @@ export function useDictationSession({
     }
 
     const profile = STREAMING_PROVIDER_PROFILES[provider];
+    const streamingGeneration = streamingGenerationRef.current;
+    streamingStartingProviderRef.current = provider;
     const startPromise = profile.start({
       onEvent: (event) => {
+        if (streamingGeneration !== streamingGenerationRef.current) {
+          return;
+        }
         appendStreamingEvents(event.providerEvents);
         if (event.eventType === "final" && event.text?.trim()) {
           const turnOrder = streamingFinalTurnOrder(
@@ -224,6 +248,7 @@ export function useDictationSession({
         if (event.eventType === "terminated") {
           streamingStartedRef.current = false;
           streamingProviderRef.current = null;
+          streamingStartingProviderRef.current = null;
         }
         if (event.eventType === "error") {
           failStreaming(`${profile.label} streaming failed`);
@@ -231,15 +256,25 @@ export function useDictationSession({
       },
     })
       .then((result) => {
+        if (streamingGeneration !== streamingGenerationRef.current) {
+          return;
+        }
         appendStreamingEvents(result.providerEvents);
         streamingStartedRef.current = true;
         streamingProviderRef.current = provider;
       })
       .catch((err) => {
+        if (streamingGeneration !== streamingGenerationRef.current) {
+          return;
+        }
         failStreaming(err);
       })
       .finally(() => {
+        if (streamingGeneration !== streamingGenerationRef.current) {
+          return;
+        }
         streamingStartPromiseRef.current = null;
+        streamingStartingProviderRef.current = null;
       });
     streamingStartPromiseRef.current = startPromise;
     await startPromise;
@@ -260,12 +295,19 @@ export function useDictationSession({
 
   const handlePcm16Chunk = useCallback(
     (chunk: Uint8Array) => {
-      const provider = streamingProviderForSettings(
-        selectedSpeechProviderRef.current,
-        dictationModeRef.current,
-        processingEnabled,
-      );
-      if (!provider || streamingFailedRef.current) {
+      const provider =
+        streamingProviderRef.current ??
+        streamingStartingProviderRef.current ??
+        streamingProviderForSettings(
+          selectedSpeechProviderRef.current,
+          dictationModeRef.current,
+          processingEnabled,
+        );
+      if (
+        streamingSuppressedRef.current ||
+        !provider ||
+        streamingFailedRef.current
+      ) {
         return;
       }
 
@@ -273,17 +315,27 @@ export function useDictationSession({
       streamingQueueRef.current.push(
         ...appendStreamingFrames(chunk, streamingPendingPcmRef, profile.frameBytes),
       );
+      const streamingGeneration = streamingGenerationRef.current;
       void ensureStreamingStarted(provider)
         .then(async () => {
+          if (streamingGeneration !== streamingGenerationRef.current) {
+            return;
+          }
           if (!streamingStartedRef.current) {
             return;
           }
           const queued = streamingQueueRef.current.splice(0);
           for (const queuedChunk of queued) {
+            if (streamingGeneration !== streamingGenerationRef.current) {
+              return;
+            }
             await sendStreamingFrame(provider, queuedChunk);
           }
         })
         .catch((err) => {
+          if (streamingGeneration !== streamingGenerationRef.current) {
+            return;
+          }
           failStreaming(err);
         });
     },
@@ -328,6 +380,7 @@ export function useDictationSession({
   const stopStreaming = useCallback(async () => {
     const provider =
       streamingProviderRef.current ??
+      streamingStartingProviderRef.current ??
       streamingProviderForSettings(
         selectedSpeechProviderRef.current,
         dictationModeRef.current,
@@ -337,14 +390,47 @@ export function useDictationSession({
       return;
     }
 
+    const streamingGeneration = streamingGenerationRef.current;
     try {
       await flushStreamingAudio(provider);
+      if (streamingGeneration !== streamingGenerationRef.current) {
+        return;
+      }
       await STREAMING_PROVIDER_PROFILES[provider].stop();
+      if (streamingGeneration !== streamingGenerationRef.current) {
+        return;
+      }
       streamingProviderRef.current = null;
     } catch (err) {
+      if (streamingGeneration !== streamingGenerationRef.current) {
+        return;
+      }
       setStreamingError(normalizeError(err));
     }
   }, [flushStreamingAudio, processingEnabled]);
+
+  const detachAndStopStreaming = useCallback(() => {
+    const provider =
+      streamingProviderRef.current ??
+      streamingStartingProviderRef.current ??
+      streamingProviderForSettings(
+        selectedSpeechProviderRef.current,
+        dictationModeRef.current,
+        processingEnabled,
+      );
+    const detachedStreamingGeneration = streamingGenerationRef.current;
+    resetStreamingState();
+    if (!provider) {
+      return;
+    }
+
+    void STREAMING_PROVIDER_PROFILES[provider].stop().catch((err) => {
+      if (detachedStreamingGeneration !== streamingGenerationRef.current) {
+        return;
+      }
+      setStreamingError(normalizeError(err));
+    });
+  }, [processingEnabled, resetStreamingState]);
 
   const {
     status,
@@ -409,6 +495,11 @@ export function useDictationSession({
       setFocusedFieldError(null);
       setCompletedMode(null);
       resetStreamingState();
+      await cleanupStreamingSessions();
+      if (!enabledRef.current) {
+        return;
+      }
+      streamingSuppressedRef.current = false;
       setDictationTrigger(trigger);
       setRecordingStartedAt(new Date().toISOString());
       setRecordingEndedAt(null);
@@ -426,7 +517,9 @@ export function useDictationSession({
         try {
           await start();
         } catch (err) {
-          setFocusedFieldError(`Recording failed: ${normalizeError(err)}`);
+          if (enabledRef.current) {
+            setFocusedFieldError(`Recording failed: ${normalizeError(err)}`);
+          }
         }
         return;
       }
@@ -436,7 +529,9 @@ export function useDictationSession({
         try {
           await start();
         } catch (err) {
-          setFocusedFieldError(`Recording failed: ${normalizeError(err)}`);
+          if (enabledRef.current) {
+            setFocusedFieldError(`Recording failed: ${normalizeError(err)}`);
+          }
         }
         return;
       }
@@ -445,6 +540,10 @@ export function useDictationSession({
         captureDictationTarget(),
         start(),
       ]);
+
+      if (!enabledRef.current) {
+        return;
+      }
 
       if (fieldResult.status === "fulfilled") {
         setFocusedField(fieldResult.value);
@@ -468,6 +567,7 @@ export function useDictationSession({
       isManualUnavailable,
       manualUnavailableMessage,
       processingEnabled,
+      cleanupStreamingSessions,
       resetStreamingState,
       start,
     ],
@@ -480,6 +580,7 @@ export function useDictationSession({
       }
 
       setCompletedMode(mode);
+      streamingSuppressedRef.current = false;
       setActiveMode("idle");
       clearPendingHotkeyStop();
       hotkeyStopTimerRef.current = globalThis.setTimeout(() => {
@@ -497,6 +598,7 @@ export function useDictationSession({
       return;
     }
 
+    streamingSuppressedRef.current = false;
     setActiveMode("dictation");
     await startWithFocusCapture(undefined, "manual");
   }, [enabled, startWithFocusCapture]);
@@ -508,6 +610,7 @@ export function useDictationSession({
 
     clearPendingHotkeyStop();
     setCompletedMode("dictation");
+    streamingSuppressedRef.current = false;
     setActiveMode("idle");
     setRecordingEndedAt(new Date().toISOString());
     stop();
@@ -557,30 +660,34 @@ export function useDictationSession({
     const loadSelectedProvider = async () => {
       try {
         const provider = await getSelectedSpeechProvider();
-        selectedSpeechProviderRef.current = provider;
-        if (!disposed) {
-          setSelectedSpeechProvider(provider);
+        if (disposed) {
+          return;
         }
+        selectedSpeechProviderRef.current = provider;
+        setSelectedSpeechProvider(provider);
 
         try {
           const systemSettings = await getSystemSettings();
+          if (disposed) {
+            return;
+          }
           dictationModeRef.current = systemSettings.dictationMode;
-          if (!disposed) {
-            setDictationMode(systemSettings.dictationMode);
-          }
+          setDictationMode(systemSettings.dictationMode);
         } catch {
-          dictationModeRef.current = DEFAULT_DICTATION_MODE;
-          if (!disposed) {
-            setDictationMode(DEFAULT_DICTATION_MODE);
+          if (disposed) {
+            return;
           }
-        }
-      } catch {
-        selectedSpeechProviderRef.current = null;
-        dictationModeRef.current = DEFAULT_DICTATION_MODE;
-        if (!disposed) {
-          setSelectedSpeechProvider(null);
+          dictationModeRef.current = DEFAULT_DICTATION_MODE;
           setDictationMode(DEFAULT_DICTATION_MODE);
         }
+      } catch {
+        if (disposed) {
+          return;
+        }
+        selectedSpeechProviderRef.current = null;
+        dictationModeRef.current = DEFAULT_DICTATION_MODE;
+        setSelectedSpeechProvider(null);
+        setDictationMode(DEFAULT_DICTATION_MODE);
       }
     };
 
@@ -588,6 +695,9 @@ export function useDictationSession({
     void listenToTauriEvent<SpeechProviderId>(
       SPEECH_PROVIDER_CHANGED_EVENT,
       (event) => {
+        if (disposed) {
+          return;
+        }
         selectedSpeechProviderRef.current = event.payload;
         setSelectedSpeechProvider(event.payload);
       },
@@ -601,6 +711,9 @@ export function useDictationSession({
     void listenToTauriEvent<Awaited<ReturnType<typeof getSystemSettings>>>(
       SYSTEM_SETTINGS_CHANGED_EVENT,
       (event) => {
+        if (disposed) {
+          return;
+        }
         dictationModeRef.current = event.payload.dictationMode;
         setDictationMode(event.payload.dictationMode);
       },
@@ -618,6 +731,30 @@ export function useDictationSession({
       unlistenSettings?.();
     };
   }, [enabled, processingEnabled]);
+
+  useEffect(() => {
+    if (enabled && processingEnabled) {
+      return;
+    }
+
+    clearPendingHotkeyStop();
+    setRestartOnStop(false);
+    if (!enabled) {
+      setActiveMode("idle");
+      streamingSuppressedRef.current = false;
+      if (isRecording) {
+        stop();
+      }
+    }
+    detachAndStopStreaming();
+  }, [
+    clearPendingHotkeyStop,
+    detachAndStopStreaming,
+    enabled,
+    isRecording,
+    processingEnabled,
+    stop,
+  ]);
 
   useEffect(() => {
     if (!enabled || !hasPermission || isManualUnavailable) {
@@ -639,9 +776,17 @@ export function useDictationSession({
     if (isRecording) {
       clearPendingHotkeyStop();
       setRestartOnStop(true);
+      detachAndStopStreaming();
       stop();
     }
-  }, [clearPendingHotkeyStop, enabled, selectedDeviceId, isRecording, stop]);
+  }, [
+    clearPendingHotkeyStop,
+    detachAndStopStreaming,
+    enabled,
+    selectedDeviceId,
+    isRecording,
+    stop,
+  ]);
 
   useEffect(() => {
     if (enabled && restartOnStop && status === "stopped") {
@@ -667,6 +812,7 @@ export function useDictationSession({
 
           if (payload.mode === "dictation") {
               if (payload.phase === "start") {
+                streamingSuppressedRef.current = false;
                 setActiveMode("dictation");
                 if (payload.field) {
                   await startWithFocusCapture(payload.field, "hotkey");
@@ -690,13 +836,23 @@ export function useDictationSession({
           if (payload.mode === "command") {
             if (payload.phase === "start") {
               clearPendingHotkeyStop();
+              streamingSuppressedRef.current = true;
+              resetStreamingState();
               setActiveMode("command");
               setFocusedFieldError(null);
               setFocusedField(null);
+              await cleanupStreamingSessions();
+              if (!enabledRef.current) {
+                return;
+              }
               try {
                 await start();
               } catch (err) {
-                setFocusedFieldError(`Recording failed: ${normalizeError(err)}`);
+                if (enabledRef.current) {
+                  setFocusedFieldError(
+                    `Recording failed: ${normalizeError(err)}`,
+                  );
+                }
               }
               return;
             }
@@ -727,9 +883,11 @@ export function useDictationSession({
     isWindows,
     start,
     startWithFocusCapture,
+    cleanupStreamingSessions,
     clearPendingHotkeyStop,
     enabled,
     processingEnabled,
+    resetStreamingState,
     stopHotkeyRecording,
     tauriAvailable,
   ]);
@@ -737,13 +895,9 @@ export function useDictationSession({
   useEffect(() => {
     return () => {
       clearPendingHotkeyStop();
-      void Promise.all(
-        Object.values(STREAMING_PROVIDER_PROFILES).map((profile) =>
-          profile.cleanup().catch(() => false),
-        ),
-      ).catch(() => {});
+      void cleanupStreamingSessions().catch(() => {});
     };
-  }, [clearPendingHotkeyStop]);
+  }, [cleanupStreamingSessions, clearPendingHotkeyStop]);
 
   return {
     activeMode,

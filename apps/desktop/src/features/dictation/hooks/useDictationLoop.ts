@@ -253,8 +253,18 @@ export function useDictationLoop(
     lastProcessedKeyRef.current = recordingKey;
 
     const label = providerLabels[providerId] ?? providerId;
-    const isActiveRun = () =>
-      mountedRef.current && lastProcessedKeyRef.current === recordingKey;
+    const isActiveRun = () => {
+      const latestSession = latestSessionRef.current;
+      return (
+        mountedRef.current &&
+        lastProcessedKeyRef.current === recordingKey &&
+        !latestSession.isRecording &&
+        latestSession.processingEnabled !== false &&
+        latestSession.completedMode === "dictation" &&
+        !latestSession.focusedFieldError &&
+        !latestSession.recorderError
+      );
+    };
 
     const runLoop = async () => {
       const processingStartedAt = isoNow();
@@ -369,7 +379,6 @@ export function useDictationLoop(
         if (
           streamingProvider &&
           dictationMode !== "standard" &&
-          finalStreamingTranscript.length === 0 &&
           shouldWaitForStreamingFinal(session)
         ) {
           finalStreamingTranscript = await waitForStreamingFinalTranscript(
@@ -574,13 +583,15 @@ export function useDictationLoop(
             status: "skipped",
           },
         });
-        setLoopState({
-          error: null,
-          insertResult: null,
-          message: "Nothing to insert.",
-          state: "inserted",
-          transcript: text,
-        });
+        if (isActiveRun()) {
+          setLoopState({
+            error: null,
+            insertResult: null,
+            message: "Nothing to insert.",
+            state: "inserted",
+            transcript: text,
+          });
+        }
         return;
       }
 
@@ -893,7 +904,6 @@ function shouldWaitForStreamingFinal(session: DictationLoopSession) {
   );
   const terminal = events.some((event) =>
     [
-      "stream_final_received",
       "stream_terminated",
       "stream_error",
       "stream_fallback_async_started",
@@ -909,12 +919,8 @@ async function waitForStreamingFinalTranscript(
 ) {
   const deadline = now() + timeoutMs;
   while (isActiveRun() && now() < deadline) {
-    const transcript = latestSessionRef.current.streamingTranscript?.trim() ?? "";
-    if (transcript.length > 0) {
-      return transcript;
-    }
     if (!shouldWaitForStreamingFinal(latestSessionRef.current)) {
-      return "";
+      return latestSessionRef.current.streamingTranscript?.trim() ?? "";
     }
     await delay(STREAMING_FINAL_POLL_MS);
   }

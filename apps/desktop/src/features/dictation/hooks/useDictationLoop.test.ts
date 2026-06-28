@@ -356,6 +356,121 @@ describe("useDictationLoop", () => {
     );
   });
 
+  it("does not insert a completed transcription after a new recording has started", async () => {
+    const audioBlob = recordingBlob();
+    let resolveTranscription:
+      | ((value: Awaited<ReturnType<typeof transcribeRecording>>) => void)
+      | undefined;
+    transcribeRecording.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveTranscription = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ value }) => useDictationLoop(value),
+      { initialProps: { value: session({ audioBlob }) } },
+    );
+
+    await waitFor(() => expect(transcribeRecording).toHaveBeenCalledTimes(1));
+    rerender({
+      value: session({
+        audioBlob,
+        isRecording: true,
+      }),
+    });
+
+    await act(async () => {
+      resolveTranscription?.({
+        durationMs: 1200,
+        model: "gpt-4o-mini-transcribe",
+        providerId: "openai",
+        text: "old recording",
+      });
+      await Promise.resolve();
+    });
+
+    expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+    expect(result.current.state).toBe("recording");
+  });
+
+  it("does not insert a completed transcription after processing is disabled", async () => {
+    const audioBlob = recordingBlob();
+    let resolveTranscription:
+      | ((value: Awaited<ReturnType<typeof transcribeRecording>>) => void)
+      | undefined;
+    transcribeRecording.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveTranscription = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ value }) => useDictationLoop(value),
+      { initialProps: { value: session({ audioBlob }) } },
+    );
+
+    await waitFor(() => expect(transcribeRecording).toHaveBeenCalledTimes(1));
+    rerender({
+      value: session({
+        audioBlob,
+        processingEnabled: false,
+      }),
+    });
+
+    await act(async () => {
+      resolveTranscription?.({
+        durationMs: 1200,
+        model: "gpt-4o-mini-transcribe",
+        providerId: "openai",
+        text: "disabled recording",
+      });
+      await Promise.resolve();
+    });
+
+    expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+    expect(result.current.state).not.toBe("inserted");
+  });
+
+  it("does not mark an empty transcription inserted after processing is disabled", async () => {
+    const audioBlob = recordingBlob();
+    let resolveDraftSave: (() => void) | undefined;
+    transcribeRecording.mockResolvedValueOnce({
+      durationMs: 1200,
+      model: "gpt-4o-mini-transcribe",
+      providerId: "openai",
+      text: "",
+    });
+    saveDictationRecord.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveDraftSave = resolve;
+      }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ value }) => useDictationLoop(value),
+      { initialProps: { value: session({ audioBlob }) } },
+    );
+
+    await waitFor(() => expect(saveDictationRecord).toHaveBeenCalledTimes(1));
+    rerender({
+      value: session({
+        audioBlob,
+        processingEnabled: false,
+      }),
+    });
+
+    await act(async () => {
+      resolveDraftSave?.();
+      await Promise.resolve();
+    });
+
+    expect(result.current.state).not.toBe("inserted");
+    expect(result.current.message).not.toBe("Nothing to insert.");
+  });
+
   it("inserts the raw transcript after transcription", async () => {
     const audioBlob = recordingBlob();
     transcribeRecording.mockResolvedValueOnce({
@@ -1298,6 +1413,15 @@ describe("useDictationLoop", () => {
             stage: "receive_final",
             status: "succeeded",
           },
+          {
+            eventType: "stream_terminated",
+            providerId: "assemblyai",
+            providerMode: "streaming",
+            modelId: "u3-rt-pro",
+            sessionId: "session-1",
+            stage: "terminate",
+            status: "succeeded",
+          },
         ],
         streamingTranscript: "low latency text",
       }),
@@ -1310,6 +1434,83 @@ describe("useDictationLoop", () => {
 
     await waitFor(() => {
       expect(insertIntoActiveTarget).toHaveBeenCalledWith("low latency text");
+    });
+    expect(transcribeRecording).not.toHaveBeenCalled();
+  });
+
+  it("waits for streaming termination before inserting an already partial streaming transcript", async () => {
+    const audioBlob = recordingBlob();
+    getSelectedSpeechProvider.mockResolvedValue("smallest");
+    const streamingStarted = {
+      eventType: "stream_session_started",
+      providerId: "smallest",
+      providerMode: "streaming",
+      modelId: "pulse",
+      sessionId: "session-1",
+      stage: "connect",
+      status: "succeeded",
+    } as const;
+    const firstFinal = {
+      eventType: "stream_final_received",
+      providerId: "smallest",
+      providerMode: "streaming",
+      modelId: "pulse",
+      sessionId: "session-1",
+      stage: "receive",
+      status: "succeeded",
+    } as const;
+
+    const { rerender } = renderHook(
+      ({ value }) => useDictationLoop(value),
+      {
+        initialProps: {
+          value: session({
+            audioBlob,
+            streamingProviderEvents: [streamingStarted, firstFinal],
+            streamingTranscript: "first two lines",
+          }),
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(recordStartupCheckpoint).toHaveBeenCalledWith({
+        windowLabel: "voice-capsule",
+        checkpoint: "dictation_loop_transcription_started",
+        detail: expect.stringContaining("streamingTranscriptChars=15"),
+      });
+    });
+    expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+
+    rerender({
+      value: session({
+        audioBlob,
+        streamingProviderEvents: [
+          streamingStarted,
+          firstFinal,
+          {
+            eventType: "stream_terminated",
+            providerId: "smallest",
+            providerMode: "streaming",
+            modelId: "pulse",
+            sessionId: "session-1",
+            stage: "terminate",
+            status: "succeeded",
+          },
+        ],
+        streamingTranscript: "first two lines final line",
+      }),
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 75));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(insertIntoActiveTarget).toHaveBeenCalledWith(
+        "first two lines final line",
+      );
     });
     expect(transcribeRecording).not.toHaveBeenCalled();
   });
