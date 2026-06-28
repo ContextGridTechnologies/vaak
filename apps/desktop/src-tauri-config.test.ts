@@ -201,7 +201,7 @@ describe("Desktop release metadata", () => {
 
     expect(config.bundle).toMatchObject({
       active: true,
-      createUpdaterArtifacts: true,
+      createUpdaterArtifacts: false,
       publisher: "Vaak Contributors",
       homepage: "https://github.com/vaak-ai/vaak",
       licenseFile: "../../../LICENSE",
@@ -221,16 +221,7 @@ describe("Desktop release metadata", () => {
         },
       },
     });
-    expect(config.plugins?.updater).toMatchObject({
-      endpoints: [
-        "https://github.com/ContextGridTechnologies/vaak/releases/latest/download/latest.json",
-      ],
-      windows: {
-        installMode: "passive",
-      },
-    });
-    expect(config.plugins?.updater?.pubkey).toEqual(expect.any(String));
-    expect(config.plugins?.updater?.pubkey).not.toBe("");
+    expect(config.plugins?.updater).toBeUndefined();
     expect(config.bundle?.longDescription).toContain("bring your own model or API key");
     expect(config.bundle?.icon).toEqual([
       "icons/32x32.png",
@@ -241,16 +232,17 @@ describe("Desktop release metadata", () => {
     ]);
   });
 
-  it("publishes updater metadata and signed artifacts from tagged releases", () => {
+  it("publishes the Windows installer and checksum from tagged releases", () => {
     const workflow = readFileSync(
       join(process.cwd(), "..", "..", ".github", "workflows", "desktop-release.yml"),
       "utf8",
     );
 
-    expect(workflow).toContain("TAURI_SIGNING_PRIVATE_KEY");
-    expect(workflow).toContain("latest.json");
-    expect(workflow).toContain("Vaak-Windows-Setup.nsis.zip");
-    expect(workflow).toContain("Vaak-Windows-Setup.nsis.zip.sig");
+    expect(workflow).toContain("Vaak-Windows-Setup.exe");
+    expect(workflow).toContain("Vaak-Windows-Setup.exe.sha256");
+    expect(workflow).toContain("--no-sign --bundles nsis");
+    expect(workflow).not.toContain("latest.json");
+    expect(workflow).not.toContain("Vaak-Windows-Setup.nsis.zip");
   });
 });
 
