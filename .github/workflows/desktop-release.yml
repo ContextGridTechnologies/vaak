@@ -65,8 +65,8 @@ jobs:
 
           makensis /VERSION
 
-      - name: Build unsigned Windows installer and updater artifacts
-        run: npm --prefix apps/desktop run tauri build -- --ci --no-sign --bundles nsis
+      - name: Build Windows installer and signed updater artifacts
+        run: npm --prefix apps/desktop run tauri build -- --ci --bundles nsis
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           VITE_POSTHOG_PUBLIC_KEY: ${{ secrets.VITE_POSTHOG_PUBLIC_KEY }}
