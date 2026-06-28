@@ -137,6 +137,8 @@ describe("Tauri security configuration", () => {
       "voice-capsule",
     ]);
     expect(mainCapability.windows).toEqual(["main"]);
+    expect(mainCapability.permissions).toContain("opener:allow-open-url");
+    expect(mainCapability.permissions).toContain("opener:allow-default-urls");
     expect(mainCapability.permissions).toContain("opener:allow-reveal-item-in-dir");
     expect(mainCapability.permissions).not.toContain("opener:default");
     expect(voiceCapsuleCapability.windows).toEqual(["voice-capsule"]);

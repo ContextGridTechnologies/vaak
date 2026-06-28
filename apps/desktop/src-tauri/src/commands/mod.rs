@@ -319,6 +319,7 @@ pub fn get_diagnostics_locations(
 pub fn capture_dictation_target(
     session: State<'_, SessionStore>,
 ) -> Result<FocusedFieldInfo, PlatformError> {
+    session.clear_dictation_target();
     let field = platform::get_focused_field()?;
     session.set_dictation_target(field.clone());
     Ok(field)
@@ -360,7 +361,7 @@ pub fn insert_into_active_target(
     text: String,
     session: State<'_, SessionStore>,
 ) -> Result<TextInsertResult, PlatformError> {
-    let captured = session.get_dictation_target().ok_or_else(|| {
+    let captured = session.take_dictation_target().ok_or_else(|| {
         PlatformError::new("no_active_target", "No captured dictation target available")
     })?;
     platform::insert_text_for_captured_target(&text, &captured)

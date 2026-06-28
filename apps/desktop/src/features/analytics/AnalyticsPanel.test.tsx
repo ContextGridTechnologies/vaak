@@ -2,9 +2,11 @@ import { screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderApp } from "@/test/render";
+import type { DictationRecord, DictationTimeline } from "@/lib/tauri";
 
 import {
   AnalyticsPanel,
+  buildAnalyticsSummary,
   resetAnalyticsSnapshotCacheForTests,
 } from "./AnalyticsPanel";
 
@@ -198,6 +200,32 @@ describe("AnalyticsPanel", () => {
     expect(screen.queryByText("8 of 7")).not.toBeInTheDocument();
     expect(screen.queryByText("Legacy Editor")).not.toBeInTheDocument();
   });
+
+  it("calculates time saved against the full speak-to-insert duration", () => {
+    const finalText = Array.from({ length: 80 }, (_, index) => `word${index}`).join(
+      " ",
+    );
+    const summary = buildAnalyticsSummary([
+      createRecord({
+        recordId: "record-1",
+        status: "inserted",
+        providerId: "openai",
+        modelId: "gpt-4o-transcribe",
+        capturedAt: "2026-06-12T09:00:00.000Z",
+        startedAt: "2026-06-12T09:00:00.000Z",
+        endedAt: "2026-06-12T09:00:10.000Z",
+        windowTitle: "Visual Studio Code",
+        finalText,
+        timeline: {
+          recordingStartedAt: "2026-06-12T09:00:00.000Z",
+          insertionCompletedAt: "2026-06-12T09:01:10.000Z",
+          providerRequests: [],
+        },
+      }),
+    ]);
+
+    expect(summary.timeSavedMs).toBe(50_000);
+  });
 });
 
 type CreateRecordInput = {
@@ -211,9 +239,10 @@ type CreateRecordInput = {
   windowTitle: string;
   errorMessage?: string;
   finalText?: string;
+  timeline?: Partial<DictationTimeline>;
 };
 
-function createRecord(input: CreateRecordInput) {
+function createRecord(input: CreateRecordInput): DictationRecord {
   return {
     schemaVersion: 1,
     recordId: input.recordId,
@@ -266,5 +295,11 @@ function createRecord(input: CreateRecordInput) {
       errorCode: input.status === "failed" ? "insert_failed" : null,
       errorMessage: input.errorMessage ?? null,
     },
+    timeline: input.timeline
+      ? {
+          providerRequests: [],
+          ...input.timeline,
+        }
+      : null,
   };
 }

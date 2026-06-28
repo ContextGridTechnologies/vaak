@@ -480,9 +480,8 @@ fn normalize_bare_https_origin(
     label: &str,
 ) -> Result<String, ProviderError> {
     let endpoint = normalize_required_provider_field(endpoint, label)?;
-    let parsed = reqwest::Url::parse(&endpoint).map_err(|_| {
-        ProviderFailure::InvalidRequest(format!("{label} is invalid"))
-    })?;
+    let parsed = reqwest::Url::parse(&endpoint)
+        .map_err(|_| ProviderFailure::InvalidRequest(format!("{label} is invalid")))?;
 
     let is_local_http = parsed.scheme() == "http"
         && matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "::1"));
@@ -527,9 +526,9 @@ fn validate_deployment_id(deployment_id: &str, label: &str) -> Result<(), Provid
         .chars()
         .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
     {
-        return Err(ProviderFailure::InvalidRequest(
-            format!("{label} contains unsupported characters"),
-        )
+        return Err(ProviderFailure::InvalidRequest(format!(
+            "{label} contains unsupported characters"
+        ))
         .into());
     }
 
@@ -700,8 +699,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(config.deployment_id.as_deref(), Some("gpt-4o-mini-transcribe"));
-        assert_eq!(config.streaming_deployment_id.as_deref(), Some("gpt-realtime"));
+        assert_eq!(
+            config.deployment_id.as_deref(),
+            Some("gpt-4o-mini-transcribe")
+        );
+        assert_eq!(
+            config.streaming_deployment_id.as_deref(),
+            Some("gpt-realtime")
+        );
     }
 
     #[test]

@@ -585,7 +585,9 @@ fn parse_settings(raw: &str) -> Result<LocalSettings, ProviderError> {
     Ok(settings)
 }
 
-fn normalize_system_settings(mut settings: SystemSettings) -> Result<SystemSettings, ProviderError> {
+fn normalize_system_settings(
+    mut settings: SystemSettings,
+) -> Result<SystemSettings, ProviderError> {
     settings.dictation_mode = match settings.dictation_mode.as_str() {
         "auto" | "balanced" => "streaming".to_string(),
         "streaming" | "fast" => "streaming".to_string(),

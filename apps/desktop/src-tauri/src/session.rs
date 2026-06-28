@@ -102,11 +102,24 @@ impl SessionStore {
         }
     }
 
+    pub fn clear_dictation_target(&self) {
+        if let Ok(mut snapshot) = self.inner.lock() {
+            snapshot.last_dictation_target = None;
+        }
+    }
+
     pub fn get_dictation_target(&self) -> Option<FocusedFieldInfo> {
         self.inner
             .lock()
             .ok()
             .and_then(|snapshot| snapshot.last_dictation_target.clone())
+    }
+
+    pub fn take_dictation_target(&self) -> Option<FocusedFieldInfo> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|mut snapshot| snapshot.last_dictation_target.take())
     }
 
     #[allow(dead_code)]
@@ -353,9 +366,10 @@ fn transition_mode<R: Runtime>(app: &AppHandle<R>, from: ActiveMode, to: ActiveM
 
 fn emit_dictation_start<R: Runtime>(app: &AppHandle<R>) {
     let bindings = app.state::<SessionStore>().hotkey_bindings();
+    let session = app.state::<SessionStore>();
+    session.clear_dictation_target();
     let payload = match platform::get_focused_field() {
         Ok(field) => {
-            let session = app.state::<SessionStore>();
             session.set_dictation_target(field.clone());
             HotkeySessionEvent {
                 mode: "dictation".to_string(),
@@ -489,5 +503,43 @@ mod tests {
                 "Control+Shift+Option"
             );
         }
+    }
+
+    fn focused_field(stable_id: &str) -> FocusedFieldInfo {
+        FocusedFieldInfo {
+            window_title: String::new(),
+            control_name: String::new(),
+            control_type: "Edit".to_string(),
+            control_type_id: 50004,
+            automation_id: String::new(),
+            framework_id: String::new(),
+            class_name: String::new(),
+            current_value: String::new(),
+            native_window_handle: 0,
+            stable_id: stable_id.to_string(),
+        }
+    }
+
+    #[test]
+    fn dictation_target_can_be_cleared_after_failed_capture() {
+        let session = SessionStore::default();
+        session.set_dictation_target(focused_field("previous"));
+
+        session.clear_dictation_target();
+
+        assert!(session.get_dictation_target().is_none());
+    }
+
+    #[test]
+    fn dictation_target_is_consumed_once_for_insertion() {
+        let session = SessionStore::default();
+        session.set_dictation_target(focused_field("captured"));
+
+        let captured = session
+            .take_dictation_target()
+            .expect("captured target should be available once");
+
+        assert_eq!(captured.stable_id, "captured");
+        assert!(session.take_dictation_target().is_none());
     }
 }
