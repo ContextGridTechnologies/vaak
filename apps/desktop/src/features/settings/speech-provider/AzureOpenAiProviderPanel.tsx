@@ -1,6 +1,5 @@
 import type { FormEvent } from "react";
 
-import { StatusBadge } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -18,12 +17,12 @@ type AzureOpenAiProviderPanelProps = {
   deploymentId: string;
   endpoint: string;
   error?: string;
+  headerMeta?: string;
   hasSavedKey: boolean;
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
   showTestButton?: boolean;
-  testResult?: string;
   onApiKeyChange: (value: string) => void;
   onApiVersionChange: (value: string) => void;
   onDeploymentIdChange: (value: string) => void;
@@ -38,12 +37,12 @@ export function AzureOpenAiProviderPanel({
   deploymentId,
   endpoint,
   error,
+  headerMeta,
   hasSavedKey,
   isLoading,
   isSaving,
   isTesting,
   showTestButton = true,
-  testResult,
   onApiKeyChange,
   onApiVersionChange,
   onDeploymentIdChange,
@@ -60,18 +59,14 @@ export function AzureOpenAiProviderPanel({
 
   return (
     <form onSubmit={onSubmit}>
-      <FieldGroup className="rounded-lg border border-primary/30 bg-card/70 p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h3 className="text-base font-semibold">Azure OpenAI</h3>
-            <p className="text-sm text-muted-foreground">
-              Use an Azure OpenAI transcription deployment with local
-              credentials.
+      <FieldGroup className="gap-4 rounded-lg bg-muted/45 p-4">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <h3 className="text-base font-semibold">Azure OpenAI</h3>
+          {headerMeta ? (
+            <p className="text-right text-xs font-medium text-muted-foreground">
+              {headerMeta}
             </p>
-          </div>
-          <StatusBadge tone={hasSavedKey ? "success" : "warning"}>
-            {hasSavedKey ? "Key saved" : "Needs key"}
-          </StatusBadge>
+          ) : null}
         </div>
 
         <FieldGroup className="gap-4">
@@ -132,12 +127,6 @@ export function AzureOpenAiProviderPanel({
             </div>
           </Field>
         </FieldGroup>
-
-        {testResult ? (
-          <p className="text-sm text-success" role="status">
-            {testResult}
-          </p>
-        ) : null}
 
         <div className="flex flex-wrap gap-2 md:pl-[9rem]">
           <Button type="submit" className="w-fit" disabled={disabled}>

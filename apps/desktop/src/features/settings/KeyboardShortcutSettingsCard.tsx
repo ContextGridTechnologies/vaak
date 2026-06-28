@@ -1,12 +1,9 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { KeyboardIcon, RefreshCcwIcon } from "lucide-react";
 
-import {
-  PermissionCallout,
-  SectionPanel,
-  StatusBadge,
-} from "@/components/app";
+import { PermissionCallout } from "@/components/app";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Field,
   FieldDescription,
@@ -90,99 +87,109 @@ export function KeyboardShortcutSettingsCard() {
   };
 
   return (
-    <SectionPanel
-      title="Keyboard shortcut"
-      description="Change the hold-to-talk shortcut used by the voice capsule."
-      actions={<StatusBadge tone="neutral">Hold to talk</StatusBadge>}
-      contentClassName="gap-3"
-    >
-      <div className="flex flex-col gap-3 rounded-lg border bg-card/60 p-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 flex-col gap-2">
-            <p className="text-sm font-medium text-foreground">
-              Current dictation shortcut
+    <Card size="sm" className="rounded-lg bg-transparent py-0 shadow-none ring-0">
+      <CardContent className="px-0">
+        <FieldGroup className="gap-4 rounded-lg bg-muted/45 p-4">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-base font-semibold">Keyboard shortcut</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Change the hold-to-talk shortcut used by the voice capsule.
+              </p>
+            </div>
+            <p className="text-right text-xs font-medium text-muted-foreground">
+              Hold to talk
             </p>
-            <ShortcutKeys shortcut={bindings.dictation} />
           </div>
 
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={openEditor}
-          >
-            <KeyboardIcon data-icon="inline-start" aria-hidden="true" />
-            Change shortcut
-          </Button>
-        </div>
-      </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 flex-col gap-2">
+              <p className="text-sm font-medium text-foreground">
+                Current dictation shortcut
+              </p>
+              <ShortcutKeys shortcut={bindings.dictation} />
+            </div>
 
-      {isEditing ? (
-        <FieldGroup>
-          <Field data-invalid={Boolean(shortcutValidationError)}>
-            <FieldLabel htmlFor="settings-dictation-shortcut">
-              Press a new shortcut
-            </FieldLabel>
-            <Input
-              id="settings-dictation-shortcut"
-              aria-invalid={Boolean(shortcutValidationError)}
-              autoFocus
-              readOnly
-              value={draftShortcut ? formatHotkeyLabel(draftShortcut) : ""}
-              placeholder="Hold Ctrl + Win or Ctrl + Shift"
-              onKeyDown={handleShortcutKeyDown(setDraftShortcut)}
-            />
-            <FieldDescription>
-              Use at least two modifier keys. Alt stays reserved for command
-              mode.
-            </FieldDescription>
-            {shortcutValidationError ? (
-              <FieldDescription className="text-destructive">
-                {shortcutValidationError}
-              </FieldDescription>
-            ) : null}
-          </Field>
-
-          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button
               type="button"
               size="sm"
               variant="outline"
-              disabled={isSaving}
-              onClick={() => void saveShortcut(DEFAULT_BINDINGS.dictation)}
+              className="w-fit sm:shrink-0"
+              onClick={openEditor}
             >
-              <RefreshCcwIcon data-icon="inline-start" aria-hidden="true" />
-              Reset to default
+              <KeyboardIcon data-icon="inline-start" aria-hidden="true" />
+              Change shortcut
             </Button>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={isSaving}
-                onClick={closeEditor}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={!canSaveShortcut}
-                onClick={() => void saveShortcut(draftShortcut)}
-              >
-                Save shortcut
-              </Button>
-            </div>
           </div>
-        </FieldGroup>
-      ) : null}
 
-      {error ? (
-        <PermissionCallout tone="warning" title="Shortcut update failed">
-          {error}
-        </PermissionCallout>
-      ) : null}
-    </SectionPanel>
+          {isEditing ? (
+            <FieldGroup>
+              <Field data-invalid={Boolean(shortcutValidationError)}>
+                <FieldLabel htmlFor="settings-dictation-shortcut">
+                  Press a new shortcut
+                </FieldLabel>
+                <Input
+                  id="settings-dictation-shortcut"
+                  aria-invalid={Boolean(shortcutValidationError)}
+                  autoFocus
+                  readOnly
+                  value={draftShortcut ? formatHotkeyLabel(draftShortcut) : ""}
+                  placeholder="Hold Ctrl + Win or Ctrl + Shift"
+                  onKeyDown={handleShortcutKeyDown(setDraftShortcut)}
+                />
+                <FieldDescription>
+                  Use at least two modifier keys. Alt stays reserved for command
+                  mode.
+                </FieldDescription>
+                {shortcutValidationError ? (
+                  <FieldDescription className="text-destructive">
+                    {shortcutValidationError}
+                  </FieldDescription>
+                ) : null}
+              </Field>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isSaving}
+                  onClick={() => void saveShortcut(DEFAULT_BINDINGS.dictation)}
+                >
+                  <RefreshCcwIcon data-icon="inline-start" aria-hidden="true" />
+                  Reset to default
+                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isSaving}
+                    onClick={closeEditor}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!canSaveShortcut}
+                    onClick={() => void saveShortcut(draftShortcut)}
+                  >
+                    Save shortcut
+                  </Button>
+                </div>
+              </div>
+            </FieldGroup>
+          ) : null}
+
+          {error ? (
+            <PermissionCallout tone="warning" title="Shortcut update failed">
+              {error}
+            </PermissionCallout>
+          ) : null}
+        </FieldGroup>
+      </CardContent>
+    </Card>
   );
 }
 

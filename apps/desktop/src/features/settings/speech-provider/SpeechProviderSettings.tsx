@@ -2,10 +2,9 @@ import { type FormEvent, useEffect, useState } from "react";
 import { CheckCircle2Icon, RotateCcwIcon } from "lucide-react";
 import { toast } from "sonner";
 
-import { StatusBadge } from "@/components/app";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
 import {
@@ -26,11 +25,7 @@ import { OpenAiProviderPanel } from "./OpenAiProviderPanel";
 import { ProviderSelector } from "./ProviderSelector";
 import { SmallestProviderPanel } from "./SmallestProviderPanel";
 import { verifyOnboardingProviderTranscription } from "./onboardingProviderVerification";
-import {
-  normalizeProviderError,
-  providerStatusLabel,
-  providerStatusTone,
-} from "./status";
+import { normalizeProviderError } from "./status";
 import {
   AZURE_OPENAI_API_VERSION,
   DEFAULT_ASSEMBLYAI_MODEL,
@@ -93,9 +88,9 @@ export function SpeechProviderSettings({
   const [providerTestResults, setProviderTestResults] =
     useState<ProviderErrors>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
-  const selectedStatus = providerStatuses[selectedProviderId];
   const selectedProviderError = providerErrors[selectedProviderId];
   const selectedProviderReadyMessage = providerTestResults[selectedProviderId];
+  const selectedProviderMeta = `Default provider: ${providerLabels[selectedProviderId]}`;
   const azureHasSavedKey = Boolean(providerStatuses["azure-openai"]?.configured);
   const azureAiSpeechHasSavedKey = Boolean(
     providerStatuses["azure-ai-speech"]?.configured,
@@ -681,12 +676,12 @@ export function SpeechProviderSettings({
         <OpenAiProviderPanel
           apiKey={apiKey}
           error={providerErrors.openai}
+          headerMeta={selectedProviderMeta}
           isLoading={isLoading}
           isSaving={savingProviderId === "openai"}
           isTesting={testingProviderId === "openai"}
           model={openAiModel}
           showTestButton={!isOnboarding}
-          testResult={providerTestResults.openai}
           status={providerStatuses.openai}
           onApiKeyChange={handleOpenAiApiKeyChange}
           onModelChange={handleOpenAiModelChange}
@@ -700,12 +695,12 @@ export function SpeechProviderSettings({
           deploymentId={azureDeploymentId}
           endpoint={azureEndpoint}
           error={providerErrors["azure-openai"]}
+          headerMeta={selectedProviderMeta}
           hasSavedKey={azureHasSavedKey}
           isLoading={isLoading}
           isSaving={savingProviderId === "azure-openai"}
           isTesting={testingProviderId === "azure-openai"}
           showTestButton={!isOnboarding}
-          testResult={providerTestResults["azure-openai"]}
           onApiKeyChange={handleAzureApiKeyChange}
           onApiVersionChange={handleAzureApiVersionChange}
           onDeploymentIdChange={handleAzureDeploymentIdChange}
@@ -718,11 +713,11 @@ export function SpeechProviderSettings({
           apiKey={azureAiSpeechApiKey}
           endpoint={azureAiSpeechEndpoint}
           error={providerErrors["azure-ai-speech"]}
+          headerMeta={selectedProviderMeta}
           isLoading={isLoading}
           isSaving={savingProviderId === "azure-ai-speech"}
           isTesting={testingProviderId === "azure-ai-speech"}
           showTestButton={!isOnboarding}
-          testResult={providerTestResults["azure-ai-speech"]}
           status={providerStatuses["azure-ai-speech"]}
           onApiKeyChange={handleAzureAiSpeechApiKeyChange}
           onEndpointChange={handleAzureAiSpeechEndpointChange}
@@ -733,12 +728,12 @@ export function SpeechProviderSettings({
         <AssemblyAiProviderPanel
           apiKey={assemblyAiApiKey}
           error={providerErrors.assemblyai}
+          headerMeta={selectedProviderMeta}
           isLoading={isLoading}
           isSaving={savingProviderId === "assemblyai"}
           isTesting={testingProviderId === "assemblyai"}
           model={assemblyAiModel}
           showTestButton={!isOnboarding}
-          testResult={providerTestResults.assemblyai}
           status={providerStatuses.assemblyai}
           onApiKeyChange={handleAssemblyAiApiKeyChange}
           onModelChange={handleAssemblyAiModelChange}
@@ -749,11 +744,11 @@ export function SpeechProviderSettings({
         <DeepgramProviderPanel
           apiKey={deepgramApiKey}
           error={providerErrors.deepgram}
+          headerMeta={selectedProviderMeta}
           isLoading={isLoading}
           isSaving={savingProviderId === "deepgram"}
           isTesting={testingProviderId === "deepgram"}
           showTestButton={!isOnboarding}
-          testResult={providerTestResults.deepgram}
           status={providerStatuses.deepgram}
           onApiKeyChange={handleDeepgramApiKeyChange}
           onSubmit={saveDeepgramKey}
@@ -763,12 +758,12 @@ export function SpeechProviderSettings({
         <ElevenLabsProviderPanel
           apiKey={elevenLabsApiKey}
           error={providerErrors.elevenlabs}
+          headerMeta={selectedProviderMeta}
           isLoading={isLoading}
           isSaving={savingProviderId === "elevenlabs"}
           isTesting={testingProviderId === "elevenlabs"}
           model={elevenLabsModel}
           showTestButton={!isOnboarding}
-          testResult={providerTestResults.elevenlabs}
           status={providerStatuses.elevenlabs}
           onApiKeyChange={handleElevenLabsApiKeyChange}
           onModelChange={handleElevenLabsModelChange}
@@ -779,12 +774,12 @@ export function SpeechProviderSettings({
         <SmallestProviderPanel
           apiKey={smallestApiKey}
           error={providerErrors.smallest}
+          headerMeta={selectedProviderMeta}
           isLoading={isLoading}
           isSaving={savingProviderId === "smallest"}
           isTesting={testingProviderId === "smallest"}
           model={smallestModel}
           showTestButton={!isOnboarding}
-          testResult={providerTestResults.smallest}
           status={providerStatuses.smallest}
           onApiKeyChange={handleSmallestApiKeyChange}
           onModelChange={handleSmallestModelChange}
@@ -822,26 +817,8 @@ export function SpeechProviderSettings({
 
   return (
     <div className="flex flex-col gap-4">
-      <Card size="sm" className="rounded-lg shadow-none">
-        <CardHeader className="gap-3 sm:grid-cols-[1fr_auto]">
-          <div className="flex flex-col gap-1">
-            <h3 className="text-base font-semibold leading-snug text-foreground">
-              Speech provider
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Choose the transcription provider Vaak uses for dictation.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <StatusBadge
-              tone={providerStatusTone(selectedStatus)}
-              className="normal-case tracking-normal"
-            >
-              {providerStatusLabel(selectedStatus)}
-            </StatusBadge>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2.5">
+      <Card size="sm" className="rounded-lg bg-transparent py-0 shadow-none ring-0">
+        <CardContent className="flex flex-col gap-3 px-0">
           {providerSetup}
         </CardContent>
       </Card>

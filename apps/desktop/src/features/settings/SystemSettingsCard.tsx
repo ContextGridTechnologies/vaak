@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 
-import { PermissionCallout, SectionPanel } from "@/components/app";
+import { PermissionCallout } from "@/components/app";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
   getErrorTelemetryEnabledPreference,
@@ -14,6 +21,8 @@ import {
   saveSystemSettings,
   type DictationMode,
 } from "@/lib/tauri";
+
+import { DiagnosticsSettingsBlock } from "./DiagnosticsSettingsCard";
 
 const DEFAULT_DICTATION_MODE: DictationMode = "streaming";
 
@@ -141,88 +150,104 @@ export function SystemSettingsCard() {
   }
 
   return (
-    <SectionPanel
-      title="System setting"
-      description="Control how Vaak integrates with your desktop session."
-      contentClassName="gap-3"
-    >
-      <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/60 p-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-sm font-medium text-foreground">
-            Start Vaak on startup
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Launch Vaak automatically after you sign in to this computer.
-          </p>
-        </div>
-        <Switch
-          aria-label="Start Vaak on startup"
-          checked={launchOnStartup}
-          disabled={isSaving}
-          onCheckedChange={(nextValue) => void handleStartupChange(nextValue)}
-        />
-      </div>
+    <div className="flex flex-col gap-6">
+      <Card size="sm" className="rounded-lg bg-transparent py-0 shadow-none ring-0">
+        <CardHeader className="px-0">
+          <CardTitle>System setting</CardTitle>
+          <CardDescription>
+            Control how Vaak integrates with your desktop session.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 px-0">
+          <SettingSwitchRow
+            title="Start Vaak on startup"
+            description="Launch Vaak automatically after you sign in to this computer."
+            checked={launchOnStartup}
+            disabled={isSaving}
+            ariaLabel="Start Vaak on startup"
+            onCheckedChange={(nextValue) => void handleStartupChange(nextValue)}
+          />
 
-      <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/60 p-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-sm font-medium text-foreground">
-            Skipped transcripts
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Show skipped no-op transcription attempts in Voice Activity.
-          </p>
-        </div>
-        <Switch
-          aria-label="Show skipped transcripts in Voice Activity"
-          checked={showSkippedTranscripts}
-          disabled={isSaving}
-          onCheckedChange={(nextValue) =>
-            void handleSkippedTranscriptsChange(nextValue)
-          }
-        />
-      </div>
+          <SettingSwitchRow
+            title="Skipped transcripts"
+            description="Show skipped no-op transcription attempts in Voice Activity."
+            checked={showSkippedTranscripts}
+            disabled={isSaving}
+            ariaLabel="Show skipped transcripts in Voice Activity"
+            onCheckedChange={(nextValue) =>
+              void handleSkippedTranscriptsChange(nextValue)
+            }
+          />
 
-      <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/60 p-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-sm font-medium text-foreground">
-            Usage analytics
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Share privacy-safe usage events. Audio, transcripts, API keys, and
-            file paths are never collected.
-          </p>
-        </div>
-        <Switch
-          aria-label="Share privacy-safe usage analytics"
-          checked={analyticsEnabled}
-          onCheckedChange={handleAnalyticsChange}
-        />
-      </div>
+          <SettingSwitchRow
+            title="Usage analytics"
+            description="Share privacy-safe usage events. Audio, transcripts, API keys, and file paths are never collected."
+            checked={analyticsEnabled}
+            ariaLabel="Share privacy-safe usage analytics"
+            onCheckedChange={handleAnalyticsChange}
+          />
 
-      <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/60 p-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-sm font-medium text-foreground">
-            Crash reports
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Send sanitized handled errors with app version, error code, and
-            stage. Audio, transcripts, API keys, and provider responses are
-            never collected.
-          </p>
-        </div>
-        <Switch
-          aria-label="Send sanitized crash reports"
-          checked={errorTelemetryEnabled}
-          onCheckedChange={handleErrorTelemetryChange}
-        />
-      </div>
+          <SettingSwitchRow
+            title="Crash reports"
+            description="Send sanitized handled errors with app version, error code, and stage. Audio, transcripts, API keys, and provider responses are never collected."
+            checked={errorTelemetryEnabled}
+            ariaLabel="Send sanitized crash reports"
+            onCheckedChange={handleErrorTelemetryChange}
+          />
 
-      {error ? (
-        <PermissionCallout tone="warning" title="Startup setting failed">
-          {error}
-        </PermissionCallout>
-      ) : null}
-    </SectionPanel>
+          {error ? (
+            <PermissionCallout tone="warning" title="Startup setting failed">
+              {error}
+            </PermissionCallout>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card size="sm" className="rounded-lg bg-transparent py-0 shadow-none ring-0">
+        <CardHeader className="px-0">
+          <CardTitle>Diagnostics</CardTitle>
+          <CardDescription>
+            Review local logs and support files before sharing them.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          <DiagnosticsSettingsBlock />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+type SettingSwitchRowProps = {
+  title: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  ariaLabel: string;
+  onCheckedChange: (nextValue: boolean) => void;
+};
+
+function SettingSwitchRow({
+  title,
+  description,
+  checked,
+  disabled,
+  ariaLabel,
+  onCheckedChange,
+}: SettingSwitchRowProps) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg bg-muted/45 p-3">
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+      </div>
+      <Switch
+        aria-label={ariaLabel}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onCheckedChange}
+      />
+    </div>
   );
 }
 

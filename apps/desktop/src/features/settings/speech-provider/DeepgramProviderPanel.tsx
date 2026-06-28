@@ -1,6 +1,5 @@
 import type { FormEvent } from "react";
 
-import { StatusBadge } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -11,17 +10,16 @@ import {
 import { Input } from "@/components/ui/input";
 import type { ProviderStatus } from "@/lib/tauri";
 
-import { providerStatusLabel, providerStatusTone } from "./status";
 import { SAVED_KEY_PLACEHOLDER } from "./types";
 
 type DeepgramProviderPanelProps = {
   apiKey: string;
   error?: string;
+  headerMeta?: string;
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
   showTestButton?: boolean;
-  testResult?: string;
   status?: ProviderStatus;
   onApiKeyChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -31,11 +29,11 @@ type DeepgramProviderPanelProps = {
 export function DeepgramProviderPanel({
   apiKey,
   error,
+  headerMeta,
   isLoading,
   isSaving,
   isTesting,
   showTestButton = true,
-  testResult,
   status,
   onApiKeyChange,
   onSubmit,
@@ -49,17 +47,14 @@ export function DeepgramProviderPanel({
 
   return (
     <form onSubmit={onSubmit}>
-      <FieldGroup className="rounded-lg border border-primary/30 bg-card/70 p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h3 className="text-base font-semibold">Deepgram</h3>
-            <p className="text-sm text-muted-foreground">
-              Use Deepgram Nova-3 transcription with your own API key.
+      <FieldGroup className="gap-4 rounded-lg bg-muted/45 p-4">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <h3 className="text-base font-semibold">Deepgram</h3>
+          {headerMeta ? (
+            <p className="text-right text-xs font-medium text-muted-foreground">
+              {headerMeta}
             </p>
-          </div>
-          <StatusBadge tone={providerStatusTone(status)}>
-            {providerStatusLabel(status)}
-          </StatusBadge>
+          ) : null}
         </div>
 
         <Field className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-center">
@@ -86,12 +81,6 @@ export function DeepgramProviderPanel({
             <FieldError>{error}</FieldError>
           </div>
         </Field>
-
-        {testResult ? (
-          <p className="text-sm text-success" role="status">
-            {testResult}
-          </p>
-        ) : null}
 
         <div className="flex flex-wrap gap-2 md:pl-[9rem]">
           <Button type="submit" className="w-fit" disabled={disabled}>

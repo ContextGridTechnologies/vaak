@@ -102,7 +102,7 @@ describe("SpeechProviderSettings", () => {
       expect(modelCombobox).toHaveTextContent("GPT-4o mini Transcribe");
     });
     expect(screen.getByRole("heading", { name: "OpenAI" })).toBeInTheDocument();
-    expect(screen.getByText("Speech provider")).toBeInTheDocument();
+    expect(screen.getByText("Provider")).toBeInTheDocument();
     expect(screen.getAllByRole("combobox")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "OpenAI" })).toBeInTheDocument();
     expect(
@@ -121,7 +121,7 @@ describe("SpeechProviderSettings", () => {
     expect(
       screen.queryByRole("heading", { name: "Settings" }),
     ).not.toBeInTheDocument();
-    expect(screen.getAllByText("Needs key")).toHaveLength(1);
+    expect(screen.queryByText("Needs key")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Test provider" }),
     ).not.toBeInTheDocument();
@@ -184,10 +184,8 @@ describe("SpeechProviderSettings", () => {
       });
       expect(verifyOnboardingProvider).toHaveBeenCalledWith("openai");
     });
-    expect(
-      await screen.findByText("Provider test passed."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Provider ready")).toBeInTheDocument();
+    expect(await screen.findByText("Provider ready")).toBeInTheDocument();
+    expect(screen.getByText("Default provider: OpenAI")).toBeInTheDocument();
     expect(
       screen.getByText("OpenAI is ready for local dictation."),
     ).toBeInTheDocument();
@@ -215,9 +213,10 @@ describe("SpeechProviderSettings", () => {
     await waitFor(() => {
       expect(modelCombobox).toHaveTextContent("GPT-4o Transcribe");
     });
+    expect(screen.getByText("Provider")).toBeInTheDocument();
     expect(
-      screen.getByText("Choose the transcription provider Vaak uses for dictation."),
-    ).toBeInTheDocument();
+      screen.queryByText("Choose the transcription provider Vaak uses for dictation."),
+    ).not.toBeInTheDocument();
 
     await selectComboboxOption(
       user,
@@ -303,6 +302,9 @@ describe("SpeechProviderSettings", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "AssemblyAI" }));
+    expect(
+      screen.queryByText("Use AssemblyAI speech-to-text with your own API key."),
+    ).not.toBeInTheDocument();
     const modelCombobox = await screen.findByRole("combobox", { name: "Model" });
     await waitFor(() => {
       expect(modelCombobox).toHaveTextContent("Universal-3.5 Pro");
@@ -322,9 +324,8 @@ describe("SpeechProviderSettings", () => {
       });
       expect(verifyOnboardingProvider).toHaveBeenCalledWith("assemblyai");
     });
-    expect(
-      await screen.findByText("Provider test passed."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Provider ready")).toBeInTheDocument();
+    expect(screen.getByText("Default provider: AssemblyAI")).toBeInTheDocument();
   });
 
   it("saves Smallest AI with its selected model and scopes provider test errors to that panel", async () => {
@@ -404,7 +405,10 @@ describe("SpeechProviderSettings", () => {
       expect(providerApi.testSpeechProvider).toHaveBeenCalledTimes(2);
     });
     expect(
-      await screen.findByText("Smallest AI provider is ready."),
+      screen.queryByText("Smallest AI provider is ready."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Default provider: Smallest AI"),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Retry provider test" }),
@@ -447,8 +451,7 @@ describe("SpeechProviderSettings", () => {
       });
       expect(verifyOnboardingProvider).toHaveBeenCalledWith("deepgram");
     });
-    expect(
-      await screen.findByText("Provider test passed."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Provider ready")).toBeInTheDocument();
+    expect(screen.getByText("Default provider: Deepgram")).toBeInTheDocument();
   });
 });

@@ -20,30 +20,30 @@ describe("Button", () => {
     )
   })
 
-  it("gives primary actions a softer shape with visible depth", () => {
+  it("gives primary actions a compact shape with subtle depth", () => {
     render(<Button>Continue</Button>)
 
     expect(screen.getByRole("button", { name: "Continue" })).toHaveClass(
-      "rounded-lg",
-      "shadow-sm"
+      "rounded-md",
+      "shadow-xs"
     )
   })
 
-  it("keeps small buttons tall enough to feel like desktop actions", () => {
+  it("keeps small buttons compact enough for dense desktop actions", () => {
     render(<Button size="sm">Continue</Button>)
 
     expect(screen.getByRole("button", { name: "Continue" })).toHaveClass(
-      "h-10",
+      "h-9",
       "text-sm"
     )
   })
 
-  it("increases the default button height without changing the shared radius", () => {
+  it("keeps the default button balanced without changing the shared radius", () => {
     render(<Button>Continue</Button>)
 
     expect(screen.getByRole("button", { name: "Continue" })).toHaveClass(
-      "h-11",
-      "rounded-lg"
+      "h-10",
+      "rounded-md"
     )
   })
 })

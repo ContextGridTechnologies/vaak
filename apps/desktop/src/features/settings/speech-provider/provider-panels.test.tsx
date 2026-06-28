@@ -190,7 +190,6 @@ describe("speech provider panels", () => {
         isSaving={false}
         isTesting={false}
         model="pulse"
-        testResult={undefined}
         status={{
           providerId: "smallest",
           configured: true,

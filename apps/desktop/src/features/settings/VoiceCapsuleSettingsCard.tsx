@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { MapPinIcon, RefreshCcwIcon } from "lucide-react";
 
-import {
-  PermissionCallout,
-  SectionPanel,
-  StatusBadge,
-} from "@/components/app";
+import { PermissionCallout } from "@/components/app";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { FieldGroup } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
@@ -134,68 +133,95 @@ export function VoiceCapsuleSettingsCard() {
   }
 
   return (
-    <SectionPanel
-      title="Voice capsule"
-      description="Manage the floating dictation control."
-      actions={
-        <StatusBadge tone={enabled ? "success" : "neutral"}>
-          {enabled ? "Enabled" : "Disabled"}
-        </StatusBadge>
-      }
-      contentClassName="gap-3"
-    >
-      <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/60 p-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-sm font-medium text-foreground">
-            Show voice capsule
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Keep the floating control available after setup.
-          </p>
-        </div>
-        <Switch
-          aria-label="Show voice capsule"
-          checked={enabled}
-          disabled={!runningInTauri || busyAction !== null}
-          onCheckedChange={(nextEnabled) => void handleEnabledChange(nextEnabled)}
-        />
-      </div>
+    <Card size="sm" className="rounded-lg bg-transparent py-0 shadow-none ring-0">
+      <CardContent className="px-0">
+        <FieldGroup className="gap-4 rounded-lg bg-muted/35 p-4">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-base font-semibold">Voice capsule</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Manage the floating dictation control.
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className={
+                enabled
+                  ? "mt-0.5 border-success/20 bg-success/10 text-success"
+                  : "mt-0.5 border-border bg-background/55 text-muted-foreground"
+              }
+            >
+              {enabled ? "Enabled" : "Disabled"}
+            </Badge>
+          </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card/60 p-3">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!runningInTauri || busyAction !== null}
-          onClick={() => void handleRestart()}
-        >
-          <RefreshCcwIcon data-icon="inline-start" aria-hidden="true" />
-          {busyAction === "restart" ? "Restarting..." : "Restart capsule"}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!runningInTauri || busyAction !== null}
-          onClick={() => void handleResetPosition()}
-        >
-          <MapPinIcon data-icon="inline-start" aria-hidden="true" />
-          {busyAction === "reset" ? "Resetting..." : "Reset position"}
-        </Button>
-      </div>
+          <div className="flex flex-col gap-3 rounded-md bg-background/45 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">
+                Show voice capsule
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Keep the floating control available after setup.
+              </p>
+            </div>
+            <Switch
+              aria-label="Show voice capsule"
+              checked={enabled}
+              disabled={!runningInTauri || busyAction !== null}
+              onCheckedChange={(nextEnabled) =>
+                void handleEnabledChange(nextEnabled)
+              }
+            />
+          </div>
 
-      {status ? (
-        <PermissionCallout tone="success" title="Voice capsule updated">
-          {status}
-        </PermissionCallout>
-      ) : null}
+          <div className="flex flex-col gap-3 rounded-md bg-background/45 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">
+                Capsule controls
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Restart the floating control or return it to its default screen
+                position.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!runningInTauri || busyAction !== null}
+                onClick={() => void handleRestart()}
+              >
+                <RefreshCcwIcon data-icon="inline-start" aria-hidden="true" />
+                {busyAction === "restart" ? "Restarting..." : "Restart capsule"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!runningInTauri || busyAction !== null}
+                onClick={() => void handleResetPosition()}
+              >
+                <MapPinIcon data-icon="inline-start" aria-hidden="true" />
+                {busyAction === "reset" ? "Resetting..." : "Reset position"}
+              </Button>
+            </div>
+          </div>
 
-      {error ? (
-        <PermissionCallout tone="warning" title="Voice capsule update failed">
-          {error}
-        </PermissionCallout>
-      ) : null}
-    </SectionPanel>
+          {status ? (
+            <PermissionCallout tone="success" title="Voice capsule updated">
+              {status}
+            </PermissionCallout>
+          ) : null}
+
+          {error ? (
+            <PermissionCallout tone="warning" title="Voice capsule update failed">
+              {error}
+            </PermissionCallout>
+          ) : null}
+        </FieldGroup>
+      </CardContent>
+    </Card>
   );
 }
 

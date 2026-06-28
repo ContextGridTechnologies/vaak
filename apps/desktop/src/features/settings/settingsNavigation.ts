@@ -25,7 +25,7 @@ export type SettingsSectionConfig = {
 
 export const defaultSettingsSection: SettingsSectionId = "speech-provider";
 
-export const settingsSections: readonly SettingsSectionConfig[] = [
+export const allSettingsSections: readonly SettingsSectionConfig[] = [
   {
     value: "speech-provider",
     label: "Speech provider",
@@ -63,3 +63,6 @@ export const settingsSections: readonly SettingsSectionConfig[] = [
     icon: StethoscopeIcon,
   },
 ] as const;
+
+export const settingsSections: readonly SettingsSectionConfig[] =
+  allSettingsSections.filter((section) => section.value !== "diagnostics");

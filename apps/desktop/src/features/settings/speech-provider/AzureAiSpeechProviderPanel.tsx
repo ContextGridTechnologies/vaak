@@ -1,6 +1,5 @@
 import type { FormEvent } from "react";
 
-import { StatusBadge } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -11,18 +10,17 @@ import {
 import { Input } from "@/components/ui/input";
 import type { ProviderStatus } from "@/lib/tauri";
 
-import { providerStatusLabel, providerStatusTone } from "./status";
 import { SAVED_KEY_PLACEHOLDER } from "./types";
 
 type AzureAiSpeechProviderPanelProps = {
   apiKey: string;
   endpoint: string;
   error?: string;
+  headerMeta?: string;
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
   showTestButton?: boolean;
-  testResult?: string;
   status?: ProviderStatus;
   onApiKeyChange: (value: string) => void;
   onEndpointChange: (value: string) => void;
@@ -34,11 +32,11 @@ export function AzureAiSpeechProviderPanel({
   apiKey,
   endpoint,
   error,
+  headerMeta,
   isLoading,
   isSaving,
   isTesting,
   showTestButton = true,
-  testResult,
   status,
   onApiKeyChange,
   onEndpointChange,
@@ -54,18 +52,14 @@ export function AzureAiSpeechProviderPanel({
 
   return (
     <form onSubmit={onSubmit}>
-      <FieldGroup className="rounded-lg border border-primary/30 bg-card/70 p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h3 className="text-base font-semibold">Azure AI Speech</h3>
-            <p className="text-sm text-muted-foreground">
-              Use Azure AI Speech short-audio transcription with local
-              credentials.
+      <FieldGroup className="gap-4 rounded-lg bg-muted/45 p-4">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <h3 className="text-base font-semibold">Azure AI Speech</h3>
+          {headerMeta ? (
+            <p className="text-right text-xs font-medium text-muted-foreground">
+              {headerMeta}
             </p>
-          </div>
-          <StatusBadge tone={providerStatusTone(status)}>
-            {providerStatusLabel(status)}
-          </StatusBadge>
+          ) : null}
         </div>
 
         <Field className="gap-2 md:grid md:grid-cols-[9rem_1fr] md:items-center">
@@ -99,12 +93,6 @@ export function AzureAiSpeechProviderPanel({
             <FieldError>{error}</FieldError>
           </div>
         </Field>
-
-        {testResult ? (
-          <p className="text-sm text-success" role="status">
-            {testResult}
-          </p>
-        ) : null}
 
         <div className="flex flex-wrap gap-2 md:pl-[9rem]">
           <Button type="submit" className="w-fit" disabled={disabled}>

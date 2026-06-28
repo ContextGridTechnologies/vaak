@@ -32,18 +32,29 @@ describe("ProviderSelector", () => {
     expect(deepgram).toHaveAttribute("aria-pressed", "false");
     expect(elevenLabs).toHaveAttribute("aria-pressed", "false");
     expect(smallest).toHaveAttribute("aria-pressed", "false");
-    expect(openAi).toHaveClass("min-h-9", "px-3", "py-2");
-    expect(assemblyAi).toHaveClass("min-h-9", "px-3", "py-2");
-    expect(azureOpenAi).toHaveClass(
-      "min-h-9",
-      "px-3",
-      "py-2",
-      "border-primary",
-      "bg-primary/10",
+    expect(openAi).toHaveClass("min-h-8", "px-2.5", "py-1.5", "shadow-none");
+    expect(assemblyAi).toHaveClass(
+      "min-h-8",
+      "px-2.5",
+      "py-1.5",
+      "shadow-none",
     );
-    expect(deepgram).toHaveClass("min-h-9", "px-3", "py-2");
-    expect(elevenLabs).toHaveClass("min-h-9", "px-3", "py-2");
-    expect(smallest).toHaveClass("min-h-9", "px-3", "py-2");
+    expect(azureOpenAi).toHaveClass(
+      "min-h-8",
+      "px-2.5",
+      "py-1.5",
+      "border-primary/20",
+      "bg-primary/12",
+      "shadow-none",
+    );
+    expect(deepgram).toHaveClass("min-h-8", "px-2.5", "py-1.5", "shadow-none");
+    expect(elevenLabs).toHaveClass(
+      "min-h-8",
+      "px-2.5",
+      "py-1.5",
+      "shadow-none",
+    );
+    expect(smallest).toHaveClass("min-h-8", "px-2.5", "py-1.5", "shadow-none");
     expect(openAi.querySelector("svg")).not.toBeInTheDocument();
     expect(assemblyAi.querySelector("svg")).not.toBeInTheDocument();
     expect(azureOpenAi.querySelector("svg")).not.toBeInTheDocument();
@@ -54,10 +65,15 @@ describe("ProviderSelector", () => {
     expect(azureOpenAi).not.toHaveTextContent("Default");
     expect(openAi).not.toHaveTextContent("Default");
     expect(assemblyAi).not.toHaveTextContent("Default");
-    expect(screen.getByText("Default provider: Azure OpenAI")).toBeInTheDocument();
-    expect(screen.getByText("Default provider: Azure OpenAI")).toHaveClass(
-      "text-foreground",
-    );
+    expect(
+      screen.queryByText("Default provider: Azure OpenAI"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Vaak uses this provider for dictation. Saving a provider activates it.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/floating voice capsule/i)).not.toBeInTheDocument();
 
     await userEvent.click(openAi);
 

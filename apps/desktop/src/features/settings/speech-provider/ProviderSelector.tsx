@@ -1,6 +1,5 @@
 import {
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
@@ -19,14 +18,10 @@ export function ProviderSelector({
   selectedProviderId,
   onSelectProvider,
 }: ProviderSelectorProps) {
-  const selectedProvider = speechProviderCatalog.find(
-    (provider) => provider.id === selectedProviderId,
-  );
-
   return (
     <FieldGroup>
       <Field>
-        <FieldLabel>Speech provider</FieldLabel>
+        <FieldLabel>Provider</FieldLabel>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-5">
           {speechProviderCatalog.map((provider) => (
             <ProviderSetupCard
@@ -38,15 +33,6 @@ export function ProviderSelector({
             />
           ))}
         </div>
-        {selectedProvider ? (
-          <p className="text-sm font-medium text-foreground">
-            Default provider: {selectedProvider.name}
-          </p>
-        ) : null}
-        <FieldDescription>
-          The floating voice capsule uses this provider for transcription.
-          Saving a provider activates it.
-        </FieldDescription>
       </Field>
     </FieldGroup>
   );

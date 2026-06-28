@@ -98,6 +98,7 @@ describe("AppLayout", () => {
     );
     expect(sidebarMenu.queryByRole("button", { name: "Transcription mode" })).not.toBeInTheDocument();
     expect(sidebarMenu.getByRole("button", { name: "Microphone" })).toBeInTheDocument();
+    expect(sidebarMenu.queryByRole("button", { name: "Diagnostics" })).not.toBeInTheDocument();
     expect(screen.getByTestId("app-shell")).toHaveStyle({
       "--sidebar-width": "14.5rem",
     });

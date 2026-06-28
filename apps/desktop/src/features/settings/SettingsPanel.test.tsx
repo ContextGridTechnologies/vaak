@@ -194,12 +194,16 @@ describe("SettingsPanel provider setup", () => {
       screen.getByRole("heading", { level: 2, name: "Speech provider" }),
     ).toBeInTheDocument();
     expect(
-      lastItem(
-        screen.getAllByText(
-          "Choose the transcription provider Vaak uses for dictation.",
-        ),
-      )?.closest('[data-slot="card"]'),
-    ).not.toBeNull();
+      screen.getByText(
+        "Choose the transcription provider Vaak uses for dictation.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen
+        .getByText("Choose the transcription provider Vaak uses for dictation.")
+        .closest('[data-slot="card"]'),
+    ).toBeNull();
+    expect(screen.queryByText("Ready")).not.toBeInTheDocument();
     expect(screen.queryByText("Transcription mode")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Choose the input device Vaak uses for dictation."),
@@ -207,7 +211,7 @@ describe("SettingsPanel provider setup", () => {
 
     expect(screen.getByTestId("settings-screen-shell")).toHaveClass(
       "w-full",
-      "max-w-[64rem]",
+      "max-w-[58rem]",
     );
     expect(screen.getByTestId("settings-screen-shell")).toHaveClass("mx-0");
     expect(screen.getByTestId("settings-screen-shell").parentElement).toHaveClass(
@@ -236,6 +240,30 @@ describe("SettingsPanel provider setup", () => {
     );
   });
 
+  it("keeps visited settings sections mounted so local drafts do not reload on tab switches", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderApp(<SettingsPanel />);
+
+    await screen.findByRole("heading", { name: "Azure OpenAI" });
+    const azureApiKeyInput = screen.getByLabelText("API key");
+    await user.type(azureApiKeyInput, "az-unsaved-draft");
+
+    rerender(<SettingsPanel activeSection="microphone" />);
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Microphone" }),
+    ).toBeInTheDocument();
+
+    rerender(<SettingsPanel />);
+
+    expect(await screen.findByLabelText("API key")).toHaveValue(
+      "az-unsaved-draft",
+    );
+    expect(providerApi.getSelectedSpeechProvider).toHaveBeenCalledTimes(1);
+    expect(providerApi.getProviderStatus).toHaveBeenCalledTimes(7);
+    expect(providerApi.getProviderConfig).toHaveBeenCalledTimes(6);
+  });
+
   it("renders only microphone settings when selected", async () => {
     renderApp(<SettingsPanel activeSection="microphone" />);
 
@@ -244,7 +272,7 @@ describe("SettingsPanel provider setup", () => {
     expect(screen.queryByText("Transcription mode")).not.toBeInTheDocument();
 
     const microphoneCard = lastItem(
-      screen.getAllByText("Choose the input device Vaak uses for dictation."),
+      screen.getAllByText("Select the input source used for local voice capture."),
     )?.closest('[data-slot="card"]') as HTMLElement | null;
     expect(microphoneCard).not.toBeNull();
     expect(within(microphoneCard!).getAllByText("Microphone").length).toBeGreaterThan(
@@ -629,7 +657,7 @@ describe("SettingsPanel provider setup", () => {
         status: "success",
       },
     );
-    expect(screen.getByText("Azure OpenAI provider is ready.")).toBeInTheDocument();
+    expect(screen.getByText("Default provider: Azure OpenAI")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "OpenAI" })).not.toBeInTheDocument();
   });
 
@@ -671,20 +699,20 @@ describe("SettingsPanel provider setup", () => {
     );
   });
 
-  it("keeps diagnostics local and opens the log folder for manual sharing", async () => {
+  it("keeps diagnostics local inside system settings and opens the log folder", async () => {
     providerApi.isTauriRuntime.mockReturnValue(true);
     const user = userEvent.setup();
-    renderApp(<SettingsPanel activeSection="diagnostics" />);
+    renderApp(<SettingsPanel activeSection="system" />);
 
     expect(
-      screen.getByRole("heading", { name: "Diagnostics" }),
+      screen.getByRole("heading", { name: "System" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Review local logs and support files before sharing them."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Settings" })).not.toBeInTheDocument();
     expect(screen.getByTestId("settings-screen-shell")).toHaveClass(
-      "max-w-[64rem]",
+      "max-w-[58rem]",
       "mx-0",
     );
     expect(

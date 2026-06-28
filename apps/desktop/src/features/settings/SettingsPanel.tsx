@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { appScreenContentClassName } from "@/components/app";
 import { analytics } from "@/lib/analytics/browser";
@@ -12,8 +12,8 @@ import { DiagnosticsSettingsCard } from "./DiagnosticsSettingsCard";
 import { VoiceCapsuleSettingsCard } from "./VoiceCapsuleSettingsCard";
 import { useSettingsNavigation } from "./SettingsNavigationContext";
 import {
+  allSettingsSections,
   defaultSettingsSection,
-  settingsSections,
   type SettingsSectionId,
 } from "./settingsNavigation";
 
@@ -27,14 +27,27 @@ export function SettingsPanel({ activeSection }: SettingsPanelProps = {}) {
     activeSection ?? settingsNavigation.activeSection,
   );
   const selectedSectionConfig =
-    settingsSections.find((section) => section.value === selectedSection) ??
-    settingsSections.find((section) => section.value === defaultSettingsSection);
+    allSettingsSections.find((section) => section.value === selectedSection) ??
+    allSettingsSections.find((section) => section.value === defaultSettingsSection);
+  const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSectionId>>(
+    () => new Set([selectedSection]),
+  );
 
   useEffect(() => {
     analytics.capture("settings_opened", {
       section: "settings",
     });
   }, []);
+
+  useEffect(() => {
+    setMountedSections((currentSections) => {
+      if (currentSections.has(selectedSection)) {
+        return currentSections;
+      }
+
+      return new Set([...currentSections, selectedSection]);
+    });
+  }, [selectedSection]);
 
   return (
     <div className="min-h-full bg-background text-foreground">
@@ -46,7 +59,7 @@ export function SettingsPanel({ activeSection }: SettingsPanelProps = {}) {
       >
         <section
           data-testid="settings-screen-shell"
-          className="mx-0 flex w-full max-w-[64rem] flex-col gap-4"
+          className="mx-0 flex w-full max-w-[58rem] flex-col gap-4"
         >
           <div className="flex flex-col gap-1">
             <h2 className="text-2xl font-semibold tracking-tight text-foreground">
@@ -58,7 +71,17 @@ export function SettingsPanel({ activeSection }: SettingsPanelProps = {}) {
             </p>
           </div>
 
-          {renderSettingsSection(selectedSection)}
+          {allSettingsSections.map((section) =>
+            mountedSections.has(section.value) ? (
+              <section
+                key={section.value}
+                aria-hidden={section.value !== selectedSection}
+                hidden={section.value !== selectedSection}
+              >
+                {renderSettingsSection(section.value)}
+              </section>
+            ) : null,
+          )}
         </section>
       </main>
     </div>

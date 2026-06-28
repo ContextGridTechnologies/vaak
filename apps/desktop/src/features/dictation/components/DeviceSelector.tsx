@@ -1,3 +1,5 @@
+import { RefreshCwIcon } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -16,6 +18,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import type { AudioInputDevice } from "@/hooks/useAudioDevices";
 import type { MicrophoneSelection } from "@/hooks/useMicrophoneSelection";
+import { cn } from "@/lib/utils";
 
 import {
   isSystemDefaultMicrophoneDuplicate,
@@ -32,6 +35,7 @@ type DeviceSelectorProps = {
   onSelectSystem: () => void;
   onRefresh: () => void;
   onRequestPermission: () => void;
+  compactRefresh?: boolean;
 };
 
 export function DeviceSelector({
@@ -44,6 +48,7 @@ export function DeviceSelector({
   onSelectSystem,
   onRefresh,
   onRequestPermission,
+  compactRefresh = false,
 }: DeviceSelectorProps) {
   const selectableDevices = deviceOptions.filter(
     (device) =>
@@ -57,7 +62,7 @@ export function DeviceSelector({
     systemDefaultMicrophoneLabel(deviceOptions);
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3">
         <FieldGroup className="min-w-0 flex-1">
           <Field>
@@ -76,7 +81,12 @@ export function DeviceSelector({
               >
                 <SelectTrigger
                   size="sm"
-                  className="h-auto min-h-7 w-full min-w-0 items-start whitespace-normal py-1.5 text-left sm:flex-1 [&_[data-slot=select-value]]:line-clamp-none [&_[data-slot=select-value]]:whitespace-normal"
+                  className={cn(
+                    "h-auto min-h-7 w-full min-w-0 items-start py-1.5 text-left sm:flex-1",
+                    compactRefresh
+                      ? "whitespace-nowrap [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:whitespace-nowrap"
+                      : "whitespace-normal [&_[data-slot=select-value]]:line-clamp-none [&_[data-slot=select-value]]:whitespace-normal",
+                  )}
                 >
                   <SelectValue placeholder="Select microphone" />
                 </SelectTrigger>
@@ -105,15 +115,41 @@ export function DeviceSelector({
                 </SelectContent>
               </Select>
               <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={onRefresh}
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Spinner data-icon="inline-start" /> : null}
-                  {isLoading ? "Refreshing..." : "Refresh"}
-                </Button>
+                {compactRefresh ? (
+                  <Button
+                    aria-label={
+                      isLoading
+                        ? "Refreshing microphone devices"
+                        : "Refresh microphone devices"
+                    }
+                    title={
+                      isLoading
+                        ? "Refreshing microphone devices"
+                        : "Refresh microphone devices"
+                    }
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={onRefresh}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <Spinner aria-hidden="true" />
+                    ) : (
+                      <RefreshCwIcon aria-hidden="true" />
+                    )}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={onRefresh}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? <Spinner data-icon="inline-start" /> : null}
+                    {isLoading ? "Refreshing..." : "Refresh"}
+                  </Button>
+                )}
                 {!hasPermission && (
                   <Button
                     size="sm"

@@ -1,6 +1,5 @@
 import type { FormEvent } from "react";
 
-import { StatusBadge } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -18,18 +17,17 @@ import {
 } from "@/components/ui/select";
 import type { ProviderStatus } from "@/lib/tauri";
 
-import { providerStatusLabel, providerStatusTone } from "./status";
 import { OPENAI_MODELS, SAVED_KEY_PLACEHOLDER } from "./types";
 
 type OpenAiProviderPanelProps = {
   apiKey: string;
   error?: string;
+  headerMeta?: string;
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
   model: string;
   showTestButton?: boolean;
-  testResult?: string;
   status?: ProviderStatus;
   onApiKeyChange: (value: string) => void;
   onModelChange: (value: string) => void;
@@ -40,12 +38,12 @@ type OpenAiProviderPanelProps = {
 export function OpenAiProviderPanel({
   apiKey,
   error,
+  headerMeta,
   isLoading,
   isSaving,
   isTesting,
   model,
   showTestButton = true,
-  testResult,
   status,
   onApiKeyChange,
   onModelChange,
@@ -60,17 +58,14 @@ export function OpenAiProviderPanel({
 
   return (
     <form onSubmit={onSubmit}>
-      <FieldGroup className="rounded-lg border border-primary/30 bg-card/70 p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h3 className="text-base font-semibold">OpenAI</h3>
-            <p className="text-sm text-muted-foreground">
-              Use OpenAI hosted transcription models with your own API key.
+      <FieldGroup className="gap-4 rounded-lg bg-muted/45 p-4">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <h3 className="text-base font-semibold">OpenAI</h3>
+          {headerMeta ? (
+            <p className="text-right text-xs font-medium text-muted-foreground">
+              {headerMeta}
             </p>
-          </div>
-          <StatusBadge tone={providerStatusTone(status)}>
-            {providerStatusLabel(status)}
-          </StatusBadge>
+          ) : null}
         </div>
 
         <Field
@@ -110,12 +105,6 @@ export function OpenAiProviderPanel({
             <FieldError>{error}</FieldError>
           </div>
         </Field>
-
-        {testResult ? (
-          <p className="text-sm text-success" role="status">
-            {testResult}
-          </p>
-        ) : null}
 
         <div className="flex flex-wrap gap-2 md:pl-[9rem]">
           <Button
