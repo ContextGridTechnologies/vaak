@@ -135,7 +135,9 @@ fn resolve_recognition_response(
 ) -> Result<TranscriptResult, ProviderError> {
     match payload.recognition_status.as_str() {
         "Success" => {
-            let text = payload.display_text.ok_or(ProviderFailure::InvalidResponse)?;
+            let text = payload
+                .display_text
+                .ok_or(ProviderFailure::InvalidResponse)?;
             if text.trim().is_empty() {
                 return Err(ProviderFailure::InvalidResponse.into());
             }
@@ -243,7 +245,10 @@ mod tests {
             content_type_for_mime("audio/wav").unwrap(),
             "audio/wav; codecs=audio/pcm; samplerate=16000"
         );
-        assert_eq!(content_type_for_mime("audio/ogg").unwrap(), "audio/ogg; codecs=opus");
+        assert_eq!(
+            content_type_for_mime("audio/ogg").unwrap(),
+            "audio/ogg; codecs=opus"
+        );
     }
 
     #[test]

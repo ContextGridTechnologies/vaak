@@ -72,10 +72,6 @@ function setMediaDevices(value: Partial<MediaDevices> | undefined) {
   });
 }
 
-function lastItem<T>(items: T[]): T | undefined {
-  return items[items.length - 1];
-}
-
 describe("SettingsPanel provider setup", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -667,8 +667,12 @@ function getSavedTimeMs(record: DictationRecord, words: number): number {
 }
 
 function getEndToEndMs(record: DictationRecord): number | null {
-  const started = Date.parse(record.startedAt ?? "");
-  const ended = Date.parse(record.endedAt ?? "");
+  const started = Date.parse(
+    record.timeline?.recordingStartedAt ?? record.startedAt ?? "",
+  );
+  const ended = Date.parse(
+    record.timeline?.insertionCompletedAt ?? record.endedAt ?? "",
+  );
 
   if (Number.isFinite(started) && Number.isFinite(ended) && ended >= started) {
     return ended - started;

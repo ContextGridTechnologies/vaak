@@ -3,6 +3,17 @@
   "productName": "Vaak",
   "version": "0.1.13",
   "identifier": "ai.vaak.desktop",
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdGODQ4QTc1MUVGOTgxRUIKUldUcmdma2VkWXFFZndyckxlZ3MvTTliaExQa0h2cW1aNnk4YmZrb2hVeTZoYXM4Y093UHhMOXEK",
+      "endpoints": [
+        "https://github.com/ContextGridTechnologies/vaak/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "build": {
     "beforeDevCommand": "node scripts/ensure-dev-server.mjs",
     "devUrl": "http://localhost:1420",
@@ -47,6 +58,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "publisher": "Vaak Contributors",
     "homepage": "https://github.com/vaak-ai/vaak",
     "copyright": "Copyright (c) Vaak Contributors",

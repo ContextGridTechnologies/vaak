@@ -1,41 +1,23 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 
-import {
-  getReleaseUpdate,
-  parseGitHubRelease,
-  type ReleaseUpdate,
-} from "@/lib/releases/update-check";
+import { isTauriRuntime } from "@/lib/tauri";
 
-type ReleaseUpdateNotifierProps = {
-  currentVersion?: string;
-};
+const releaseCheckIntervalMs = 60 * 60 * 1000;
 
-const latestReleaseApiUrl =
-  "https://api.github.com/repos/ContextGridTechnologies/vaak/releases/latest";
-const notifiedVersionStorageKey = "vaak.release.lastNotifiedVersion";
-const releaseCheckIntervalMs = 3 * 60 * 60 * 1000;
-
-export function ReleaseUpdateNotifier({
-  currentVersion = __APP_VERSION__,
-}: ReleaseUpdateNotifierProps) {
+export function ReleaseUpdateNotifier() {
   useEffect(() => {
     let cancelled = false;
 
     async function checkForUpdate() {
+      if (!isTauriRuntime()) {
+        return;
+      }
+
       try {
-        const response = await fetch(latestReleaseApiUrl, {
-          headers: {
-            Accept: "application/vnd.github+json",
-          },
-        });
-
-        if (!response.ok) {
-          return;
-        }
-
-        const release = parseGitHubRelease(await response.json());
-        const update = getReleaseUpdate(release, currentVersion);
+        const update = await check();
 
         if (!cancelled && update) {
           notifyUpdate(update);
@@ -55,24 +37,32 @@ export function ReleaseUpdateNotifier({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [currentVersion]);
+  }, []);
 
   return null;
 }
 
-function notifyUpdate(update: ReleaseUpdate) {
-  if (localStorage.getItem(notifiedVersionStorageKey) === update.version) {
-    return;
-  }
-
-  localStorage.setItem(notifiedVersionStorageKey, update.version);
-  toast.info(`Vaak ${update.version} is available`, {
-    description: "Download the latest Windows installer from GitHub.",
+function notifyUpdate(update: Update) {
+  toast.info(`Vaak ${update.version} is ready to install`, {
+    description: "Install the update now, or keep working and update later.",
+    duration: Infinity,
     action: {
-      label: "Download",
-      onClick: () => {
-        window.open(update.installerUrl, "_blank", "noopener,noreferrer");
+      label: "Update now",
+      onClick: async () => {
+        try {
+          await update.downloadAndInstall();
+          await relaunch();
+        } catch (err) {
+          toast.error("Update failed", {
+            description:
+              err instanceof Error ? err.message : "Could not install the update.",
+          });
+        }
       },
+    },
+    cancel: {
+      label: "Later",
+      onClick: () => {},
     },
   });
 }

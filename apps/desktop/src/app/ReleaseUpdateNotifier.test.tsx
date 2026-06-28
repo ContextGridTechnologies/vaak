@@ -6,61 +6,68 @@ import { renderApp } from "@/test/render";
 
 import { ReleaseUpdateNotifier } from "./ReleaseUpdateNotifier";
 
+const updaterApi = vi.hoisted(() => ({
+  check: vi.fn(),
+}));
+
+const processApi = vi.hoisted(() => ({
+  relaunch: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-updater", () => updaterApi);
+vi.mock("@tauri-apps/plugin-process", () => processApi);
+
 describe("ReleaseUpdateNotifier", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     localStorage.clear();
   });
 
-  it("shows an upgrade prompt when GitHub has a newer release", async () => {
-    const fetch = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        tag_name: "v0.1.4",
-        html_url:
-          "https://github.com/ContextGridTechnologies/vaak/releases/tag/v0.1.4",
-        assets: [
-          {
-            name: "Vaak-Windows-Setup.exe",
-            browser_download_url:
-              "https://github.com/ContextGridTechnologies/vaak/releases/download/v0.1.4/Vaak-Windows-Setup.exe",
-          },
-        ],
-      }),
-    }));
+  it("checks for updates on launch and hourly while the app is open", async () => {
+    vi.useFakeTimers();
+    updaterApi.check.mockResolvedValue(null);
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
 
-    vi.stubGlobal("fetch", fetch);
+    renderApp(<ReleaseUpdateNotifier />);
 
-    renderApp(<ReleaseUpdateNotifier currentVersion="0.1.3" />);
+    expect(updaterApi.check).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+    expect(updaterApi.check).toHaveBeenCalledTimes(2);
+  });
+
+  it("installs an accepted update and relaunches the app", async () => {
+    const update = {
+      version: "0.1.4",
+      downloadAndInstall: vi.fn().mockResolvedValue(undefined),
+    };
+    updaterApi.check.mockResolvedValue(update);
+    processApi.relaunch.mockResolvedValue(undefined);
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+
+    renderApp(<ReleaseUpdateNotifier />);
 
     await waitFor(() => {
       expect(toast.info).toHaveBeenCalledWith(
-        "Vaak 0.1.4 is available",
+        "Vaak 0.1.4 is ready to install",
         expect.objectContaining({
-          description: "Download the latest Windows installer from GitHub.",
+          action: expect.objectContaining({ label: "Update now" }),
+          cancel: expect.objectContaining({ label: "Later" }),
+          duration: Infinity,
         }),
       );
     });
-  });
 
-  it("does not show the same release prompt twice", async () => {
-    localStorage.setItem("vaak.release.lastNotifiedVersion", "0.1.4");
-    const fetch = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        tag_name: "v0.1.4",
-        html_url:
-          "https://github.com/ContextGridTechnologies/vaak/releases/tag/v0.1.4",
-        assets: [],
-      }),
-    }));
+    const toastOptions = vi.mocked(toast.info).mock.calls[0]?.[1] as {
+      action?: { onClick?: () => void | Promise<void> };
+    };
 
-    vi.stubGlobal("fetch", fetch);
+    await toastOptions.action?.onClick?.();
 
-    renderApp(<ReleaseUpdateNotifier currentVersion="0.1.3" />);
-
-    await waitFor(() => expect(fetch).toHaveBeenCalled());
-    expect(toast.info).not.toHaveBeenCalled();
+    expect(update.downloadAndInstall).toHaveBeenCalled();
+    expect(processApi.relaunch).toHaveBeenCalled();
   });
 });

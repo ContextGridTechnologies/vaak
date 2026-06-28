@@ -16,8 +16,18 @@ type TauriWindowConfig = {
 type TauriConfig = {
   identifier: string;
   productName: string;
+  plugins?: {
+    updater?: {
+      pubkey?: string;
+      endpoints?: string[];
+      windows?: {
+        installMode?: string;
+      };
+    };
+  };
   bundle?: {
     active?: boolean;
+    createUpdaterArtifacts?: boolean;
     publisher?: string | null;
     homepage?: string | null;
     licenseFile?: string | null;
@@ -137,7 +147,11 @@ describe("Tauri security configuration", () => {
       "voice-capsule",
     ]);
     expect(mainCapability.windows).toEqual(["main"]);
+    expect(mainCapability.permissions).toContain("opener:allow-open-url");
+    expect(mainCapability.permissions).toContain("opener:allow-default-urls");
     expect(mainCapability.permissions).toContain("opener:allow-reveal-item-in-dir");
+    expect(mainCapability.permissions).toContain("updater:default");
+    expect(mainCapability.permissions).toContain("process:allow-restart");
     expect(mainCapability.permissions).not.toContain("opener:default");
     expect(voiceCapsuleCapability.windows).toEqual(["voice-capsule"]);
     expect(voiceCapsuleCapability.permissions).toEqual([
@@ -158,6 +172,7 @@ describe("Tauri security configuration", () => {
 describe("Desktop release metadata", () => {
   it("uses production package metadata and release build settings", () => {
     const cargoToml = readFileSync(join(process.cwd(), "src-tauri", "Cargo.toml"), "utf8");
+    const libRs = readFileSync(join(process.cwd(), "src-tauri", "src", "lib.rs"), "utf8");
     const packageJson = JSON.parse(
       readFileSync(join(process.cwd(), "package.json"), "utf8"),
     ) as { name: string };
@@ -172,6 +187,10 @@ describe("Desktop release metadata", () => {
     expect(cargoToml).toContain('authors = ["Vaak Contributors"]');
     expect(cargoToml).toContain('homepage = "https://github.com/vaak-ai/vaak"');
     expect(cargoToml).toContain('license = "MIT"');
+    expect(cargoToml).toContain("tauri-plugin-updater");
+    expect(cargoToml).toContain("tauri-plugin-process");
+    expect(libRs).toContain("tauri_plugin_updater::Builder::new().build()");
+    expect(libRs).toContain("tauri_plugin_process::init()");
     expect(cargoToml).toContain("[profile.release]");
     expect(cargoToml).toContain('codegen-units = 1');
     expect(cargoToml).toContain('lto = true');
@@ -182,6 +201,7 @@ describe("Desktop release metadata", () => {
 
     expect(config.bundle).toMatchObject({
       active: true,
+      createUpdaterArtifacts: true,
       publisher: "Vaak Contributors",
       homepage: "https://github.com/vaak-ai/vaak",
       licenseFile: "../../../LICENSE",
@@ -201,6 +221,16 @@ describe("Desktop release metadata", () => {
         },
       },
     });
+    expect(config.plugins?.updater).toMatchObject({
+      endpoints: [
+        "https://github.com/ContextGridTechnologies/vaak/releases/latest/download/latest.json",
+      ],
+      windows: {
+        installMode: "passive",
+      },
+    });
+    expect(config.plugins?.updater?.pubkey).toEqual(expect.any(String));
+    expect(config.plugins?.updater?.pubkey).not.toBe("");
     expect(config.bundle?.longDescription).toContain("bring your own model or API key");
     expect(config.bundle?.icon).toEqual([
       "icons/32x32.png",
@@ -209,6 +239,18 @@ describe("Desktop release metadata", () => {
       "icons/icon.icns",
       "icons/icon.ico",
     ]);
+  });
+
+  it("publishes updater metadata and signed artifacts from tagged releases", () => {
+    const workflow = readFileSync(
+      join(process.cwd(), "..", "..", ".github", "workflows", "desktop-release.yml"),
+      "utf8",
+    );
+
+    expect(workflow).toContain("TAURI_SIGNING_PRIVATE_KEY");
+    expect(workflow).toContain("latest.json");
+    expect(workflow).toContain("Vaak-Windows-Setup.nsis.zip");
+    expect(workflow).toContain("Vaak-Windows-Setup.nsis.zip.sig");
   });
 });
 
