@@ -118,7 +118,7 @@ const RAW_TRANSCRIPTION_FALLBACK_PEAK_DBFS = -30;
 const INSERTION_TIMEOUT_MS = 5_000;
 const STREAMING_FINAL_WAIT_MS = 1_500;
 const STREAMING_FINAL_POLL_MS = 50;
-const DEFAULT_DICTATION_MODE: DictationMode = "auto";
+const DEFAULT_DICTATION_MODE: DictationMode = "streaming";
 
 export function useDictationLoop(
   session: DictationLoopSession,

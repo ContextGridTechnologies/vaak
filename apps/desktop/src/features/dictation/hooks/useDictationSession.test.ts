@@ -202,7 +202,7 @@ describe("useDictationSession", () => {
     });
     getSelectedSpeechProvider.mockResolvedValue("openai");
     getSystemSettings.mockResolvedValue({
-      dictationMode: "auto",
+      dictationMode: "streaming",
       launchOnStartup: true,
       showSkippedTranscripts: false,
     });

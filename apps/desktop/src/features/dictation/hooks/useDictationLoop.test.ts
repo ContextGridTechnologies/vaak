@@ -121,7 +121,7 @@ describe("useDictationLoop", () => {
     vi.clearAllMocks();
     getSelectedSpeechProvider.mockResolvedValue("openai");
     getSystemSettings.mockResolvedValue({
-      dictationMode: "auto",
+      dictationMode: "streaming",
       launchOnStartup: true,
       showSkippedTranscripts: false,
     });
@@ -641,6 +641,11 @@ describe("useDictationLoop", () => {
   it("falls back to AssemblyAI async transcription for quiet low-volume speech", async () => {
     const audioBlob = recordingBlob();
     getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    getSystemSettings.mockResolvedValue({
+      dictationMode: "standard",
+      launchOnStartup: true,
+      showSkippedTranscripts: false,
+    });
     transcribeRecording.mockResolvedValueOnce({
       durationMs: 1200,
       model: "universal-3-pro",
@@ -686,6 +691,11 @@ describe("useDictationLoop", () => {
   it("records diagnostic checkpoints around AssemblyAI async fallback processing", async () => {
     const audioBlob = recordingBlob();
     getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    getSystemSettings.mockResolvedValue({
+      dictationMode: "standard",
+      launchOnStartup: true,
+      showSkippedTranscripts: false,
+    });
     transcribeRecording.mockResolvedValueOnce({
       durationMs: 1200,
       model: "universal-3-pro",
@@ -1141,6 +1151,11 @@ describe("useDictationLoop", () => {
     const audioBlob = recordingBlob();
     const processedSegment = new Blob(["processed"], { type: "audio/wav" });
     getSelectedSpeechProvider.mockResolvedValue("assemblyai");
+    getSystemSettings.mockResolvedValue({
+      dictationMode: "standard",
+      launchOnStartup: true,
+      showSkippedTranscripts: false,
+    });
 
     renderHook(() =>
       useDictationLoop(
@@ -1695,7 +1710,14 @@ describe("useDictationLoop", () => {
       text: "assembly transcript",
     });
 
-    renderHook(() => useDictationLoop(session({ audioBlob })));
+    renderHook(() =>
+      useDictationLoop(
+        session({
+          audioBlob,
+          streamingError: "AssemblyAI streaming unavailable",
+        }),
+      ),
+    );
 
     await waitFor(() => {
       expect(insertIntoActiveTarget).toHaveBeenCalledWith("assembly transcript");
@@ -1954,6 +1976,11 @@ describe("useDictationLoop", () => {
   it("uses the Deepgram display label in transcription errors", async () => {
     const audioBlob = recordingBlob();
     getSelectedSpeechProvider.mockResolvedValue("deepgram");
+    getSystemSettings.mockResolvedValue({
+      dictationMode: "standard",
+      launchOnStartup: true,
+      showSkippedTranscripts: false,
+    });
     transcribeRecording.mockRejectedValue(new Error("provider unavailable"));
 
     const { result } = renderHook(() =>

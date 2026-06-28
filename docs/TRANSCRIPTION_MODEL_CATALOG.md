@@ -1,6 +1,6 @@
 # Transcription Model Catalog
 
-Vaak stores user-selectable transcription models in a provider-agnostic catalog. A saved provider configuration keeps one model `id`, while backend routing chooses the route for the requested transcription mode.
+Vaak stores user-selectable transcription models in a provider-agnostic catalog. A saved provider configuration keeps one model `id`, while backend routing chooses the internal batch or streaming route for the current dictation path.
 
 ## Product Flow
 
@@ -22,9 +22,9 @@ The visible settings model picker should be curated for Vaak's normal dictation 
 
 ## Modes
 
-Vaak uses `TranscriptionMode::Batch` for prerecorded/request-response transcription and `TranscriptionMode::Streaming` for live session transcription.
+Vaak uses `TranscriptionMode::Streaming` for the normal live dictation path when the selected provider and model support it. `TranscriptionMode::Batch` remains the prerecorded/request-response compatibility and fallback path.
 
-Avoid using `Normal` in code. If product copy needs a user-facing contrast with fast streaming mode, keep that language in UI/business copy only.
+Avoid using `Normal` in code. Do not expose batch vs streaming as a normal user-facing Settings choice; provider/model selection should stay simple and the dictation loop should choose the route.
 
 ## Route Resolution
 
@@ -34,7 +34,7 @@ When a provider configuration has a saved model:
 2. Streaming transcription requests that model's `Streaming` route.
 3. If the model does not support the requested route, the resolver returns `invalid_provider_request`.
 
-When no model is saved, the resolver uses the provider default for the requested mode.
+When no model is saved, the resolver uses the provider default for the internal route requested by the dictation loop.
 
 This prevents silent remaps. For example, AssemblyAI `universal-3-pro` is batch-only and must never resolve to `u3-rt-pro` for streaming. If streaming startup fails because the selected model is batch-only, the existing dictation flow can fall back to batch transcription.
 

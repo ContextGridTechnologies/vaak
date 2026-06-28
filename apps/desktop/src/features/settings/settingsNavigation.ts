@@ -1,5 +1,4 @@
 import {
-  ActivityIcon,
   AudioLinesIcon,
   KeyboardIcon,
   MicIcon,
@@ -11,7 +10,6 @@ import {
 
 export type SettingsSectionId =
   | "speech-provider"
-  | "transcription-mode"
   | "microphone"
   | "keyboard-shortcut"
   | "voice-capsule"
@@ -33,12 +31,6 @@ export const settingsSections: readonly SettingsSectionConfig[] = [
     label: "Speech provider",
     description: "Choose the transcription provider Vaak uses for dictation.",
     icon: AudioLinesIcon,
-  },
-  {
-    value: "transcription-mode",
-    label: "Transcription mode",
-    description: "Choose whether Vaak prioritizes speed or final transcript quality.",
-    icon: ActivityIcon,
   },
   {
     value: "microphone",

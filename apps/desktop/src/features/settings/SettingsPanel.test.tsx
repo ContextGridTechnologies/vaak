@@ -132,7 +132,7 @@ describe("SettingsPanel provider setup", () => {
       command: "Ctrl+Shift+Alt",
     });
     providerApi.getSystemSettings.mockResolvedValue({
-      dictationMode: "auto",
+      dictationMode: "streaming",
       launchOnStartup: true,
       showSkippedTranscripts: false,
     });
@@ -284,22 +284,14 @@ describe("SettingsPanel provider setup", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders only transcription mode controls when selected", async () => {
+  it("falls back to speech provider when the removed transcription mode section is requested", async () => {
     renderApp(<SettingsPanel activeSection="transcription-mode" />);
 
-    const behaviorCard = lastItem(
-      await screen.findAllByText(
-        "Choose whether Vaak prioritizes speed or final transcript quality.",
-      ),
-    )?.closest('[data-slot="card"]') as HTMLElement | null;
-    expect(behaviorCard).not.toBeNull();
     expect(
-      within(behaviorCard!).getByText(
-        "Choose whether Vaak prioritizes speed or final transcript quality.",
-      ),
+      await screen.findByRole("heading", { level: 2, name: "Speech provider" }),
     ).toBeInTheDocument();
-    expect(within(behaviorCard!).getByText("Speed vs accuracy")).toBeInTheDocument();
-    expect(screen.queryByText("Speech provider")).not.toBeInTheDocument();
+    expect(screen.queryByText("Speed vs accuracy")).not.toBeInTheDocument();
+    expect(screen.queryByText("Transcription mode")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Choose the input device Vaak uses for dictation."),
     ).not.toBeInTheDocument();
@@ -375,7 +367,7 @@ describe("SettingsPanel provider setup", () => {
     expect(toggle).not.toBeChecked();
     await waitFor(() => {
       expect(providerApi.saveSystemSettings).toHaveBeenCalledWith({
-        dictationMode: "auto",
+        dictationMode: "streaming",
         launchOnStartup: false,
         showSkippedTranscripts: false,
       });
@@ -446,7 +438,7 @@ describe("SettingsPanel provider setup", () => {
     expect(toggle).toBeChecked();
     await waitFor(() => {
       expect(providerApi.saveSystemSettings).toHaveBeenCalledWith({
-        dictationMode: "auto",
+        dictationMode: "streaming",
         launchOnStartup: true,
         showSkippedTranscripts: true,
       });
@@ -456,58 +448,6 @@ describe("SettingsPanel provider setup", () => {
       {
         enabled: true,
         setting_id: "show_skipped_transcripts",
-      },
-    );
-  });
-
-  it("saves transcription mode as a global system setting", async () => {
-    const user = userEvent.setup();
-    renderApp(<SettingsPanel activeSection="transcription-mode" />);
-
-    const behaviorCard = lastItem(
-      await screen.findAllByText(
-        "Choose whether Vaak prioritizes speed or final transcript quality.",
-      ),
-    )?.closest('[data-slot="card"]') as HTMLElement | null;
-    expect(behaviorCard).not.toBeNull();
-    expect(
-      within(behaviorCard!).getByText(
-        "Choose whether Vaak prioritizes speed or final transcript quality.",
-      ),
-    ).toBeInTheDocument();
-    expect(within(behaviorCard!).getByText("Speed vs accuracy")).toBeInTheDocument();
-    expect(
-      within(behaviorCard!).getByRole("radio", {
-        name: "Fast transcription",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(behaviorCard!).getByRole("radio", {
-        name: "Accurate transcription",
-      }),
-    ).toBeInTheDocument();
-    expect(within(behaviorCard!).queryByText("Auto")).not.toBeInTheDocument();
-    expect(within(behaviorCard!).queryByText("Streaming")).not.toBeInTheDocument();
-    expect(within(behaviorCard!).queryByText("Standard")).not.toBeInTheDocument();
-
-    await user.click(
-      within(behaviorCard!).getByRole("radio", {
-        name: "Accurate transcription",
-      }),
-    );
-
-    await waitFor(() => {
-      expect(providerApi.saveSystemSettings).toHaveBeenCalledWith({
-        dictationMode: "standard",
-        launchOnStartup: true,
-        showSkippedTranscripts: false,
-      });
-    });
-    expect(analyticsApi.analytics.capture).toHaveBeenCalledWith(
-      "setting_changed",
-      {
-        setting_id: "dictation_mode",
-        value: "standard",
       },
     );
   });

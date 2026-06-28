@@ -49,7 +49,7 @@ type ActiveMode = "idle" | "dictation" | "command";
 type DictationTrigger = "hotkey" | "manual" | null;
 
 const HOTKEY_STOP_TAIL_MS = 250;
-const DEFAULT_DICTATION_MODE: DictationMode = "auto";
+const DEFAULT_DICTATION_MODE: DictationMode = "streaming";
 const STREAMING_PROVIDER_PROFILES = {
   assemblyai: {
     frameBytes: 1_600,

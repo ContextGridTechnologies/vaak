@@ -9,7 +9,6 @@ import { MicrophoneSettingsCard } from "./MicrophoneSettingsCard";
 import { SpeechProviderSettings } from "./speech-provider";
 import { SystemSettingsCard } from "./SystemSettingsCard";
 import { DiagnosticsSettingsCard } from "./DiagnosticsSettingsCard";
-import { DictationBehaviorSettingsCard } from "./DictationBehaviorSettingsCard";
 import { VoiceCapsuleSettingsCard } from "./VoiceCapsuleSettingsCard";
 import { useSettingsNavigation } from "./SettingsNavigationContext";
 import {
@@ -19,12 +18,14 @@ import {
 } from "./settingsNavigation";
 
 type SettingsPanelProps = {
-  activeSection?: SettingsSectionId;
+  activeSection?: SettingsSectionId | "transcription-mode";
 };
 
 export function SettingsPanel({ activeSection }: SettingsPanelProps = {}) {
   const settingsNavigation = useSettingsNavigation();
-  const selectedSection = activeSection ?? settingsNavigation.activeSection;
+  const selectedSection = normalizeSettingsSection(
+    activeSection ?? settingsNavigation.activeSection,
+  );
   const selectedSectionConfig =
     settingsSections.find((section) => section.value === selectedSection) ??
     settingsSections.find((section) => section.value === defaultSettingsSection);
@@ -64,12 +65,16 @@ export function SettingsPanel({ activeSection }: SettingsPanelProps = {}) {
   );
 }
 
+function normalizeSettingsSection(
+  section: SettingsSectionId | "transcription-mode",
+): SettingsSectionId {
+  return section === "transcription-mode" ? defaultSettingsSection : section;
+}
+
 function renderSettingsSection(section: SettingsSectionId) {
   switch (section) {
     case "speech-provider":
       return <SpeechProviderSettings />;
-    case "transcription-mode":
-      return <DictationBehaviorSettingsCard />;
     case "microphone":
       return <MicrophoneSettingsCard />;
     case "keyboard-shortcut":

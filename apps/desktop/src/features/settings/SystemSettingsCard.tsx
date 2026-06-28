@@ -15,7 +15,7 @@ import {
   type DictationMode,
 } from "@/lib/tauri";
 
-const DEFAULT_DICTATION_MODE: DictationMode = "auto";
+const DEFAULT_DICTATION_MODE: DictationMode = "streaming";
 
 export function SystemSettingsCard() {
   const [dictationMode, setDictationMode] = useState<DictationMode>(

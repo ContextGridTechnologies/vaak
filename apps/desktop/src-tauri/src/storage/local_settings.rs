@@ -549,7 +549,7 @@ fn default_dictation_hotkey() -> String {
 }
 
 fn default_dictation_mode() -> String {
-    "auto".to_string()
+    "streaming".to_string()
 }
 
 fn default_voice_capsule_placement_option() -> Option<VoiceCapsulePlacement> {
@@ -587,7 +587,7 @@ fn parse_settings(raw: &str) -> Result<LocalSettings, ProviderError> {
 
 fn normalize_system_settings(mut settings: SystemSettings) -> Result<SystemSettings, ProviderError> {
     settings.dictation_mode = match settings.dictation_mode.as_str() {
-        "auto" | "balanced" => "auto".to_string(),
+        "auto" | "balanced" => "streaming".to_string(),
         "streaming" | "fast" => "streaming".to_string(),
         "standard" | "accurate" => "standard".to_string(),
         _ => {
@@ -1090,7 +1090,7 @@ mod tests {
 
         let settings = store.system_settings().unwrap();
 
-        assert_eq!(settings.dictation_mode, "auto");
+        assert_eq!(settings.dictation_mode, "streaming");
         assert!(settings.launch_on_startup);
         assert!(!settings.show_skipped_transcripts);
     }

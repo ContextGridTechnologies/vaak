@@ -11,7 +11,7 @@ describe("system settings Tauri API", () => {
   it("loads and saves startup launch preference through backend commands", async () => {
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("get_system_settings", {
-      dictationMode: "auto",
+      dictationMode: "streaming",
       launchOnStartup: true,
       showSkippedTranscripts: false,
     });
@@ -22,7 +22,7 @@ describe("system settings Tauri API", () => {
     });
 
     await expect(getSystemSettings()).resolves.toEqual({
-      dictationMode: "auto",
+      dictationMode: "streaming",
       launchOnStartup: true,
       showSkippedTranscripts: false,
     });
