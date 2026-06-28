@@ -65,16 +65,18 @@ jobs:
 
           makensis /VERSION
 
-      - name: Build unsigned Windows installer
+      - name: Build unsigned Windows installer and updater artifacts
         run: npm --prefix apps/desktop run tauri build -- --ci --no-sign --bundles nsis
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           VITE_POSTHOG_PUBLIC_KEY: ${{ secrets.VITE_POSTHOG_PUBLIC_KEY }}
           VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST || 'https://us.i.posthog.com' }}
 
-      - name: Normalize installer asset name
+      - name: Normalize release asset names
         shell: pwsh
         run: |
-          $installer = Get-ChildItem -Path "apps/desktop/src-tauri/target/release/bundle/nsis" -Filter "*.exe" |
+          $bundleDir = "apps/desktop/src-tauri/target/release/bundle/nsis"
+          $installer = Get-ChildItem -Path $bundleDir -Filter "*.exe" |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
 
@@ -83,6 +85,43 @@ jobs:
           }
 
           Copy-Item -LiteralPath $installer.FullName -Destination "Vaak-Windows-Setup.exe" -Force
+
+          $updaterPackage = Get-ChildItem -Path $bundleDir -Filter "*.zip" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $updaterPackage) {
+            throw "No updater package was found."
+          }
+
+          $signaturePath = "$($updaterPackage.FullName).sig"
+          if (-not (Test-Path -LiteralPath $signaturePath)) {
+            throw "No updater signature was found for $($updaterPackage.Name)."
+          }
+
+          Copy-Item -LiteralPath $updaterPackage.FullName -Destination "Vaak-Windows-Setup.nsis.zip" -Force
+          Copy-Item -LiteralPath $signaturePath -Destination "Vaak-Windows-Setup.nsis.zip.sig" -Force
+
+      - name: Generate updater metadata
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          $updaterAsset = "Vaak-Windows-Setup.nsis.zip"
+          $signature = (Get-Content -Raw -LiteralPath "$updaterAsset.sig").Trim()
+          $assetUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/$updaterAsset"
+          $metadata = @{
+            version = $tagVersion
+            notes = "Vaak $tagVersion"
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $signature
+                url = $assetUrl
+              }
+            }
+          }
+
+          $metadata | ConvertTo-Json -Depth 5 | Set-Content -Path "latest.json" -Encoding utf8
 
       - name: Generate installer checksum
         shell: pwsh
@@ -96,6 +135,9 @@ jobs:
           files: |
             Vaak-Windows-Setup.exe
             Vaak-Windows-Setup.exe.sha256
+            Vaak-Windows-Setup.nsis.zip
+            Vaak-Windows-Setup.nsis.zip.sig
+            latest.json
           fail_on_unmatched_files: true
           overwrite_files: true
           make_latest: true
