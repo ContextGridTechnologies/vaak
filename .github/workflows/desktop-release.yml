@@ -14,10 +14,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -93,11 +93,123 @@ jobs:
           "$hash  Vaak-Windows-Setup.exe" | Set-Content -Path "Vaak-Windows-Setup.exe.sha256" -Encoding ascii
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             Vaak-Windows-Setup.exe
             Vaak-Windows-Setup.exe.sha256
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          make_latest: true
+
+  macos-preview:
+    name: Build macOS ${{ matrix.arch }} Preview
+    needs: windows-installer
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - arch: AppleSilicon
+            runner: macos-latest
+            uname: arm64
+          - arch: Intel
+            runner: macos-15-intel
+            uname: x86_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Verify runner architecture
+        run: |
+          actual="$(uname -m)"
+          if [ "$actual" != "${{ matrix.uname }}" ]; then
+            echo "Expected ${{ matrix.arch }} runner architecture ${{ matrix.uname }}, got $actual."
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install desktop dependencies
+        run: npm --prefix apps/desktop ci
+
+      - name: Verify release versions
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(node -p "require('./apps/desktop/package.json').version")"
+          tauri_version="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
+
+          if [ "$package_version" != "$tag_version" ]; then
+            echo "Tag version v$tag_version does not match apps/desktop/package.json version $package_version."
+            exit 1
+          fi
+
+          if [ "$tauri_version" != "$tag_version" ]; then
+            echo "Tag version v$tag_version does not match apps/desktop/src-tauri/tauri.conf.json version $tauri_version."
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm --prefix apps/desktop run lint
+
+      - name: Test frontend
+        run: npm run test
+
+      - name: Cargo check
+        run: cargo check
+        working-directory: apps/desktop/src-tauri
+
+      - name: Build unsigned macOS preview
+        run: npm --prefix apps/desktop run tauri build -- --ci --no-sign --bundles app,dmg
+        env:
+          VITE_POSTHOG_PUBLIC_KEY: ${{ secrets.VITE_POSTHOG_PUBLIC_KEY }}
+          VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+
+      - name: Verify macOS app bundle
+        run: |
+          app_path="$(find apps/desktop/src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$app_path"
+          executable_name="$(plutil -extract CFBundleExecutable raw "$app_path/Contents/Info.plist")"
+          test -n "$executable_name"
+          test -x "$app_path/Contents/MacOS/$executable_name"
+          plutil -extract NSMicrophoneUsageDescription raw "$app_path/Contents/Info.plist" |
+            grep -q "Vaak uses the microphone"
+
+      - name: Normalize macOS release asset names
+        run: |
+          app_path="$(find apps/desktop/src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          dmg_path="$(find apps/desktop/src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$app_path"
+          test -n "$dmg_path"
+
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "Vaak-macOS-${{ matrix.arch }}-Preview.app.zip"
+          cp "$dmg_path" "Vaak-macOS-${{ matrix.arch }}-Preview.dmg"
+
+      - name: Generate macOS checksums
+        run: |
+          shasum -a 256 "Vaak-macOS-${{ matrix.arch }}-Preview.app.zip" > "Vaak-macOS-${{ matrix.arch }}-Preview.app.zip.sha256"
+          shasum -a 256 "Vaak-macOS-${{ matrix.arch }}-Preview.dmg" > "Vaak-macOS-${{ matrix.arch }}-Preview.dmg.sha256"
+
+      - name: Publish macOS preview assets
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            Vaak-macOS-${{ matrix.arch }}-Preview.app.zip
+            Vaak-macOS-${{ matrix.arch }}-Preview.app.zip.sha256
+            Vaak-macOS-${{ matrix.arch }}-Preview.dmg
+            Vaak-macOS-${{ matrix.arch }}-Preview.dmg.sha256
           fail_on_unmatched_files: true
           overwrite_files: true
           make_latest: true

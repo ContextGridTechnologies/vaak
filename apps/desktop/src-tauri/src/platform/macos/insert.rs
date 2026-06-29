@@ -453,6 +453,7 @@ fn test_field(stable_id: &str) -> FocusedFieldInfo {
 }
 
 #[cfg(all(target_os = "macos", not(test)))]
+#[allow(clashing_extern_declarations)] // objc_msgSend is typed per selector/return shape.
 mod native {
     use super::*;
 

@@ -15,6 +15,7 @@ const dictationSessionState = vi.hoisted(() => ({
       dictation: "Ctrl+Win",
       command: "Ctrl+Win+Alt",
     },
+    desktopHotkeysSupported: true,
     isWindows: true,
     isRecording: false,
     requestPermission: vi.fn(),
@@ -39,6 +40,10 @@ vi.mock("@/lib/tauri", () => ({
 
 describe("HotkeyReadinessStep", () => {
   beforeEach(() => {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: "Win32",
+    });
     dictationSessionState.hookValue = {
       activeMode: "idle",
       hasPermission: true,
@@ -46,6 +51,7 @@ describe("HotkeyReadinessStep", () => {
         dictation: "Ctrl+Win",
         command: "Ctrl+Win+Alt",
       },
+      desktopHotkeysSupported: true,
       isWindows: true,
       isRecording: false,
       requestPermission: vi.fn(),
@@ -100,6 +106,49 @@ describe("HotkeyReadinessStep", () => {
     expect(
       screen.queryByRole("button", { name: "Continue" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("allows the guided shortcut test on macOS desktop builds", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: "MacIntel",
+    });
+    tauriState.saveDictationHotkey.mockResolvedValue({
+      dictation: "Control+Command",
+      command: "Control+Command+Option",
+    });
+    dictationSessionState.hookValue = {
+      ...dictationSessionState.hookValue,
+      desktopHotkeysSupported: true,
+      hotkeyBindings: {
+        dictation: "Control+Command",
+        command: "Control+Command+Option",
+      },
+      isWindows: false,
+    };
+
+    renderApp(
+      <HotkeyReadinessStep
+        error={null}
+        onBack={vi.fn()}
+        onContinue={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Test with Control + Command",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("This shortcut test currently targets the Windows desktop build."),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Change shortcut" }));
+    await user.click(screen.getByRole("button", { name: "Reset to default" }));
+
+    expect(tauriState.saveDictationHotkey).toHaveBeenCalledWith("Control+Command");
   });
 
   it("moves into the guided hold instruction when the user starts the test", async () => {

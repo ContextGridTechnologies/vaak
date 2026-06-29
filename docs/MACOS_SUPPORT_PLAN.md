@@ -57,8 +57,8 @@ macOS is still required for:
 - validating text insertion into real Mac apps
 - signing and notarization
 
-The practical path is to use GitHub Actions `macos-latest` runners for builds
-and a small tester loop for runtime validation.
+The practical path is to use GitHub Actions macOS runners for builds and a small
+tester loop for runtime validation.
 
 ## Phased Approach
 
@@ -100,8 +100,8 @@ preview builds until signing is added.
 
 Exit criteria:
 
-- Completed: CI produces downloadable `Vaak-macOS-app` and `Vaak-macOS-dmg`
-  artifacts from the manual `macOS Preview Build` workflow.
+- Completed: CI produces downloadable Apple Silicon and Intel app/dmg artifacts
+  from the manual `macOS Preview Build` workflow.
 - Completed: Windows release behavior is unchanged.
 
 ### Phase 3: macOS Runtime Validation
@@ -191,6 +191,27 @@ Implementation status:
 - Completed in current changes: macOS captured target matching accepts a
   conservative AX identifier fallback when stable IDs drift inside the same
   process and window.
+- Completed in current changes: frontend dictation hotkey listeners and
+  onboarding shortcut verification now treat macOS as a supported desktop
+  hotkey platform instead of gating the flow to Windows only.
+- Completed in current changes: frontend fallback shortcut labels now match the
+  backend defaults for Windows and macOS before saved bindings load.
+- Completed in current changes: onboarding reset-to-default and release-channel
+  copy are platform-aware instead of Windows-only.
+- Completed in current changes: shortcut editor key labels and validation copy
+  now use macOS terms (`Control`, `Command`, `Option`) on macOS while keeping
+  Windows labels on Windows.
+- Completed in current changes: normal desktop CI now includes Apple Silicon and
+  Intel macOS Tauri cargo check and no-bundle builds, so PR/main checks catch
+  macOS compile breaks before preview or release workflows.
+- Completed in current changes: tagged release publishing now waits for the
+  Windows installer release upload before attaching macOS preview assets.
+- Completed in current changes: macOS preview and release artifacts are built
+  separately for Apple Silicon and Intel runners, with architecture-specific
+  asset names so testers download the right build.
+- Completed in current changes: macOS CI, preview, and release jobs assert the
+  expected runner CPU architecture before building, so runner label drift cannot
+  silently publish a mislabeled artifact.
 - Still pending at the validation level: runtime validation on a real Mac with
   Accessibility and Input Monitoring permissions granted.
 
@@ -216,8 +237,9 @@ Remaining work is real-device validation and any follow-up issues found there.
    provider key storage, BYO transcription, focused target capture, text
    insertion into real apps, capsule behavior, and app lifecycle behavior.
 5. File or document any Mac-only blockers found during validation.
-6. Decide whether preview artifacts stay as workflow artifacts or attach to
-   tagged releases.
+6. Use tagged releases for clearly named unsigned Apple Silicon and Intel macOS
+   preview assets while keeping the manual workflow available for ad hoc tester
+   builds.
 7. After unsigned validation passes, proceed to signing and notarization.
 
 ### Phase 5: Signing and Notarization
@@ -278,16 +300,15 @@ from `apps/desktop/src-tauri`.
 
 For macOS CI changes, verify:
 
-- the workflow runs on `macos-latest`
+- the workflow runs on Apple Silicon and Intel macOS runners
 - artifacts are uploaded
 - Windows workflows are unaffected
 - release assets use clear platform-specific names
 
 ## Open Decisions
 
-- Whether macOS preview artifacts should be attached to tagged releases or only
-  uploaded as workflow artifacts.
-- Whether to build universal binaries immediately or start with Apple Silicon.
+- Whether to replace separate Apple Silicon and Intel preview assets with a
+  universal binary after unsigned validation.
 - Whether to keep direct download as the only Mac distribution path before
   considering the Mac App Store.
 - Which Mac tester matrix is sufficient before calling the build stable.

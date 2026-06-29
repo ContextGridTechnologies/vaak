@@ -118,6 +118,13 @@ function setWindowsPlatform() {
   });
 }
 
+function setMacPlatform() {
+  Object.defineProperty(navigator, "platform", {
+    configurable: true,
+    value: "MacIntel",
+  });
+}
+
 function useAvailableMicrophone() {
   vi.mocked(useMicrophoneSelection).mockReturnValue({
     activeMicrophone: null,
@@ -367,6 +374,32 @@ describe("useDictationSession", () => {
     expect(prepareRecording).not.toHaveBeenCalled();
     expect(getHotkeyBindings).not.toHaveBeenCalled();
     expect(listenToTauriEvent).not.toHaveBeenCalled();
+  });
+
+  it("loads bindings and subscribes to hotkey events on macOS desktop builds", async () => {
+    setMacPlatform();
+    useAvailableMicrophone();
+    isTauriRuntime.mockReturnValue(true);
+    getHotkeyBindings.mockResolvedValue({
+      command: "Control+Command+Option",
+      dictation: "Control+Command",
+    });
+
+    const { result } = renderHook(() => useDictationSession());
+
+    await vi.waitFor(() => expect(getHotkeyBindings).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(listenToTauriEvent).toHaveBeenCalledWith(
+      "vaak://session-hotkey",
+      expect.any(Function),
+    ));
+    expect(result.current.desktopHotkeysSupported).toBe(true);
+    expect(result.current.isWindows).toBe(false);
+    await vi.waitFor(() => {
+      expect(result.current.hotkeyBindings).toEqual({
+        command: "Control+Command+Option",
+        dictation: "Control+Command",
+      });
+    });
   });
 
   it("starts recording with the captured target from a dictation hotkey start", async () => {

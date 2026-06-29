@@ -12,6 +12,14 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import {
+  alternateDictationShortcutLabel,
+  currentDesktopPlatform,
+  defaultHotkeyBindingsForPlatform,
+  reservedCommandModifierLabel,
+  shortcutFromModifierEvent,
+  type DesktopPlatform,
+} from "@/lib/desktop-hotkeys";
 import { normalizeError } from "@/lib/errors";
 import {
   getHotkeyBindings,
@@ -20,13 +28,14 @@ import {
   type HotkeyBindings,
 } from "@/lib/tauri";
 
-const DEFAULT_BINDINGS: HotkeyBindings = {
-  dictation: "Ctrl+Win",
-  command: "Ctrl+Win+Alt",
-};
-
 export function KeyboardShortcutSettingsCard() {
-  const [bindings, setBindings] = useState<HotkeyBindings>(DEFAULT_BINDINGS);
+  const [desktopPlatform] = useState<DesktopPlatform>(() =>
+    currentDesktopPlatform(),
+  );
+  const [defaultBindings] = useState<HotkeyBindings>(() =>
+    defaultHotkeyBindingsForPlatform(desktopPlatform),
+  );
+  const [bindings, setBindings] = useState<HotkeyBindings>(defaultBindings);
   const [draftShortcut, setDraftShortcut] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -34,6 +43,7 @@ export function KeyboardShortcutSettingsCard() {
   const shortcutValidationError = validateShortcut(draftShortcut);
   const canSaveShortcut =
     Boolean(draftShortcut) && !shortcutValidationError && !isSaving;
+  const reservedCommandModifier = reservedCommandModifierLabel(desktopPlatform);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -147,12 +157,17 @@ export function KeyboardShortcutSettingsCard() {
                   autoFocus
                   readOnly
                   value={draftShortcut ? formatHotkeyLabel(draftShortcut) : ""}
-                  placeholder="Hold Ctrl + Win or Ctrl + Shift"
-                  onKeyDown={handleShortcutKeyDown(setDraftShortcut)}
+                  placeholder={`Hold ${formatHotkeyLabel(defaultBindings.dictation)} or ${alternateDictationShortcutLabel(
+                    desktopPlatform,
+                  )}`}
+                  onKeyDown={handleShortcutKeyDown(
+                    setDraftShortcut,
+                    desktopPlatform,
+                  )}
                 />
                 <FieldDescription>
-                  Use at least two modifier keys. Alt stays reserved for command
-                  mode.
+                  Use at least two modifier keys. {reservedCommandModifier} stays
+                  reserved for command mode.
                 </FieldDescription>
                 {shortcutValidationError ? (
                   <FieldDescription className="text-destructive">
@@ -167,7 +182,7 @@ export function KeyboardShortcutSettingsCard() {
                   size="sm"
                   variant="outline"
                   disabled={isSaving}
-                  onClick={() => void saveShortcut(DEFAULT_BINDINGS.dictation)}
+                  onClick={() => void saveShortcut(defaultBindings.dictation)}
                 >
                   <RefreshCcwIcon data-icon="inline-start" aria-hidden="true" />
                   Reset to default
@@ -229,33 +244,15 @@ function ShortcutKeys({ shortcut }: { shortcut: string }) {
 
 function handleShortcutKeyDown(
   setDraftShortcut: (shortcut: string) => void,
+  desktopPlatform: DesktopPlatform,
 ) {
   return (event: KeyboardEvent<HTMLInputElement>) => {
     event.preventDefault();
-    const nextShortcut = shortcutFromKeyEvent(event);
+    const nextShortcut = shortcutFromModifierEvent(event, desktopPlatform);
     if (nextShortcut) {
       setDraftShortcut(nextShortcut);
     }
   };
-}
-
-function shortcutFromKeyEvent(event: KeyboardEvent<HTMLInputElement>) {
-  const parts: string[] = [];
-
-  if (event.ctrlKey) {
-    parts.push("Ctrl");
-  }
-  if (event.shiftKey) {
-    parts.push("Shift");
-  }
-  if (event.metaKey) {
-    parts.push("Win");
-  }
-  if (event.altKey) {
-    parts.push("Alt");
-  }
-
-  return parts.join("+");
 }
 
 function validateShortcut(shortcut: string) {
@@ -269,8 +266,8 @@ function validateShortcut(shortcut: string) {
     return "Use at least two modifier keys.";
   }
 
-  if (parts.includes("Alt")) {
-    return "Alt stays reserved for command mode.";
+  if (parts.includes("Alt") || parts.includes("Option")) {
+    return `${parts.includes("Option") ? "Option" : "Alt"} stays reserved for command mode.`;
   }
 
   return null;

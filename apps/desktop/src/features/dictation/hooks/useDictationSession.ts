@@ -9,6 +9,11 @@ import {
 
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useMicrophoneSelection } from "@/hooks/useMicrophoneSelection";
+import {
+  currentDesktopPlatform,
+  defaultHotkeyBindingsForPlatform,
+  desktopHotkeysSupported as desktopHotkeysSupportedOn,
+} from "@/lib/desktop-hotkeys";
 import { normalizeError } from "@/lib/errors";
 import {
   captureDictationTarget,
@@ -126,10 +131,9 @@ export function useDictationSession({
   const [focusedFieldError, setFocusedFieldError] = useState<string | null>(
     null,
   );
-  const [hotkeyBindings, setHotkeyBindings] = useState<HotkeyBindings>({
-    dictation: "Ctrl+Win+R",
-    command: "Ctrl+Win+C",
-  });
+  const [hotkeyBindings, setHotkeyBindings] = useState<HotkeyBindings>(() =>
+    defaultHotkeyBindingsForPlatform(),
+  );
   const [activeMode, setActiveMode] = useState<ActiveMode>("idle");
   const [completedMode, setCompletedMode] = useState<ActiveMode | null>(null);
   const [dictationTrigger, setDictationTrigger] =
@@ -467,13 +471,9 @@ export function useDictationSession({
     (selection.mode === "system"
       ? "OS default microphone"
       : selectedDevice?.label || "Unavailable microphone");
-  const isWindows = useMemo(() => {
-    const uaPlatform = (
-      navigator as Navigator & { userAgentData?: { platform?: string } }
-    ).userAgentData?.platform;
-    const platform = (uaPlatform || navigator.platform || "").toLowerCase();
-    return platform.includes("win");
-  }, []);
+  const desktopPlatform = useMemo(currentDesktopPlatform, []);
+  const isWindows = desktopPlatform === "windows";
+  const desktopHotkeysSupported = desktopHotkeysSupportedOn(desktopPlatform);
 
   const clearPendingHotkeyStop = useCallback(() => {
     if (hotkeyStopTimerRef.current !== null) {
@@ -626,7 +626,7 @@ export function useDictationSession({
   }, [selectManual, selectSystem]);
 
   useEffect(() => {
-    if (!enabled || !isWindows || !tauriAvailable) {
+    if (!enabled || !desktopHotkeysSupported || !tauriAvailable) {
       return;
     }
 
@@ -647,7 +647,7 @@ export function useDictationSession({
     return () => {
       cancelled = true;
     };
-  }, [enabled, isWindows, tauriAvailable]);
+  }, [desktopHotkeysSupported, enabled, tauriAvailable]);
 
   useEffect(() => {
     if (!enabled || !processingEnabled) {
@@ -798,7 +798,7 @@ export function useDictationSession({
   }, [enabled, isManualUnavailable, restartOnStop, start, status]);
 
   useEffect(() => {
-    if (!enabled || !isWindows || !tauriAvailable) {
+    if (!enabled || !desktopHotkeysSupported || !tauriAvailable) {
       return;
     }
 
@@ -880,7 +880,7 @@ export function useDictationSession({
       }
     };
   }, [
-    isWindows,
+    desktopHotkeysSupported,
     start,
     startWithFocusCapture,
     cleanupStreamingSessions,
@@ -917,6 +917,7 @@ export function useDictationSession({
     isLoading,
     isRecording,
     isWindows,
+    desktopHotkeysSupported,
     processingEnabled,
     dictationTrigger,
     recorderError: error,

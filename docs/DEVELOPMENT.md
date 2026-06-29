@@ -112,7 +112,7 @@ Expected outputs:
 - NSIS installer: `apps/desktop/src-tauri/target/release/bundle/nsis/`
 - Direct desktop binary: `apps/desktop/src-tauri/target/release/vaak-desktop.exe`
 
-Public GitHub releases publish only the Windows installer as
+Public GitHub releases publish the Windows installer as
 `Vaak-Windows-Setup.exe`. The raw `target/release/vaak-desktop.exe` binary is a
 local build output and is not attached to releases.
 
@@ -127,12 +127,23 @@ target in the Tauri bundle configuration or add a separate MSI-specific build pa
 winget install WiXToolset.WiXToolset
 ```
 
-## Release the Windows Installer
+## Release Desktop Builds
 
 Normal pushes and pull requests run validation only. Pushing a version tag that
-matches `v*.*.*` creates or updates a GitHub Release and uploads the Windows
-NSIS installer as `Vaak-Windows-Setup.exe` and the checksum as
-`Vaak-Windows-Setup.exe.sha256`.
+matches `v*.*.*` creates or updates a GitHub Release.
+
+Release assets:
+
+- `Vaak-Windows-Setup.exe`
+- `Vaak-Windows-Setup.exe.sha256`
+- `Vaak-macOS-AppleSilicon-Preview.app.zip`
+- `Vaak-macOS-AppleSilicon-Preview.app.zip.sha256`
+- `Vaak-macOS-AppleSilicon-Preview.dmg`
+- `Vaak-macOS-AppleSilicon-Preview.dmg.sha256`
+- `Vaak-macOS-Intel-Preview.app.zip`
+- `Vaak-macOS-Intel-Preview.app.zip.sha256`
+- `Vaak-macOS-Intel-Preview.dmg`
+- `Vaak-macOS-Intel-Preview.dmg.sha256`
 
 The release workflow verifies that the pushed tag, `apps/desktop/package.json`,
 and `apps/desktop/src-tauri/tauri.conf.json` all use the same version. For
@@ -150,15 +161,41 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The latest installer URL is:
+The latest desktop download URLs are:
 
 ```text
 https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe
 https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe.sha256
+https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-macOS-AppleSilicon-Preview.dmg
+https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-macOS-AppleSilicon-Preview.dmg.sha256
+https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-macOS-Intel-Preview.dmg
+https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-macOS-Intel-Preview.dmg.sha256
 ```
 
 Early Windows installers are unsigned, so Windows may show a SmartScreen warning
 until code signing is added.
+
+macOS preview builds are also unsigned. Testers may need to allow the app from
+macOS Privacy & Security until signing and notarization are added.
+
+Mac tester procedure:
+
+1. Download the Apple Silicon `.dmg` for Apple Silicon Macs or the Intel `.dmg`
+   for Intel Macs.
+2. Download the matching `.sha256` file and verify the digest:
+
+```bash
+shasum -a 256 Vaak-macOS-AppleSilicon-Preview.dmg
+shasum -a 256 Vaak-macOS-Intel-Preview.dmg
+```
+
+3. Open the `.dmg`, move Vaak to Applications, then launch it.
+4. If macOS blocks the unsigned app, allow Vaak from System Settings > Privacy
+   & Security and launch it again.
+5. Grant Microphone, Accessibility, and Input Monitoring when prompted or from
+   System Settings > Privacy & Security.
+6. Validate local mode, provider key storage, microphone capture, global
+   hold-to-talk, focused target capture, and insertion into a real text field.
 
 For unsigned Windows releases, include a clear SmartScreen note in the release
 body. Users should expect `Publisher: Unknown publisher` until code signing is

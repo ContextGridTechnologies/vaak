@@ -12,7 +12,7 @@ describe("InfoPanel", () => {
     expect(screen.getByRole("heading", { name: "Vaak" })).toBeInTheDocument();
     expect(screen.getByText(__APP_VERSION__)).toBeInTheDocument();
     expect(screen.getByText("RELEASE CHANNEL")).toBeInTheDocument();
-    expect(screen.getByText("Windows installer")).toBeInTheDocument();
+    expect(screen.getByText("GitHub desktop releases")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View releases" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open logs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Report issue" })).toBeInTheDocument();

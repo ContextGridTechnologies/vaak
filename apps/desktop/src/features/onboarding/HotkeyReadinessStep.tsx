@@ -10,6 +10,14 @@ import { PermissionCallout } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDictationSession } from "@/features/dictation/hooks/useDictationSession";
+import {
+  alternateDictationShortcutLabel,
+  currentDesktopPlatform,
+  defaultHotkeyBindingsForPlatform,
+  reservedCommandModifierLabel,
+  shortcutFromModifierEvent,
+  type DesktopPlatform,
+} from "@/lib/desktop-hotkeys";
 import { normalizeError } from "@/lib/errors";
 import { saveDictationHotkey, type HotkeyBindings } from "@/lib/tauri";
 
@@ -33,10 +41,10 @@ export function HotkeyReadinessStep({
   const {
     activeMode,
     deviceError,
+    desktopHotkeysSupported,
     focusedFieldError,
     hasPermission,
     hotkeyBindings,
-    isWindows,
     recorderError,
     requestPermission,
     reset,
@@ -51,15 +59,23 @@ export function HotkeyReadinessStep({
   const [testArmed, setTestArmed] = useState(false);
   const [hasSeenRecording, setHasSeenRecording] = useState(false);
   const [hotkeyVerified, setHotkeyVerified] = useState(false);
+  const [desktopPlatform] = useState<DesktopPlatform>(() =>
+    currentDesktopPlatform(),
+  );
+  const [defaultBindings] = useState<HotkeyBindings>(() =>
+    defaultHotkeyBindingsForPlatform(desktopPlatform),
+  );
+  const reservedCommandModifier = reservedCommandModifierLabel(desktopPlatform);
   const bindings = savedBindings ?? hotkeyBindings;
   const shortcutLabel = formatHotkeyLabel(bindings.dictation);
   const combinedError =
     editorError ?? recorderError ?? focusedFieldError ?? deviceError ?? error;
-  const runtimeWarning = !isWindows
-    ? "This shortcut test currently targets the Windows desktop build."
-    : !tauriAvailable
+  const runtimeWarning =
+    !tauriAvailable
       ? "Global shortcuts are available only in the desktop app."
-      : null;
+      : !desktopHotkeysSupported
+        ? "Global shortcuts are not available on this platform yet."
+        : null;
   const isListening =
     testArmed && activeMode === "dictation" && status === "recording";
   const isFailure = Boolean(combinedError) && testArmed && !isListening && !hotkeyVerified;
@@ -168,8 +184,8 @@ export function HotkeyReadinessStep({
                   Press a new shortcut
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Use at least two modifier keys. Keep Alt free so Vaak can derive the
-                  command shortcut separately.
+                  Use at least two modifier keys. Keep {reservedCommandModifier} free
+                  so Vaak can derive the command shortcut separately.
                 </p>
               </div>
 
@@ -179,8 +195,13 @@ export function HotkeyReadinessStep({
                 readOnly
                 className="mt-3"
                 value={draftShortcut ? formatHotkeyLabel(draftShortcut) : ""}
-                placeholder="Hold Ctrl + Win or Ctrl + Shift"
-                onKeyDown={handleShortcutKeyDown(setDraftShortcut)}
+                placeholder={`Hold ${formatHotkeyLabel(defaultBindings.dictation)} or ${alternateDictationShortcutLabel(
+                  desktopPlatform,
+                )}`}
+                onKeyDown={handleShortcutKeyDown(
+                  setDraftShortcut,
+                  desktopPlatform,
+                )}
               />
 
               {shortcutValidationError ? (
@@ -198,7 +219,7 @@ export function HotkeyReadinessStep({
                     size="sm"
                     variant="outline"
                     disabled={isSaving}
-                    onClick={() => void saveShortcut("Ctrl+Win")}
+                    onClick={() => void saveShortcut(defaultBindings.dictation)}
                   >
                     <RefreshCcwIcon className="size-4" aria-hidden="true" />
                     Reset to default
@@ -375,33 +396,15 @@ function ShortcutKeys({ shortcut }: { shortcut: string }) {
 
 function handleShortcutKeyDown(
   setDraftShortcut: (shortcut: string) => void,
+  desktopPlatform: DesktopPlatform,
 ) {
   return (event: KeyboardEvent<HTMLInputElement>) => {
     event.preventDefault();
-    const nextShortcut = shortcutFromKeyEvent(event);
+    const nextShortcut = shortcutFromModifierEvent(event, desktopPlatform);
     if (nextShortcut) {
       setDraftShortcut(nextShortcut);
     }
   };
-}
-
-function shortcutFromKeyEvent(event: KeyboardEvent<HTMLInputElement>) {
-  const parts: string[] = [];
-
-  if (event.ctrlKey) {
-    parts.push("Ctrl");
-  }
-  if (event.shiftKey) {
-    parts.push("Shift");
-  }
-  if (event.metaKey) {
-    parts.push("Win");
-  }
-  if (event.altKey) {
-    parts.push("Alt");
-  }
-
-  return parts.join("+");
 }
 
 function validateShortcut(shortcut: string) {
@@ -415,8 +418,8 @@ function validateShortcut(shortcut: string) {
     return "Use at least two modifier keys.";
   }
 
-  if (parts.includes("Alt")) {
-    return "Alt stays reserved for the command shortcut.";
+  if (parts.includes("Alt") || parts.includes("Option")) {
+    return `${parts.includes("Option") ? "Option" : "Alt"} stays reserved for the command shortcut.`;
   }
 
   return null;

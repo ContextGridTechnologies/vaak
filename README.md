@@ -37,14 +37,20 @@ Download the latest Windows preview installer:
 Checksum:
 [Vaak-Windows-Setup.exe.sha256](https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe.sha256)
 
+Unsigned macOS preview builds for testers:
+[Vaak-macOS-AppleSilicon-Preview.dmg](https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-macOS-AppleSilicon-Preview.dmg)
+and
+[Vaak-macOS-Intel-Preview.dmg](https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-macOS-Intel-Preview.dmg)
+
 All release builds are available from the
 [GitHub releases page](https://github.com/ContextGridTechnologies/vaak/releases).
 
 Report bugs or request workflow improvements from the
 [GitHub issue chooser](https://github.com/ContextGridTechnologies/vaak/issues/new/choose).
 
-Early Windows installers are unsigned, so Windows may show a SmartScreen warning
-until code signing is added.
+Early desktop builds are unsigned. Windows may show a SmartScreen warning, and
+macOS testers may need to allow the app from Privacy & Security until signing is
+added.
 
 ## What Works Today
 
@@ -164,9 +170,10 @@ Expected outputs:
 - NSIS installer: `apps/desktop/src-tauri/target/release/bundle/nsis/`
 - Direct desktop binary: `apps/desktop/src-tauri/target/release/vaak-desktop.exe`
 
-Public GitHub releases publish only the Windows installer as
-`Vaak-Windows-Setup.exe`, plus a matching
-`Vaak-Windows-Setup.exe.sha256` checksum file.
+Public GitHub releases publish the Windows installer as
+`Vaak-Windows-Setup.exe`, plus matching Apple Silicon and Intel preview macOS
+`.app.zip` and `.dmg` assets. Each download has a matching `.sha256` checksum
+file.
 
 MSI is optional later if you install WiX with
 `winget install WiXToolset.WiXToolset` and re-enable an MSI-specific packaging

@@ -50,7 +50,7 @@ const supportRows = [
   {
     icon: RefreshCwIcon,
     label: "Updates",
-    value: "Check GitHub releases for the newest installer.",
+    value: "Check GitHub releases for the newest desktop build.",
     action: "releases",
   },
 ] as const;
@@ -132,7 +132,7 @@ export function InfoPanel() {
                 <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   RELEASE CHANNEL
                 </dt>
-                <dd className="mt-1 text-base text-foreground">Windows installer</dd>
+                <dd className="mt-1 text-base text-foreground">GitHub desktop releases</dd>
               </div>
             </dl>
 

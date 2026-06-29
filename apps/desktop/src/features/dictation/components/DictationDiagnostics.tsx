@@ -2,7 +2,7 @@ import { PermissionCallout } from "@/components/app";
 import type { HotkeyBindings } from "@/lib/tauri";
 
 type DictationDiagnosticsProps = {
-  isWindows: boolean;
+  desktopHotkeysSupported: boolean;
   tauriAvailable: boolean;
   hotkeyBindings: HotkeyBindings;
   fallbackNotice: string | null;
@@ -12,7 +12,7 @@ type DictationDiagnosticsProps = {
 };
 
 export function DictationDiagnostics({
-  isWindows,
+  desktopHotkeysSupported,
   tauriAvailable,
   hotkeyBindings,
   fallbackNotice,
@@ -22,7 +22,7 @@ export function DictationDiagnostics({
 }: DictationDiagnosticsProps) {
   return (
     <>
-      {isWindows && (
+      {desktopHotkeysSupported && (
         <PermissionCallout>
           {tauriAvailable
             ? `Global hotkeys: hold ${hotkeyBindings.dictation} for dictation, hold ${hotkeyBindings.command} for command mode.`

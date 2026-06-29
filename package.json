@@ -8,6 +8,7 @@
     "lint": "npm --prefix apps/desktop run lint",
     "test": "npm --prefix apps/desktop run test",
     "typecheck": "npm --prefix apps/desktop run typecheck",
+    "check:macos-workflows": "node scripts/check-macos-workflows.mjs",
     "install:desktop": "npm --prefix apps/desktop install",
     "startup:preflight": "npm --prefix apps/desktop run startup:preflight --",
     "tauri": "node scripts/run-tauri.mjs",
