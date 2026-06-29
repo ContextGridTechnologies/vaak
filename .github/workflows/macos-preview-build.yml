@@ -77,6 +77,12 @@ jobs:
           test -n "$app_path"
           ditto -c -k --sequesterRsrc --keepParent "$app_path" "Vaak-macOS-${{ matrix.arch }}-Preview.app.zip"
 
+      - name: Normalize macOS disk image name
+        run: |
+          dmg_path="$(find apps/desktop/src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$dmg_path"
+          cp "$dmg_path" "Vaak-macOS-${{ matrix.arch }}-Preview.dmg"
+
       - name: Upload macOS app bundle
         uses: actions/upload-artifact@v7
         with:
@@ -88,5 +94,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: Vaak-macOS-${{ matrix.arch }}-dmg
-          path: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          path: Vaak-macOS-${{ matrix.arch }}-Preview.dmg
           if-no-files-found: error
