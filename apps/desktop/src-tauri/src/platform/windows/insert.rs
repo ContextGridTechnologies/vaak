@@ -5,10 +5,13 @@ use crate::platform::windows::focus::{resolve_focused_target, ResolvedFocusTarge
 use crate::platform::windows::targeting::{
     insertion_plan, next_operation_id, FocusCandidateDiagnostics, InsertionStrategy, LogPayload,
 };
-use crate::platform::windows::uia::{create_automation, get_value_pattern};
+use crate::platform::windows::uia::{create_automation, get_current_value, get_value_pattern};
 use std::mem::{size_of, size_of_val};
 use std::ptr::copy_nonoverlapping;
-use std::{thread, time::Duration};
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 use windows::core::BSTR;
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
 use windows::Win32::System::Com::IDataObject;
@@ -28,6 +31,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 
 const CF_UNICODETEXT_ID: u32 = 13;
 const CLIPBOARD_RESTORE_DELAY: Duration = Duration::from_millis(120);
+const TEXT_INSERT_VERIFY_TIMEOUT: Duration = Duration::from_millis(350);
+const TEXT_INSERT_VERIFY_INTERVAL: Duration = Duration::from_millis(25);
 const LOG_TARGET: &str = "vaak::platform::windows";
 
 pub(crate) fn insert_text(text: &str) -> Result<TextInsertResult, PlatformError> {
@@ -113,7 +118,7 @@ fn insert_text_for_target(
             ))
         );
 
-        let result = apply_insertion_strategy(&target.element, strategy, text);
+        let result = apply_insertion_strategy(&target.element, &target.diagnostics, strategy, text);
         match result {
             Ok(()) => {
                 log::info!(
@@ -154,12 +159,13 @@ fn insert_text_for_target(
 
 fn apply_insertion_strategy(
     element: &IUIAutomationElement,
+    target: &FocusCandidateDiagnostics,
     strategy: InsertionStrategy,
     text: &str,
 ) -> Result<(), PlatformError> {
     match strategy {
-        InsertionStrategy::ClipboardPaste => paste_text(text),
-        InsertionStrategy::SendInput => send_input_text(text),
+        InsertionStrategy::ClipboardPaste => paste_text(element, text),
+        InsertionStrategy::SendInput => send_input_text(element, target, text),
         InsertionStrategy::UiaValuePattern => {
             let Some(value_pattern) = get_value_pattern(element) else {
                 return Err(PlatformError::new(
@@ -310,7 +316,12 @@ fn serialize_log_payload(payload: LogPayload) -> String {
     })
 }
 
-fn send_input_text(text: &str) -> Result<(), PlatformError> {
+fn send_input_text(
+    element: &IUIAutomationElement,
+    target: &FocusCandidateDiagnostics,
+    text: &str,
+) -> Result<(), PlatformError> {
+    let before = should_verify_send_input(target).then(|| get_current_value(element));
     let mut inputs: Vec<INPUT> = Vec::with_capacity(text.encode_utf16().count() * 2);
 
     for unit in text.encode_utf16() {
@@ -350,16 +361,83 @@ fn send_input_text(text: &str) -> Result<(), PlatformError> {
     let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
     send_input_delivery_result(sent, inputs.len())?;
 
+    if let Some(before) = before {
+        verify_text_inserted(
+            element,
+            &before,
+            text,
+            "send_input_unconfirmed",
+            "SendInput did not update the focused target readback",
+        )?;
+    }
+
     Ok(())
 }
 
-fn paste_text(text: &str) -> Result<(), PlatformError> {
+fn should_verify_send_input(target: &FocusCandidateDiagnostics) -> bool {
+    !has_terminal_hint(&target.snapshot)
+        && (target.has_active_caret
+            || target.supports_text_pattern
+            || target.supports_text_pattern2
+            || target.supports_text_edit_pattern)
+}
+
+fn paste_text(element: &IUIAutomationElement, text: &str) -> Result<(), PlatformError> {
+    let before = get_current_value(element);
     let previous = ClipboardSnapshot::capture()?;
     set_clipboard_text(text)?;
     let result = send_paste_shortcut();
-    thread::sleep(CLIPBOARD_RESTORE_DELAY);
+    let result = result.and_then(|()| {
+        verify_text_inserted(
+            element,
+            &before,
+            text,
+            "clipboard_paste_unconfirmed",
+            "Clipboard paste did not update the focused target readback",
+        )
+    });
+    if result.is_ok() {
+        thread::sleep(CLIPBOARD_RESTORE_DELAY);
+    }
     previous.restore();
     result
+}
+
+fn verify_text_inserted(
+    element: &IUIAutomationElement,
+    before: &str,
+    inserted: &str,
+    error_code: &str,
+    error_message: &str,
+) -> Result<(), PlatformError> {
+    let deadline = Instant::now() + TEXT_INSERT_VERIFY_TIMEOUT;
+    loop {
+        let after = get_current_value(element);
+        if text_readback_confirms_insert(before, &after, inserted) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(PlatformError::new(error_code, error_message));
+        }
+        thread::sleep(TEXT_INSERT_VERIFY_INTERVAL);
+    }
+}
+
+fn text_readback_confirms_insert(before: &str, after: &str, inserted: &str) -> bool {
+    let inserted = inserted.trim();
+    if inserted.is_empty() {
+        return true;
+    }
+
+    let after = after.trim();
+    if after.is_empty() {
+        return false;
+    }
+
+    // vaak: UIA readback is a best-effort oracle; if it cannot show an
+    // observable target change, insertion must fail instead of recording a
+    // false success.
+    after.contains(inserted) && after != before.trim()
 }
 
 fn send_paste_shortcut() -> Result<(), PlatformError> {
@@ -820,6 +898,34 @@ mod tests {
     }
 
     #[test]
+    fn send_input_verification_is_required_for_browser_editor_targets() {
+        let candidate = FocusCandidateDiagnostics::for_test("chrome-editor")
+            .with_control_type("Document", 50030)
+            .with_keyboard_focus(true)
+            .with_keyboard_focusable(true)
+            .with_text_pattern2(true)
+            .with_active_caret(true)
+            .with_framework_id("Chrome")
+            .with_class_name("Chrome_RenderWidgetHostHWND");
+
+        assert!(should_verify_send_input(&candidate));
+    }
+
+    #[test]
+    fn send_input_verification_is_skipped_for_terminal_targets() {
+        let candidate = FocusCandidateDiagnostics::for_test("terminal")
+            .with_control_type("Text", 50020)
+            .with_keyboard_focus(true)
+            .with_keyboard_focusable(true)
+            .with_text_pattern(true)
+            .with_framework_id("XAML")
+            .with_class_name("TermControl")
+            .with_control_name("PowerShell");
+
+        assert!(!should_verify_send_input(&candidate));
+    }
+
+    #[test]
     fn clipboard_payload_is_utf16_with_null_terminator() {
         assert_eq!(
             clipboard_utf16_payload("hi"),
@@ -840,5 +946,24 @@ mod tests {
         assert_eq!(inputs[2].key, PasteKey::V);
         assert_eq!(inputs[3].kind, KeyEventKind::Up);
         assert_eq!(inputs[3].key, PasteKey::Control);
+    }
+
+    #[test]
+    fn paste_readback_requires_visible_inserted_text() {
+        assert!(text_readback_confirms_insert(
+            "",
+            "hello browser",
+            "hello browser"
+        ));
+        assert!(!text_readback_confirms_insert("hello", "hello", "hello"));
+        assert!(text_readback_confirms_insert(
+            "existing",
+            "existing hello",
+            "hello"
+        ));
+        assert!(!text_readback_confirms_insert("", "", "hello"));
+        assert!(!text_readback_confirms_insert(
+            "existing", "existing", "hello"
+        ));
     }
 }
