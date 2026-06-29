@@ -207,8 +207,8 @@ Implementation status:
 - Completed in current changes: tagged release publishing now waits for the
   Windows installer release upload before attaching macOS preview assets.
 - Completed in current changes: macOS preview and release artifacts are built
-  separately for Apple Silicon and Intel runners, with architecture-specific
-  asset names so testers download the right build.
+  separately on pinned macOS 15 Apple Silicon and Intel runners, with
+  architecture-specific asset names so testers download the right build.
 - Completed in current changes: macOS CI, preview, and release jobs assert the
   expected runner CPU architecture before building, so runner label drift cannot
   silently publish a mislabeled artifact.

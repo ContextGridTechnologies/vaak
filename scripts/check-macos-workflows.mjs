@@ -8,7 +8,7 @@ const workflows = [
 
 const requiredSnippets = [
   "arch: AppleSilicon",
-  "runner: macos-latest",
+  "runner: macos-15",
   "uname: arm64",
   "arch: Intel",
   "runner: macos-15-intel",
