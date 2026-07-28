@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="How the Vaak website and desktop application handle data." />
+    <meta name="theme-color" content="#f5f3ee" />
+    <title>Privacy Policy — Vaak</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Vaak home">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6.2 9.5 18h5L20 6.2h-3.9L12 15.3 7.9 6.2Z" /></svg>
+        <span>vaak</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="index.html#how-it-works">How it works</a>
+        <a href="index.html#pricing">Pricing</a>
+        <a href="https://github.com/ContextGridTechnologies/vaak" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+      <a class="button button-small" href="index.html">Back to home</a>
+    </header>
+
+    <main class="legal-page" id="main">
+      <header class="legal-hero">
+        <p class="eyebrow"><span></span> Trust should be legible</p>
+        <h1>Privacy Policy</h1>
+        <p class="legal-effective">Effective July 28, 2026</p>
+        <p class="legal-lead">Vaak is built around a local-first promise. This policy explains what stays on your device, what leaves it when you choose a provider, and the limited information involved in operating our website and optional telemetry.</p>
+      </header>
+
+      <aside class="privacy-summary" aria-label="Privacy summary">
+        <div><span>01</span><strong>Local by default</strong><p>Your local workflow does not require a Vaak account or Vaak server.</p></div>
+        <div><span>02</span><strong>You choose the provider</strong><p>Audio and text go only to the services you configure for those tasks.</p></div>
+        <div><span>03</span><strong>Telemetry is optional</strong><p>Product analytics and error diagnostics are off until you enable them.</p></div>
+      </aside>
+
+      <div class="legal-layout">
+        <aside class="legal-toc" aria-label="Privacy policy contents">
+          <p>On this page</p>
+          <a href="#scope">Scope</a>
+          <a href="#data">Data we handle</a>
+          <a href="#use">How data is used</a>
+          <a href="#sharing">Service providers</a>
+          <a href="#retention">Retention</a>
+          <a href="#rights">Your rights</a>
+          <a href="#contact">Contact</a>
+        </aside>
+
+        <article class="legal-content">
+          <section id="scope">
+            <p class="legal-number">01</p>
+            <h2>Scope and who we are</h2>
+            <p>Vaak is an open-source desktop voice-input project maintained through the <a href="https://github.com/ContextGridTechnologies" target="_blank" rel="noreferrer">ContextGridTechnologies GitHub organization</a>. In this policy, “Vaak,” “we,” and “us” mean the maintainers of the official Vaak website and desktop releases.</p>
+            <p>This policy applies to the official Vaak website, official desktop builds, and related support interactions. It does not control independent forks, third-party builds, or the speech, rewrite, hosting, and download services described below.</p>
+          </section>
+
+          <section id="data">
+            <p class="legal-number">02</p>
+            <h2>Data we handle</h2>
+
+            <h3>Website and hosting data</h3>
+            <p>The website is static. It currently has no account forms, advertising trackers, or first-party analytics scripts, and it does not set its own marketing cookies.</p>
+            <p>When the site is hosted on Cloudflare, Cloudflare may process technical request information such as your IP address, browser and device information, requested URL, timestamps, and security signals to deliver and protect the site. Cloudflare may set strictly necessary security cookies when required by its services.</p>
+
+            <h3>Local desktop data</h3>
+            <p>The desktop app processes microphone audio, transcripts, rewritten text, settings, provider configuration, and local dictation activity. Dictation records—including transcript text and local audio artifacts used for history and playback—may be stored in the app’s local data directory on your device.</p>
+            <p>A local record may also contain the full destination window title and sanitized application or control metadata used for insertion diagnostics. A window title can reveal the name of a document, conversation, or application. Focused-field contents are not retained as part of this destination metadata.</p>
+            <p>In local mode, those local records are not uploaded to Vaak. They remain on your device until you remove the associated application data. Provider API keys are stored through the operating system’s secure credential facility where available, such as Windows Credential Manager or macOS Keychain.</p>
+
+            <h3>Speech and rewrite providers</h3>
+            <p>When you dictate, Vaak sends audio only to the transcription provider you select. If you enable rewriting, transcript text is sent only to the rewrite provider you select. These providers process data under their own terms and privacy policies. You should review the policy of each provider before configuring it.</p>
+
+            <h3>Optional product telemetry</h3>
+            <p>Official desktop builds may include optional PostHog product analytics and separate error diagnostics. Both controls default to off. If you enable them, Vaak may send event names, app version and environment, selected provider identifiers, stable setting identifiers, and sanitized error details.</p>
+            <p>Telemetry is designed not to include audio, transcripts, API keys, authorization headers, focused-field contents, or local file paths. Autocapture, pageview capture, and session recording are disabled. PostHog may use a pseudonymous identifier stored locally to associate enabled events from the same installation.</p>
+          </section>
+
+          <section id="use">
+            <p class="legal-number">03</p>
+            <h2>How we use information</h2>
+            <p>We use the limited information described above to:</p>
+            <ul>
+              <li>deliver and secure the public website;</li>
+              <li>provide the desktop features you request;</li>
+              <li>diagnose reliability problems when you opt into diagnostics;</li>
+              <li>understand broad product usage when you opt into analytics; and</li>
+              <li>respond to support, security, or privacy requests.</li>
+            </ul>
+            <p>Where applicable law requires a legal basis, essential website processing is based on our legitimate interests in operating and securing the site, provider processing is initiated to perform the service you request, and optional telemetry is based on your consent. You can withdraw telemetry consent in Settings at any time.</p>
+          </section>
+
+          <section id="sharing">
+            <p class="legal-number">04</p>
+            <h2>Service providers and sharing</h2>
+            <p>We do not sell personal information, use it for targeted advertising, or rent it to data brokers.</p>
+            <p>Information may be processed by:</p>
+            <ul>
+              <li><strong>Cloudflare</strong>, for website delivery, security, and DNS services;</li>
+              <li><strong>GitHub</strong>, for source hosting, release downloads, and issue-based support;</li>
+              <li><strong>PostHog</strong>, only when optional desktop telemetry or diagnostics are enabled; and</li>
+              <li><strong>your selected speech or rewrite providers</strong>, when you ask Vaak to transcribe or rewrite content.</li>
+            </ul>
+            <p>We may also disclose information when required by law, to protect users or the service, or as part of a business reorganization where legally permitted and subject to appropriate safeguards.</p>
+          </section>
+
+          <section id="retention">
+            <p class="legal-number">05</p>
+            <h2>Retention and security</h2>
+            <p>Local dictation records remain under your control on your device and are not subject to a Vaak cloud-retention schedule. Hosting and download providers retain technical logs according to their own policies and configurations. Optional telemetry is retained according to the configured PostHog project settings and only for as long as reasonably needed for product and reliability analysis.</p>
+            <p>We use data minimization, OS-backed credential storage, redaction, opt-in telemetry controls, and separation between local records and cloud analytics. No method of storage or transmission is completely secure, so we cannot guarantee absolute security.</p>
+          </section>
+
+          <section>
+            <p class="legal-number">06</p>
+            <h2>International processing</h2>
+            <p>Cloudflare, GitHub, PostHog, and providers you select may process information in countries other than your own. Their privacy policies describe their locations and transfer safeguards. By choosing a third-party provider, you direct Vaak to send the relevant audio or text to that provider.</p>
+          </section>
+
+          <section id="rights">
+            <p class="legal-number">07</p>
+            <h2>Your privacy rights</h2>
+            <p>Depending on where you live, you may have rights to request access, correction, deletion, restriction, portability, or objection; withdraw consent; or complain to a data-protection authority. We will honor applicable requests after reasonably verifying them.</p>
+            <p>Vaak cannot access local-only records stored on your device. You control those records by controlling your local application data. For data held by a speech or rewrite provider, submit your request directly to that provider.</p>
+          </section>
+
+          <section>
+            <p class="legal-number">08</p>
+            <h2>Children</h2>
+            <p>Vaak is not directed to children, and we do not knowingly collect personal information from children through the website. If you believe a child has provided information to us, contact us so we can review the request.</p>
+          </section>
+
+          <section>
+            <p class="legal-number">09</p>
+            <h2>Managed cloud features</h2>
+            <p>Managed transcription, accounts, billing, and sync are not part of the current local-first release. We will update this policy before launching a managed service that materially changes how Vaak collects, stores, or processes personal information.</p>
+          </section>
+
+          <section>
+            <p class="legal-number">10</p>
+            <h2>Policy changes</h2>
+            <p>We may update this policy as the product changes. We will revise the effective date above and provide additional notice when a material change requires it.</p>
+          </section>
+
+          <section id="contact">
+            <p class="legal-number">11</p>
+            <h2>Contact</h2>
+            <p>For privacy questions or requests, start through the <a href="https://github.com/ContextGridTechnologies/vaak/issues/new/choose" target="_blank" rel="noreferrer">Vaak issue chooser</a> and ask the maintainers to establish a private contact channel.</p>
+            <div class="legal-notice"><strong>Protect your privacy:</strong> do not place audio, transcripts, API keys, personal identifiers, or other sensitive information in a public GitHub issue.</div>
+          </section>
+        </article>
+      </div>
+    </main>
+
+    <footer>
+      <a class="brand" href="index.html" aria-label="Vaak home"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6.2 9.5 18h5L20 6.2h-3.9L12 15.3 7.9 6.2Z" /></svg><span>vaak</span></a>
+      <p>Open-source voice tooling for desktop workflows.</p>
+      <div><a href="index.html">Home</a><a href="privacy.html" aria-current="page">Privacy</a><a href="https://github.com/ContextGridTechnologies/vaak" target="_blank" rel="noreferrer">GitHub</a></div>
+    </footer>
+  </body>
+</html>
