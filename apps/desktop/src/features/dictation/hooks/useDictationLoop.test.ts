@@ -2099,10 +2099,10 @@ describe("useDictationLoop", () => {
       useDictationLoop(session({ audioBlob })),
     );
 
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello");
+      expect(result.current.state).toBe("inserting");
     });
-    expect(result.current.state).toBe("inserting");
 
     await waitFor(
       () => {
