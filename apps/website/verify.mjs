@@ -5,6 +5,7 @@ const siteRoot = new URL(".", import.meta.url);
 const html = await readFile(new URL("index.html", siteRoot), "utf8");
 const privacy = await readFile(new URL("privacy.html", siteRoot), "utf8");
 const css = await readFile(new URL("styles.css", siteRoot), "utf8");
+const headers = await readFile(new URL("_headers", siteRoot), "utf8").catch(() => "");
 const positioning = await readFile(new URL("../../docs/POSITIONING.md", siteRoot), "utf8");
 const roadmap = await readFile(new URL("../../docs/ROADMAP.md", siteRoot), "utf8");
 
@@ -53,6 +54,17 @@ for (const text of requiredHtml) {
 }
 
 if (!html.includes("href=\"privacy.html\"")) throw new Error("Homepage footer must link to the privacy policy");
+
+const stylesheetHref = "styles.css?v=20260729";
+for (const [page, source] of [["homepage", html], ["privacy policy", privacy]]) {
+  if (!source.includes(`href="${stylesheetHref}"`)) {
+    throw new Error(`${page} must use the current versioned stylesheet`);
+  }
+}
+
+if (!headers.includes("/styles.css\n  Cache-Control: public, max-age=0, must-revalidate")) {
+  throw new Error("Cloudflare must revalidate the shared stylesheet");
+}
 
 for (const text of [
   "<title>Privacy Policy — Vaak</title>",
