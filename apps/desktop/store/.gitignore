@@ -1,0 +1,5 @@
+
+# Development certificates and locally-built Store packages
+*.pfx
+*.msix
+dist/

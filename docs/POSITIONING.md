@@ -19,6 +19,19 @@ Vaak is open-source voice tooling for desktop workflows. It is local-first by
 default, supports bring-your-own-model providers, and offers optional managed
 cloud features for users and teams who want convenience.
 
+## Pricing Position
+
+Vaak should not require a recurring subscription for the core desktop product.
+The user chooses between:
+
+- local mode with their own provider key, free to Vaak
+- optional managed transcription at a target rate of `$1 per 60 minutes`
+
+The managed rate is a simple usage unit, not a `$1` checkout. Credits should be
+sold in practical top-ups such as `$5 for 300 minutes` and `$10 for 600
+minutes`, without automatic renewal. Until managed billing is live, public copy
+must label this path as coming soon.
+
 ## Audience
 
 Initial audience:

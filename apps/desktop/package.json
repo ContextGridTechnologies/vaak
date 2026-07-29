@@ -14,7 +14,8 @@
     "startup:preflight": "node scripts/startup-production-preflight.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "store:package": "tauri build --no-bundle && if not exist store\\dist mkdir store\\dist && copy /Y src-tauri\\target\\release\\vaak-desktop.exe store\\dist\\ >nul && winapp package store\\dist --manifest store\\Package.appxmanifest --output store\\Vaak.msix"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",

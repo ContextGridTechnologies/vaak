@@ -29,12 +29,17 @@ jobs:
       - name: Install desktop dependencies
         run: npm --prefix apps/desktop ci
 
+      - name: Install WinApp CLI
+        uses: microsoft/setup-WinAppCli@v0.1
+
       - name: Verify release versions
         shell: pwsh
         run: |
           $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
           $package = Get-Content -Raw -LiteralPath "apps/desktop/package.json" | ConvertFrom-Json
           $tauri = Get-Content -Raw -LiteralPath "apps/desktop/src-tauri/tauri.conf.json" | ConvertFrom-Json
+          $cargo = cargo metadata --locked --no-deps --format-version 1 --manifest-path "apps/desktop/src-tauri/Cargo.toml" | ConvertFrom-Json
+          $rustPackage = $cargo.packages | Where-Object name -eq "vaak-desktop"
 
           if ($package.version -ne $tagVersion) {
             throw "Tag version v$tagVersion does not match apps/desktop/package.json version $($package.version)."
@@ -42,6 +47,16 @@ jobs:
 
           if ($tauri.version -ne $tagVersion) {
             throw "Tag version v$tagVersion does not match apps/desktop/src-tauri/tauri.conf.json version $($tauri.version)."
+          }
+
+          if ($rustPackage.version -ne $tagVersion) {
+            throw "Tag version v$tagVersion does not match apps/desktop/src-tauri/Cargo.toml version $($rustPackage.version)."
+          }
+
+          $manifest = Get-Content -Raw -LiteralPath "apps/desktop/store/Package.appxmanifest"
+          $storeVersion = "$tagVersion.0"
+          if ($manifest -notmatch "Version=`"$([regex]::Escape($storeVersion))`"") {
+            throw "Microsoft Store package version must be $tagVersion.0."
           }
 
       - name: Install NSIS
@@ -71,6 +86,19 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           VITE_POSTHOG_PUBLIC_KEY: ${{ secrets.VITE_POSTHOG_PUBLIC_KEY }}
           VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+
+      - name: Build Microsoft Store package
+        run: npm --prefix apps/desktop run store:package
+        env:
+          VITE_POSTHOG_PUBLIC_KEY: ${{ secrets.VITE_POSTHOG_PUBLIC_KEY }}
+          VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+
+      - name: Upload Microsoft Store package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vaak-Microsoft-Store-MSIX
+          path: apps/desktop/store/Vaak.msix
+          if-no-files-found: error
 
       - name: Normalize release asset names
         shell: pwsh

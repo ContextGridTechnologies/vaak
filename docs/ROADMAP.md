@@ -146,7 +146,7 @@ Deliverables:
 - Usage metering.
 - Stripe billing.
 - Free trial or limited free managed usage.
-- Pro plan with fair-use limits.
+- Prepaid managed credits with explicit usage and cost limits.
 - Cost controls and abuse prevention.
 
 Exit criteria:
@@ -176,7 +176,8 @@ Exit criteria:
 Initial open-core pricing target:
 
 - Free: local app, BYO keys, local settings.
-- Pro: managed usage, sync, and convenience features.
+- Managed: optional transcription credits at a target rate of `$1 per 60
+  minutes`, sold in practical top-up packs without automatic renewal.
 - Team: shared vocabulary, central billing, dashboards, and admin controls.
 
 Avoid unlimited managed usage without fair-use limits. Transcription costs can

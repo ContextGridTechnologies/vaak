@@ -119,6 +119,30 @@ local build output and is not attached to releases.
 Each release also publishes `Vaak-Windows-Setup.exe.sha256` so users can verify
 the installer before running it.
 
+### Microsoft Store package
+
+Install Microsoft's WinApp CLI once:
+
+```powershell
+winget install --id Microsoft.WinAppCli --exact --source winget
+```
+
+The Store manifest version must match the desktop version with a fourth numeric
+component. For example, desktop version `0.1.15` uses `0.1.15.0` in
+`apps/desktop/store/Package.appxmanifest`.
+
+Build the Store package from the repo root:
+
+```powershell
+npm --prefix apps/desktop run store:package
+```
+
+The output is `apps/desktop/store/Vaak.msix`. Tagged releases build the same
+package and upload it as the `Vaak-Microsoft-Store-MSIX` workflow artifact.
+Download that artifact, upload `Vaak.msix` to the existing Partner Center app,
+update the release notes, and submit the update for certification. The workflow
+does not publish to Partner Center automatically.
+
 MSI is still possible later, but it is no longer part of the default local build
 path. If you want MSI packaging again, install WiX and then re-enable an MSI
 target in the Tauri bundle configuration or add a separate MSI-specific build path.
@@ -146,15 +170,22 @@ Release assets:
 - `Vaak-macOS-Intel-Preview.dmg.sha256`
 
 The release workflow verifies that the pushed tag, `apps/desktop/package.json`,
-and `apps/desktop/src-tauri/tauri.conf.json` all use the same version. For
-example, tag `v0.1.0` requires both version files to contain `0.1.0`.
+`apps/desktop/src-tauri/tauri.conf.json`, Rust package metadata, and the Store
+manifest all use the same version. It runs Cargo metadata with `--locked`, so a
+stale `Cargo.lock` also fails the release. For example, tag `v0.1.0` requires
+the desktop and Rust version sources to contain `0.1.0` and the Store manifest
+to contain `0.1.0.0`.
 
 Release procedure:
 
 1. Bump `apps/desktop/package.json`.
 2. Bump `apps/desktop/src-tauri/tauri.conf.json`.
-3. Commit the version change.
-4. Create and push a version tag:
+3. Bump `apps/desktop/src-tauri/Cargo.toml`, then refresh
+   `apps/desktop/src-tauri/Cargo.lock` with `cargo check`.
+4. Bump `apps/desktop/store/Package.appxmanifest` using the four-component Store
+   version.
+5. Commit the version change.
+6. Create and push a version tag:
 
 ```powershell
 git tag v0.1.0

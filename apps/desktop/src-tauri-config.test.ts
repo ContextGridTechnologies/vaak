@@ -170,6 +170,28 @@ describe("Tauri security configuration", () => {
 });
 
 describe("Desktop release metadata", () => {
+  it("keeps the Microsoft Store package identity in its manifest", () => {
+    const manifest = readFileSync(
+      join(process.cwd(), "store", "Package.appxmanifest"),
+      "utf8",
+    );
+
+    expect(manifest).toContain('Name="ContextGridTechnologies.Vaak"');
+    expect(manifest).toContain('Publisher="CN=B20D8AD7-41D7-401F-B407-EA718E9EC445"');
+    expect(manifest).toContain("<DisplayName>Vaak</DisplayName>");
+    expect(manifest).toContain("<PublisherDisplayName>ContextGridTechnologies</PublisherDisplayName>");
+    expect(manifest).toContain('Executable="$targetnametoken$.exe"');
+  });
+
+  it("provides one command to build the Microsoft Store package", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    ) as { scripts?: Record<string, string> };
+
+    expect(packageJson.scripts?.["store:package"]).toContain("winapp package");
+    expect(packageJson.scripts?.["store:package"]).toContain("tauri build --no-bundle");
+  });
+
   it("uses production package metadata and release build settings", () => {
     const cargoToml = readFileSync(join(process.cwd(), "src-tauri", "Cargo.toml"), "utf8");
     const libRs = readFileSync(join(process.cwd(), "src-tauri", "src", "lib.rs"), "utf8");
@@ -237,10 +259,22 @@ describe("Desktop release metadata", () => {
       join(process.cwd(), "..", "..", ".github", "workflows", "desktop-release.yml"),
       "utf8",
     );
+    const windowsJob = workflow.slice(
+      workflow.indexOf("  windows-installer:"),
+      workflow.indexOf("  macos-preview:"),
+    );
+    const macosJob = workflow.slice(workflow.indexOf("  macos-preview:"));
 
     expect(workflow).toContain("Vaak-Windows-Setup.exe");
     expect(workflow).toContain("Vaak-Windows-Setup.exe.sha256");
     expect(workflow).toContain("--no-sign --bundles nsis");
+    expect(windowsJob).toContain("Install WinApp CLI");
+    expect(windowsJob).toContain("microsoft/setup-WinAppCli@v0.1");
+    expect(windowsJob).toContain("cargo metadata --locked --no-deps");
+    expect(windowsJob).toContain('$storeVersion = "$tagVersion.0"');
+    expect(windowsJob).toContain("npm --prefix apps/desktop run store:package");
+    expect(windowsJob).toContain("Vaak-Microsoft-Store-MSIX");
+    expect(macosJob).not.toContain("Install WinApp CLI");
     expect(workflow).not.toContain("latest.json");
     expect(workflow).not.toContain("Vaak-Windows-Setup.nsis.zip");
   });

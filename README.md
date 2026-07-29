@@ -175,6 +175,10 @@ Public GitHub releases publish the Windows installer as
 `.app.zip` and `.dmg` assets. Each download has a matching `.sha256` checksum
 file.
 
+Tagged releases also build `Vaak.msix` for Microsoft Store submission and
+upload it as the `Vaak-Microsoft-Store-MSIX` workflow artifact. Store publishing
+remains a separate Partner Center step; see `docs/DEVELOPMENT.md`.
+
 MSI is optional later if you install WiX with
 `winget install WiXToolset.WiXToolset` and re-enable an MSI-specific packaging
 path.
