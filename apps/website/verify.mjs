@@ -14,15 +14,37 @@ const requiredHtml = [
   "github.com/ContextGridTechnologies/vaak",
   "aria-label=\"Main navigation\"",
   "alt=\"Vaak",
-  "analytics-live.png",
   "class=\"hero-layout\"",
+  "Voice input for",
+  "class=\"hero-line\"",
+  "Press a hotkey, speak naturally",
+  "class=\"hero-product voice-demo\"",
+  "class=\"voice-wave\"",
+  "Inserted in your active app",
+  "No account. No subscription. Your provider.",
+  "class=\"proof-bar\"",
+  "Source available",
+  "No Vaak account",
+  "SHA-256 published",
+  "Windows early preview",
+  "<section class=\"faq\"",
+  "What does local-first mean?",
+  "Does audio leave my computer?",
+  "What does free to Vaak mean?",
+  "What happens if managed credits run out?",
+  "Which operating systems are available?",
   "https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe",
   "https://github.com/ContextGridTechnologies/vaak/releases/latest/download/Vaak-Windows-Setup.exe.sha256",
   "id=\"pricing\"",
-  "No subscription",
+  "Pay as you go.",
+  "Keep the app.",
+  "Vaak does not put the desktop app behind a subscription",
+  "If you stop topping up",
+  "continue with your own provider",
+  "No monthly plan. No automatic renewal.",
   "$1",
   "60 minutes",
-  "Bring your own key",
+  "Bring your own provider",
   "Coming soon",
 ];
 
@@ -61,20 +83,36 @@ if (!css.includes("@media (max-width: 700px)")) {
 for (const rule of [
   "--coral: #b64c2f",
   "overflow-x: hidden",
-  ".live-capture img",
+  ".voice-demo",
+  "@keyframes voice-level",
+  "@keyframes text-cleanup",
+  "@keyframes listening-state",
+  "@keyframes inserted-state",
+  ".voice-demo * { animation: none !important; }",
+  ".proof-bar",
+  ".faq-list",
+  "color: #d0d6d2",
   "grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr)",
 ]) {
   if (!css.includes(rule)) throw new Error(`Missing website style requirement: ${rule}`);
 }
 
+if (html.includes("analytics-live.png")) {
+  throw new Error("Hero must demonstrate voice insertion instead of showing the analytics dashboard");
+}
+
+if (html.includes("class=\"principles\"")) {
+  throw new Error("Repeated principles section should be replaced by answers to buyer questions");
+}
+
 const byoPricing = html.match(/<article class="pricing-option">([\s\S]*?)<\/article>/)?.[1] ?? "";
 const managedPricing = html.match(/<article class="pricing-option pricing-option-managed">([\s\S]*?)<\/article>/)?.[1] ?? "";
 
-for (const text of ["Bring your own key", "Free", "to Vaak", "no Vaak account is required"]) {
+for (const text of ["Bring your own provider", "Free", "to Vaak", "switch providers whenever you want"]) {
   if (!byoPricing.includes(text)) throw new Error(`Missing BYO pricing requirement: ${text}`);
 }
 
-for (const text of ["Coming soon", "$1", "60 minutes", "$5", "300 minutes", "$10", "600 minutes"]) {
+for (const text of ["Coming soon", "Prepaid managed minutes", "$1", "60 minutes", "$5", "300 minutes", "$10", "600 minutes", "No monthly plan"]) {
   if (!managedPricing.includes(text)) throw new Error(`Missing managed pricing requirement: ${text}`);
 }
 
