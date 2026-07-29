@@ -67,23 +67,55 @@ Current events emitted:
 - `provider_configured`
 - `provider_test_started`
 - `provider_test_completed`
+- `dictation_attempted`
+- `onboarding_started`
+- `onboarding_completed`
+- `onboarding_failed`
+- `dictation_started`
+- `dictation_completed`
+- `dictation_skipped`
+- `dictation_failed`
 
 Current privacy posture:
 
 - Autocapture is disabled.
-- Pageview capture is disabled.
+- Pageview and page-leave capture are disabled.
 - Session recording is disabled.
+- Dead-click, rage-click, heatmap, performance, exception, survey, and feature
+  flag collection are disabled.
+- Each event has an explicit property allowlist. Undeclared properties are
+  dropped before the SDK receives them.
+- Common SDK-added URL, referrer, browser, device, viewport, timezone, and
+  session properties are denied.
+- Raw handled-error messages stay local; PostHog receives stable error codes
+  and stages only.
+- GeoIP enrichment is disabled on every event and the PostHog project is
+  configured to discard client IP data.
 - Analytics are disabled when `VITE_POSTHOG_PUBLIC_KEY` is missing.
 - Error diagnostics are limited to sanitized handled errors. Global exception
   capture, stack traces, and session replay are not enabled.
 
 Current gaps:
 
-- Onboarding telemetry is planned but not wired yet.
-- Dictation telemetry is planned but not wired yet.
-- Handled-error capture is wired for system setting save failures and provider
-  test failures, but not yet for all recoverable errors.
+- `onboarding_step_completed` is planned but not wired yet.
+- Handled-error capture is wired for system setting saves, provider tests,
+  onboarding, transcription, and insertion, but not yet for every recoverable
+  error.
 - There is no release/source-map workflow for production error debugging.
+
+## Distribution And Identity
+
+Vaak uses one PostHog project and one event schema for every build. The
+`distribution_channel` property separates `github`, `microsoft_store`, and
+local `development` builds.
+
+PostHog's local anonymous ID is used before login. A future account session
+must call `analytics.setAuthenticatedUserId(session.user.id)` with an opaque,
+stable backend user ID after login, and call
+`analytics.setAuthenticatedUserId(null)` on logout. Do not identify users by
+email.
+
+TODO(vaak-auth): wire those two calls when the login/session system is added.
 
 ## Privacy Rules
 
@@ -97,8 +129,32 @@ All telemetry must pass these rules before implementation:
 5. Events must use coarse target categories, not raw window titles or field
    values.
 6. Error telemetry must prefer stable error codes over raw error messages.
-7. Any raw error message sent to telemetry must be redacted and capped.
+7. Raw error messages must remain local.
 8. The local app must remain fully usable when PostHog is disabled or blocked.
+9. New event properties must be added to the central allowlist and documented
+   here before they can be sent.
+
+## Loophole Audit
+
+The July 2026 review found and addressed these gaps:
+
+| Gap | Risk | Resolution |
+| --- | --- | --- |
+| `dictation_started` fired only after recording stopped | Start, microphone, and focus failures were invisible | Added `dictation_attempted` at the manual/hotkey invocation boundary and stable early `dictation_failed` outcomes |
+| `capture` accepted arbitrary scalar properties | A future caller could accidentally send transcript-like content | Added a per-event property allowlist before sanitization |
+| Handled errors included redacted raw messages | Denylist redaction cannot prove all user/provider content is removed | Raw messages now remain local; only code, stage, handled status, and safe provider id are sent |
+| PostHog SDK defaults added URLs and device metadata | More data was collected than needed for product decisions | Explicitly disabled unused SDK features and denied observed automatic properties |
+| Project IP discard still allowed pre-discard GeoIP processing | Location properties could still be derived | Added `$geoip_disable` to every event and enabled project-level IP discard |
+| Repeated failure paths could emit multiple early outcomes | Attempt-to-failure ratios could be inflated | The session records at most one early start failure per attempt |
+
+Accepted constraints:
+
+- PostHog keeps an anonymous distinct ID so attempts can be counted per install
+  and used in funnels. It must not be replaced with an email address.
+- A network service necessarily observes a connection source address in
+  transit. Vaak disables GeoIP enrichment and PostHog storage of that address;
+  eliminating all third-party network processing would require self-hosting or
+  a first-party relay, which is not required now.
 
 ## Event Taxonomy
 
@@ -170,11 +226,15 @@ Use a small typed event set. Add fields only when they answer a known question.
 
 ### Dictation
 
+`dictation_attempted`
+
+- `trigger`: `hotkey` or `manual`
+
 `dictation_started`
 
 - `trigger`: `hotkey` or `manual`
 - `mode`: `dictation` or `command`
-- `provider_id`
+- `provider_id`: provider segmentation begins here, after settings resolve
 
 `dictation_completed`
 
@@ -272,13 +332,10 @@ analytics.captureError(error, {
 The analytics layer should:
 
 - respect the current telemetry preference at call time
-- normalize unknown errors
-- map raw errors to stable codes when possible
-- redact sensitive text
-- cap error message length
+- map errors to stable codes
+- keep raw error messages and stack traces local
 - avoid throwing if PostHog is unavailable
 
-PostHog's `captureException` can be used for sanitized handled exceptions.
 Global exception autocapture should be considered only after:
 
 - sanitization is centralized
@@ -337,7 +394,7 @@ Goal: measure important product funnels without collecting content.
 
 Tasks:
 
-- Capture onboarding started/completed/failed events. Not started.
+- Capture onboarding started/completed/failed events. Completed.
 - Capture provider configured and provider test result events. Completed for
   settings and onboarding variants of the provider settings component.
 - Capture settings opened and safe setting changed events. Completed for the
@@ -351,16 +408,25 @@ Exit criteria:
 
 ### Phase 3: Dictation Reliability Events
 
+Status: completed for invocation, early start failures, processing,
+transcription, and insertion outcomes.
+
 Goal: understand real dictation reliability by stage.
 
 Tasks:
 
-- Capture `dictation_started` when a dictation attempt begins.
-- Capture `dictation_completed` after successful insertion.
+- Capture `dictation_attempted` at the manual/hotkey invocation boundary.
+  Completed.
+- Capture microphone-unavailable, recording-start, and missing-focus failures
+  before processing. Completed.
+- Capture `dictation_started` when processing begins. Completed.
+- Capture `dictation_completed` after successful insertion. Completed.
 - Capture `dictation_skipped` for no speech, unclear speech, and empty
-  transcript skips.
+  transcript skips. Completed.
 - Capture `dictation_failed` for transcription and insertion failures.
+  Completed.
 - Include safe provider id, target input kind, stage, error code, and buckets.
+  Completed.
 - Reuse local dictation record fields where possible instead of duplicating
   logic.
 
@@ -427,13 +493,19 @@ When implementation begins, update:
 - `docs/SECURITY.md` with final telemetry privacy rules.
 - Settings UI copy if the scope expands from usage analytics to error tracking.
 
-## Current Next Step
+## Validation Status And Next Step
 
-Continue Phase 2 with onboarding telemetry:
+Validated in PostHog Live Events on 2026-07-29:
 
-- `onboarding_started`
-- `onboarding_step_completed`
-- `onboarding_completed`
-- `onboarding_failed`
+- the consented local flow emitted `dictation_attempted`, `dictation_started`,
+  and `dictation_completed`
+- a fresh event contained `distribution_channel=development`
+- a live inspection exposed PostHog's automatic session-entry URL properties;
+  those properties are now denied and a fresh event verified that URL, host,
+  path, and referrer values are absent
+- production and development Tauri CSPs now allow the documented US and EU
+  PostHog ingestion hosts
 
-After onboarding, move to Phase 3 dictation reliability events.
+The remaining release check is to install the next GitHub and Microsoft Store
+artifacts and verify that each reports its matching `distribution_channel`.
+Do not add `onboarding_step_completed` until a dashboard question requires it.

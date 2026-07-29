@@ -10,6 +10,19 @@ import {
 
 import { OnboardingGate } from "./OnboardingFlow";
 
+const analyticsState = vi.hoisted(() => ({
+  analytics: {
+    capture: vi.fn(),
+    captureError: vi.fn(),
+    errorTelemetryEnabled: false,
+    setErrorTelemetryEnabled: vi.fn(),
+    setUsageAnalyticsEnabled: vi.fn(),
+    usageAnalyticsEnabled: false,
+  },
+}));
+
+vi.mock("@/lib/analytics/browser", () => analyticsState);
+
 vi.mock("./HotkeyReadinessStep", () => ({
   HotkeyReadinessStep: ({
     onBack,
@@ -54,6 +67,10 @@ function setMediaDevices(value: Partial<MediaDevices> | undefined) {
 
 describe("OnboardingGate", () => {
   beforeEach(() => {
+    analyticsState.analytics.capture.mockReset();
+    analyticsState.analytics.captureError.mockReset();
+    analyticsState.analytics.setErrorTelemetryEnabled.mockReset();
+    analyticsState.analytics.setUsageAnalyticsEnabled.mockReset();
     const track: MockTrack = {
       label: "Default microphone",
       stop: vi.fn(),
@@ -164,6 +181,13 @@ describe("OnboardingGate", () => {
         name: "Check microphone readiness",
       }),
     ).toBeInTheDocument();
+    expect(analyticsState.analytics.capture).toHaveBeenCalledWith(
+      "onboarding_started",
+      {
+        entry_point: "first_run",
+        mode: "local",
+      },
+    );
     expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
 
     await user.click(
@@ -279,7 +303,51 @@ describe("OnboardingGate", () => {
     await user.click(await screen.findByRole("button", { name: "Continue" }));
 
     expectTauriCommand(tauri, "complete_onboarding", undefined);
+    expect(analyticsState.analytics.capture).toHaveBeenCalledWith(
+      "onboarding_completed",
+      { mode: "local" },
+    );
     expect(await screen.findByText("Voice app shell")).toBeInTheDocument();
+  });
+
+  it("captures a sanitized onboarding save failure", async () => {
+    const user = userEvent.setup();
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "modeChoice",
+      selectedMode: null,
+    });
+    tauri.rejectCommand(
+      "save_onboarding_mode",
+      new Error("settings path failed"),
+    );
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Continue locally" }),
+    );
+
+    expect(analyticsState.analytics.capture).toHaveBeenCalledWith(
+      "onboarding_failed",
+      {
+        error_code: "settings_save_failed",
+        error_stage: "mode_choice",
+      },
+    );
+    expect(analyticsState.analytics.captureError).toHaveBeenCalledWith(
+      expect.any(Error),
+      {
+        code: "settings_save_failed",
+        handled: true,
+        stage: "onboarding",
+      },
+    );
   });
 
   it("resumes the microphone readiness step instead of dropping into the app shell", async () => {

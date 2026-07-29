@@ -7,6 +7,7 @@ describe("parseAppEnvironment", () => {
     expect(parseAppEnvironment({}, "development")).toEqual({
       appEnv: "development",
       cloudBaseUrl: null,
+      distributionChannel: "development",
       enableDebugUi: false,
       exposeProcessedAudioArtifacts: true,
       posthogHost: "https://us.i.posthog.com",
@@ -25,6 +26,7 @@ describe("parseAppEnvironment", () => {
     ).toEqual({
       appEnv: "production",
       cloudBaseUrl: null,
+      distributionChannel: "github",
       enableDebugUi: false,
       exposeProcessedAudioArtifacts: false,
       posthogHost: "https://us.i.posthog.com",
@@ -80,6 +82,31 @@ describe("parseAppEnvironment", () => {
       posthogHost: "https://eu.i.posthog.com",
       posthogPublicKey: "phc_public_project_key",
     });
+  });
+
+  it("accepts explicit GitHub and Microsoft Store distribution channels", () => {
+    expect(
+      parseAppEnvironment(
+        { VITE_DISTRIBUTION_CHANNEL: "microsoft_store" },
+        "production",
+      ),
+    ).toMatchObject({ distributionChannel: "microsoft_store" });
+
+    expect(
+      parseAppEnvironment(
+        { VITE_DISTRIBUTION_CHANNEL: "github" },
+        "production",
+      ),
+    ).toMatchObject({ distributionChannel: "github" });
+  });
+
+  it("rejects unknown distribution channels", () => {
+    expect(() =>
+      parseAppEnvironment(
+        { VITE_DISTRIBUTION_CHANNEL: "partner_center_preview" },
+        "production",
+      ),
+    ).toThrow(/VITE_DISTRIBUTION_CHANNEL/i);
   });
 
   it("requires https PostHog hosts outside local development", () => {

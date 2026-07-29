@@ -66,6 +66,15 @@ vi.mock("@/hooks/useMicrophoneSelection", () => ({
   useMicrophoneSelection: vi.fn(),
 }));
 
+const analytics = vi.hoisted(() => ({
+  capture: vi.fn(),
+  captureError: vi.fn(),
+}));
+
+vi.mock("@/lib/analytics/browser", () => ({
+  analytics,
+}));
+
 vi.mock("@/lib/tauri", () => ({
   SPEECH_PROVIDER_CHANGED_EVENT: "vaak://speech-provider-changed",
   SYSTEM_SETTINGS_CHANGED_EVENT: "vaak://system-settings-changed",
@@ -270,6 +279,8 @@ describe("useDictationSession", () => {
     startRecording.mockReset();
     stopRecording.mockReset();
     prepareRecording.mockReset();
+    analytics.capture.mockReset();
+    analytics.captureError.mockReset();
   });
 
   afterEach(() => {
@@ -293,6 +304,15 @@ describe("useDictationSession", () => {
     expect(result.current.focusedFieldError).toBe(
       "Selected microphone is unavailable. Choose another device or switch to automatic mode.",
     );
+    expect(analytics.capture).toHaveBeenCalledWith("dictation_attempted", {
+      trigger: "manual",
+    });
+    expect(analytics.capture).toHaveBeenCalledWith("dictation_failed", {
+      error_code: "microphone_unavailable",
+      error_stage: "recording",
+      provider_id: "openai",
+      trigger: "manual",
+    });
   });
 
   it("captures and seeds the backend target before manual dictation starts", async () => {
@@ -309,6 +329,50 @@ describe("useDictationSession", () => {
     expect(startRecording).toHaveBeenCalledTimes(1);
     expect(result.current.focusedField).toEqual(field);
     expect(result.current.activeMode).toBe("dictation");
+  });
+
+  it("captures an asynchronous recorder error once for the active attempt", async () => {
+    useAvailableMicrophone();
+    let recorderError: string | null = null;
+    vi.mocked(useAudioRecorder).mockImplementation(() => ({
+      activeMicrophone: null,
+      audioBlob: null,
+      audioLevel: 0,
+      audioUrl: null,
+      captureAnalysis: null,
+      elapsedMs: 0,
+      error: recorderError,
+      prepare: prepareRecording,
+      reset: vi.fn(),
+      start: startRecording,
+      status: recorderError ? "error" : "idle",
+      stop: stopRecording,
+      startupMetrics: null,
+    }));
+
+    const { result, rerender } = renderHook(() => useDictationSession());
+
+    await act(async () => {
+      await result.current.startManualDictation();
+    });
+
+    recorderError = "Microphone stream ended.";
+    rerender();
+    rerender();
+
+    await waitFor(() => {
+      expect(analytics.capture).toHaveBeenCalledWith("dictation_failed", {
+        error_code: "recording_failed",
+        error_stage: "recording",
+        provider_id: "openai",
+        trigger: "manual",
+      });
+    });
+    expect(
+      analytics.capture.mock.calls.filter(
+        ([eventName]) => eventName === "dictation_failed",
+      ),
+    ).toHaveLength(1);
   });
 
   it("does not apply captured focus state after being disabled mid-start", async () => {
@@ -436,6 +500,9 @@ describe("useDictationSession", () => {
     expect(startRecording).toHaveBeenCalledTimes(1);
     expect(result.current.activeMode).toBe("dictation");
     expect(result.current.focusedField).toEqual(field);
+    expect(analytics.capture).toHaveBeenCalledWith("dictation_attempted", {
+      trigger: "hotkey",
+    });
   });
 
   it("does not start recording when disabled during async hotkey startup", async () => {
@@ -719,6 +786,15 @@ describe("useDictationSession", () => {
     expect(result.current.focusedFieldError).toBe(
       "No writable text field found for dictation.",
     );
+    expect(analytics.capture).toHaveBeenCalledWith("dictation_attempted", {
+      trigger: "hotkey",
+    });
+    expect(analytics.capture).toHaveBeenCalledWith("dictation_failed", {
+      error_code: "focus_target_unavailable",
+      error_stage: "focus",
+      provider_id: "openai",
+      trigger: "hotkey",
+    });
   });
 
   it("starts AssemblyAI streaming with the first pcm chunk and stores final text", async () => {

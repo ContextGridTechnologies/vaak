@@ -3,6 +3,7 @@ import { RefreshCwIcon } from "lucide-react";
 
 import { PermissionCallout } from "@/components/app";
 import { Button } from "@/components/ui/button";
+import { analytics } from "@/lib/analytics/browser";
 import {
   completeOnboarding,
   getOnboardingState,
@@ -92,7 +93,20 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
     try {
       const savedState = await saveOnboardingMode(mode);
       setState(savedState);
+      analytics.capture("onboarding_started", {
+        entry_point: "first_run",
+        mode,
+      });
     } catch (err) {
+      analytics.capture("onboarding_failed", {
+        error_code: "settings_save_failed",
+        error_stage: "mode_choice",
+      });
+      analytics.captureError(err, {
+        code: "settings_save_failed",
+        handled: true,
+        stage: "onboarding",
+      });
       setError(err instanceof Error ? err.message : "Unable to save setup mode.");
     } finally {
       setSavingMode(null);
@@ -106,6 +120,15 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
       const savedState = await saveOnboardingStep(step);
       setState(savedState);
     } catch (err) {
+      analytics.capture("onboarding_failed", {
+        error_code: "settings_save_failed",
+        error_stage: "step_change",
+      });
+      analytics.captureError(err, {
+        code: "settings_save_failed",
+        handled: true,
+        stage: "onboarding",
+      });
       setError(
         err instanceof Error ? err.message : "Unable to update setup step.",
       );
@@ -118,7 +141,19 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
     try {
       const savedState = await completeOnboarding();
       setState(savedState);
+      analytics.capture("onboarding_completed", {
+        mode: savedState.selectedMode ?? "local",
+      });
     } catch (err) {
+      analytics.capture("onboarding_failed", {
+        error_code: "settings_save_failed",
+        error_stage: "completion",
+      });
+      analytics.captureError(err, {
+        code: "settings_save_failed",
+        handled: true,
+        stage: "onboarding",
+      });
       setError(
         err instanceof Error ? err.message : "Unable to finish setup.",
       );

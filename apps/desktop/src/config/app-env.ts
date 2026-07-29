@@ -1,8 +1,13 @@
 export type AppEnvironmentName = "development" | "production";
+export type DistributionChannel =
+  | "development"
+  | "github"
+  | "microsoft_store";
 
 export type AppEnvironment = {
   appEnv: AppEnvironmentName;
   cloudBaseUrl: string | null;
+  distributionChannel: DistributionChannel;
   enableDebugUi: boolean;
   exposeProcessedAudioArtifacts: boolean;
   posthogHost: string;
@@ -31,6 +36,10 @@ export function parseAppEnvironment(
     readOptionalString(raw, "VITE_ENABLE_DEBUG_UI"),
     "VITE_ENABLE_DEBUG_UI",
   );
+  const distributionChannel = parseDistributionChannel(
+    readOptionalString(raw, "VITE_DISTRIBUTION_CHANNEL"),
+    appEnv,
+  );
   const posthogPublicKey = readOptionalString(raw, "VITE_POSTHOG_PUBLIC_KEY");
   const posthogHost = parseServiceUrl(
     readOptionalString(raw, "VITE_POSTHOG_HOST") ?? DEFAULT_POSTHOG_HOST,
@@ -45,12 +54,34 @@ export function parseAppEnvironment(
   return {
     appEnv,
     cloudBaseUrl,
+    distributionChannel,
     enableDebugUi,
     exposeProcessedAudioArtifacts:
       shouldExposeProcessedAudioArtifacts(appEnv),
     posthogHost,
     posthogPublicKey,
   };
+}
+
+function parseDistributionChannel(
+  value: string | null,
+  appEnv: AppEnvironmentName,
+): DistributionChannel {
+  if (value === null) {
+    return appEnv === "development" ? "development" : "github";
+  }
+
+  if (
+    value === "development" ||
+    value === "github" ||
+    value === "microsoft_store"
+  ) {
+    return value;
+  }
+
+  throw new Error(
+    "VITE_DISTRIBUTION_CHANNEL must be development, github, or microsoft_store",
+  );
 }
 
 export function shouldExposeProcessedAudioArtifacts(

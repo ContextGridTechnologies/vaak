@@ -6,4 +6,5 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_DEBUG_UI?: string;
   readonly VITE_POSTHOG_HOST?: string;
   readonly VITE_POSTHOG_PUBLIC_KEY?: string;
+  readonly VITE_DISTRIBUTION_CHANNEL?: string;
 }

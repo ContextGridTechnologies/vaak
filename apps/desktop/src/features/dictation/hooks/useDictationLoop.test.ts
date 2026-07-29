@@ -26,6 +26,11 @@ const {
   transcribeRecording: vi.fn(),
 }));
 
+const analytics = vi.hoisted(() => ({
+  capture: vi.fn(),
+  captureError: vi.fn(),
+}));
+
 vi.mock("@/lib/tauri", () => ({
   SPEECH_PROVIDER_CHANGED_EVENT: "vaak://speech-provider-changed",
   SYSTEM_SETTINGS_CHANGED_EVENT: "vaak://system-settings-changed",
@@ -38,6 +43,10 @@ vi.mock("@/lib/tauri", () => ({
   saveDictationRecord,
   targetSnapshotFromFocusedField,
   transcribeRecording,
+}));
+
+vi.mock("@/lib/analytics/browser", () => ({
+  analytics,
 }));
 
 const { appEnvironment } = vi.hoisted(() => ({
@@ -119,6 +128,8 @@ function StrictModeWrapper({ children }: { children: ReactNode }) {
 describe("useDictationLoop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    analytics.capture.mockReset();
+    analytics.captureError.mockReset();
     getSelectedSpeechProvider.mockResolvedValue("openai");
     getSystemSettings.mockResolvedValue({
       dictationMode: "streaming",
@@ -505,6 +516,22 @@ describe("useDictationLoop", () => {
     await waitFor(() => {
       expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello");
     });
+    expect(analytics.capture).toHaveBeenCalledWith(
+      "dictation_started",
+      expect.objectContaining({
+        provider_id: "openai",
+        trigger: "hotkey",
+      }),
+    );
+    expect(analytics.capture).toHaveBeenCalledWith(
+      "dictation_completed",
+      expect.objectContaining({
+        insertion_method: "send_input",
+        model_id: "universal-3-pro",
+        provider_id: "assemblyai",
+        trigger: "hotkey",
+      }),
+    );
     expect(saveDictationRecord).toHaveBeenCalledWith(
       expect.objectContaining({
         trigger: "hotkey",
@@ -764,6 +791,13 @@ describe("useDictationLoop", () => {
     });
 
     expect(transcribeRecording).not.toHaveBeenCalled();
+    expect(analytics.capture).toHaveBeenCalledWith(
+      "dictation_skipped",
+      expect.objectContaining({
+        provider_id: "openai",
+        skip_reason: "low_volume",
+      }),
+    );
     expect(saveDictationRecord).toHaveBeenCalledWith(
       expect.objectContaining({
         timeline: expect.objectContaining({
@@ -1945,6 +1979,23 @@ describe("useDictationLoop", () => {
       "OpenAI: provider_upstream_failed: provider unavailable",
     );
     expect(insertIntoActiveTarget).not.toHaveBeenCalled();
+    expect(analytics.capture).toHaveBeenCalledWith(
+      "dictation_failed",
+      expect.objectContaining({
+        error_code: "provider_upstream_failed",
+        error_stage: "transcription",
+        provider_id: "openai",
+      }),
+    );
+    expect(analytics.captureError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "provider_upstream_failed" }),
+      {
+        code: "provider_upstream_failed",
+        handled: true,
+        providerId: "openai",
+        stage: "transcription",
+      },
+    );
     expect(saveDictationRecord).toHaveBeenCalledWith(
       expect.objectContaining({
         timeline: expect.objectContaining({
@@ -2008,6 +2059,19 @@ describe("useDictationLoop", () => {
 
     expect(insertIntoActiveTarget).toHaveBeenCalledTimes(1);
     expect(insertIntoActiveTarget).toHaveBeenCalledWith("hello");
+    expect(analytics.capture).toHaveBeenCalledWith(
+      "dictation_failed",
+      expect.objectContaining({
+        error_code: "insertion_failed",
+        error_stage: "insertion",
+      }),
+    );
+    expect(analytics.captureError).toHaveBeenCalledWith(expect.any(Error), {
+      code: "insertion_failed",
+      handled: true,
+      providerId: "openai",
+      stage: "insertion",
+    });
     expect(saveDictationRecord).toHaveBeenCalledWith(
       expect.objectContaining({
         timeline: expect.objectContaining({

@@ -6,12 +6,15 @@ export type AnalyticsEventName =
   | "error_captured"
   | "onboarding_started"
   | "onboarding_completed"
+  | "onboarding_failed"
   | "provider_configured"
   | "provider_test_started"
   | "provider_test_completed"
+  | "dictation_attempted"
   | "dictation_started"
   | "dictation_completed"
   | "dictation_failed"
+  | "dictation_skipped"
   | "settings_opened"
   | "setting_changed"
   | "app_version_seen";
@@ -27,23 +30,32 @@ export type ErrorTelemetryProperties = {
 
 type PostHogClient = {
   capture: (eventName: string, properties?: AnalyticsProperties) => void;
+  identify?: (distinctId: string) => void;
   init: (
     publicKey: string,
     options: {
+      advanced_disable_flags: boolean;
       api_host: string;
       autocapture: boolean;
+      capture_dead_clicks: boolean;
+      capture_exceptions: boolean;
+      capture_heatmaps: boolean;
+      capture_pageleave: boolean;
       capture_pageview: boolean;
+      capture_performance: boolean;
       disable_session_recording: boolean;
-      loaded: (client: PostHogLoadedClient) => void;
+      disable_surveys: boolean;
+      person_profiles: "identified_only";
       persistence: "localStorage";
+      property_denylist: string[];
+      rageclick: boolean;
+      respect_dnt: boolean;
     },
   ) => unknown;
   opt_in_capturing: () => void;
   opt_out_capturing: () => void;
-};
-
-type PostHogLoadedClient = {
-  opt_in_capturing: () => void;
+  register?: (properties: AnalyticsProperties) => void;
+  reset?: () => void;
 };
 
 export type Analytics = {
@@ -56,6 +68,7 @@ export type Analytics = {
   enabled: boolean;
   errorTelemetryEnabled: boolean;
   setErrorTelemetryEnabled: (enabled: boolean) => void;
+  setAuthenticatedUserId: (userId: string | null) => void;
   setTelemetryEnabled: (enabled: boolean) => void;
   setUsageAnalyticsEnabled: (enabled: boolean) => void;
   usageAnalyticsEnabled: boolean;
@@ -63,7 +76,8 @@ export type Analytics = {
 
 type CreateAnalyticsOptions = {
   appVersion: string;
-  environment: AppEnvironment;
+  environment: Omit<AppEnvironment, "distributionChannel"> &
+    Partial<Pick<AppEnvironment, "distributionChannel">>;
   posthog: PostHogClient;
   storage: Storage;
 };
@@ -78,6 +92,93 @@ const WINDOWS_PATH_PATTERN =
   /\b[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*/g;
 const UNIX_PATH_PATTERN =
   /(?<!\w)\/(?:Users|home|var|tmp|private|Volumes)\/[^\s"'<>]+/g;
+const POSTHOG_PROPERTY_DENYLIST = [
+  "$browser",
+  "$browser_version",
+  "$current_url",
+  "$device_type",
+  "$host",
+  "$os",
+  "$os_version",
+  "$pathname",
+  "$raw_user_agent",
+  "$referrer",
+  "$referring_domain",
+  "$screen_height",
+  "$screen_width",
+  "$session_entry_host",
+  "$session_entry_pathname",
+  "$session_entry_referrer",
+  "$session_entry_referring_domain",
+  "$session_entry_url",
+  "$session_id",
+  "$timezone",
+  "$timezone_offset",
+  "$viewport_height",
+  "$viewport_width",
+  "$window_id",
+];
+const EVENT_PROPERTY_ALLOWLIST: Record<
+  AnalyticsEventName,
+  readonly string[]
+> = {
+  app_installed_or_first_run: ["platform"],
+  app_opened: ["platform"],
+  app_version_seen: ["platform"],
+  dictation_attempted: ["trigger"],
+  dictation_completed: [
+    "character_count_bucket",
+    "insertion_duration_bucket",
+    "insertion_method",
+    "model_id",
+    "provider_id",
+    "target_input_kind",
+    "total_duration_bucket",
+    "transcription_duration_bucket",
+    "trigger",
+  ],
+  dictation_failed: [
+    "duration_bucket",
+    "error_code",
+    "error_stage",
+    "provider_id",
+    "target_input_kind",
+    "trigger",
+  ],
+  dictation_skipped: [
+    "duration_bucket",
+    "provider_id",
+    "skip_reason",
+    "target_input_kind",
+    "trigger",
+  ],
+  dictation_started: [
+    "dictation_mode",
+    "provider_id",
+    "target_input_kind",
+    "trigger",
+  ],
+  error_captured: [
+    "error_code",
+    "error_stage",
+    "handled",
+    "provider_id",
+  ],
+  onboarding_completed: ["duration_bucket", "mode", "provider_id"],
+  onboarding_failed: ["error_code", "error_stage", "step_id"],
+  onboarding_started: ["entry_point", "mode"],
+  provider_configured: ["provider_family", "provider_id", "source"],
+  provider_test_completed: [
+    "duration_bucket",
+    "error_code",
+    "provider_id",
+    "source",
+    "status",
+  ],
+  provider_test_started: ["provider_id", "source"],
+  setting_changed: ["enabled", "setting_id"],
+  settings_opened: ["section"],
+};
 
 export function getUsageAnalyticsEnabledPreference(storage: Storage): boolean {
   return storage.getItem(USAGE_ANALYTICS_ENABLED_KEY) === "true";
@@ -114,9 +215,13 @@ export function createAnalytics({
     environment.posthogPublicKey !== null &&
     getErrorTelemetryEnabledPreference(storage);
   let initialized = false;
+  let authenticatedUserId: string | null = null;
   const baseProperties = {
     app_env: environment.appEnv,
     app_version: appVersion,
+    ...(environment.distributionChannel
+      ? { distribution_channel: environment.distributionChannel }
+      : {}),
   };
 
   function initializePostHog(): void {
@@ -126,18 +231,26 @@ export function createAnalytics({
 
     tryPostHogCall(() => {
       posthog.init(environment.posthogPublicKey!, {
+        advanced_disable_flags: true,
         api_host: environment.posthogHost,
         autocapture: false,
+        capture_dead_clicks: false,
+        capture_exceptions: false,
+        capture_heatmaps: false,
+        capture_pageleave: false,
         capture_pageview: false,
+        capture_performance: false,
         disable_session_recording: true,
-        loaded: (client) => {
-          tryPostHogCall(() => {
-            client.opt_in_capturing();
-          });
-        },
+        disable_surveys: true,
+        person_profiles: "identified_only",
         persistence: "localStorage",
+        property_denylist: POSTHOG_PROPERTY_DENYLIST,
+        rageclick: false,
+        respect_dnt: true,
       });
+      posthog.register?.({ $geoip_disable: true });
       initialized = true;
+      applyAuthenticatedIdentity();
     });
   }
 
@@ -163,7 +276,9 @@ export function createAnalytics({
     tryPostHogCall(() => {
       posthog.capture(eventName, {
         ...sanitizeAnalyticsProperties(baseProperties),
-        ...sanitizeAnalyticsProperties(properties),
+        ...sanitizeAnalyticsProperties(
+          allowlistedEventProperties(eventName, properties),
+        ),
       });
     });
   }
@@ -189,13 +304,14 @@ export function createAnalytics({
       return;
     }
 
-    const errorMessage = normalizeAnalyticsErrorMessage(error);
+    // vaak: raw errors stay local; denylist redaction cannot prove that
+    // provider messages contain no dictated content.
+    void error;
     tryPostHogCall(() => {
       posthog.capture("error_captured", {
         ...sanitizeAnalyticsProperties(baseProperties),
         ...sanitizeAnalyticsProperties({
           error_code: properties.code,
-          error_message: errorMessage,
           error_stage: properties.stage,
           handled: properties.handled,
           provider_id: properties.providerId ?? null,
@@ -220,6 +336,38 @@ export function createAnalytics({
       getErrorTelemetryEnabledPreference(storage);
 
     syncPostHogCaptureState();
+  }
+
+  function setAuthenticatedUserId(userId: string | null): void {
+    if (userId === null) {
+      if (authenticatedUserId !== null && initialized) {
+        tryPostHogCall(() => {
+          posthog.reset?.();
+        });
+      }
+      authenticatedUserId = null;
+      return;
+    }
+
+    const normalizedUserId = userId.trim();
+    if (!normalizedUserId || normalizedUserId === authenticatedUserId) {
+      return;
+    }
+
+    authenticatedUserId = normalizedUserId;
+    if (initialized) {
+      applyAuthenticatedIdentity();
+    }
+  }
+
+  function applyAuthenticatedIdentity(): void {
+    if (authenticatedUserId === null) {
+      return;
+    }
+
+    tryPostHogCall(() => {
+      posthog.identify?.(authenticatedUserId!);
+    });
   }
 
   function syncPostHogCaptureState(): void {
@@ -251,6 +399,7 @@ export function createAnalytics({
       return errorTelemetryEnabled;
     },
     setErrorTelemetryEnabled,
+    setAuthenticatedUserId,
     setTelemetryEnabled: setUsageAnalyticsEnabled,
     setUsageAnalyticsEnabled,
     get usageAnalyticsEnabled() {
@@ -287,25 +436,20 @@ function sanitizeAnalyticsProperties(
   return sanitized;
 }
 
+function allowlistedEventProperties(
+  eventName: AnalyticsEventName,
+  properties: AnalyticsProperties,
+): AnalyticsProperties {
+  const allowedNames = EVENT_PROPERTY_ALLOWLIST[eventName];
+  return Object.fromEntries(
+    Object.entries(properties).filter(([name]) => allowedNames.includes(name)),
+  );
+}
+
 function sanitizeAnalyticsString(value: string): string {
   return value
     .replace(SECRET_VALUE_PATTERN, "[redacted_secret]")
     .replace(WINDOWS_PATH_PATTERN, "[redacted_path]")
     .replace(UNIX_PATH_PATTERN, "[redacted_path]")
     .slice(0, MAX_ANALYTICS_STRING_LENGTH);
-}
-
-function normalizeAnalyticsErrorMessage(error: unknown): string {
-  if (typeof error === "string") {
-    return error;
-  }
-
-  if (error && typeof error === "object") {
-    const maybeMessage = (error as { message?: unknown }).message;
-    if (typeof maybeMessage === "string") {
-      return maybeMessage;
-    }
-  }
-
-  return "Unknown error";
 }

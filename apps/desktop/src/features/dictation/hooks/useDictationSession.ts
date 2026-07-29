@@ -9,6 +9,7 @@ import {
 
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useMicrophoneSelection } from "@/hooks/useMicrophoneSelection";
+import { analytics } from "@/lib/analytics/browser";
 import {
   currentDesktopPlatform,
   defaultHotkeyBindingsForPlatform,
@@ -171,10 +172,47 @@ export function useDictationSession({
   const dictationModeRef = useRef<DictationMode>(DEFAULT_DICTATION_MODE);
   const streamingSuppressedRef = useRef(false);
   const enabledRef = useRef(enabled);
+  const startFailureCapturedRef = useRef(false);
 
   useEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
+
+  const captureAttempt = useCallback(
+    (trigger: Exclude<DictationTrigger, null>) => {
+      if (!processingEnabled) {
+        return;
+      }
+      startFailureCapturedRef.current = false;
+      analytics.capture("dictation_attempted", {
+        trigger,
+      });
+    },
+    [processingEnabled],
+  );
+
+  const captureStartFailure = useCallback(
+    (
+      trigger: Exclude<DictationTrigger, null>,
+      stage: "focus" | "recording",
+      code:
+        | "focus_target_unavailable"
+        | "microphone_unavailable"
+        | "recording_failed",
+    ) => {
+      if (!processingEnabled || startFailureCapturedRef.current) {
+        return;
+      }
+      startFailureCapturedRef.current = true;
+      analytics.capture("dictation_failed", {
+        error_code: code,
+        error_stage: stage,
+        provider_id: selectedSpeechProviderRef.current ?? "unknown",
+        trigger,
+      });
+    },
+    [processingEnabled],
+  );
 
   const appendStreamingEvents = useCallback((events?: ProviderTimelineEvent[]) => {
     if (!events || events.length === 0) {
@@ -458,6 +496,13 @@ export function useDictationSession({
   const isRecording = status === "recording";
   const statusLabel = getStatusLabel(status);
   const durationLabel = elapsedMs > 0 ? formatDuration(elapsedMs) : "0.0s";
+
+  useEffect(() => {
+    if (error && dictationTrigger) {
+      captureStartFailure(dictationTrigger, "recording", "recording_failed");
+    }
+  }, [captureStartFailure, dictationTrigger, error]);
+
   const deviceOptions = useMemo(
     () => devices.filter((device) => device.deviceId !== "default"),
     [devices],
@@ -509,6 +554,7 @@ export function useDictationSession({
           manualUnavailableMessage ??
             "Selected microphone is unavailable. Choose another device or switch to automatic mode.",
         );
+        captureStartFailure(trigger, "recording", "microphone_unavailable");
         return;
       }
 
@@ -519,6 +565,7 @@ export function useDictationSession({
         } catch (err) {
           if (enabledRef.current) {
             setFocusedFieldError(`Recording failed: ${normalizeError(err)}`);
+            captureStartFailure(trigger, "recording", "recording_failed");
           }
         }
         return;
@@ -531,6 +578,7 @@ export function useDictationSession({
         } catch (err) {
           if (enabledRef.current) {
             setFocusedFieldError(`Recording failed: ${normalizeError(err)}`);
+            captureStartFailure(trigger, "recording", "recording_failed");
           }
         }
         return;
@@ -553,12 +601,15 @@ export function useDictationSession({
       }
 
       if (recordingResult.status === "rejected") {
+        captureStartFailure(trigger, "recording", "recording_failed");
         setFocusedFieldError((current) => {
           const recordingError = normalizeError(recordingResult.reason);
           return current
             ? `${current} Recording failed: ${recordingError}`
             : `Recording failed: ${recordingError}`;
         });
+      } else if (fieldResult.status === "rejected") {
+        captureStartFailure(trigger, "focus", "focus_target_unavailable");
       }
     },
     [
@@ -568,6 +619,7 @@ export function useDictationSession({
       manualUnavailableMessage,
       processingEnabled,
       cleanupStreamingSessions,
+      captureStartFailure,
       resetStreamingState,
       start,
     ],
@@ -600,8 +652,9 @@ export function useDictationSession({
 
     streamingSuppressedRef.current = false;
     setActiveMode("dictation");
+    captureAttempt("manual");
     await startWithFocusCapture(undefined, "manual");
-  }, [enabled, startWithFocusCapture]);
+  }, [captureAttempt, enabled, startWithFocusCapture]);
 
   const stopManualRecording = useCallback(() => {
     if (!enabled) {
@@ -812,6 +865,7 @@ export function useDictationSession({
 
           if (payload.mode === "dictation") {
               if (payload.phase === "start") {
+                captureAttempt("hotkey");
                 streamingSuppressedRef.current = false;
                 setActiveMode("dictation");
                 if (payload.field) {
@@ -823,6 +877,11 @@ export function useDictationSession({
                   setFocusedFieldError(
                   payload.error || "No writable text field found for dictation.",
                 );
+                  captureStartFailure(
+                    "hotkey",
+                    "focus",
+                    "focus_target_unavailable",
+                  );
               }
               return;
             }
@@ -880,6 +939,8 @@ export function useDictationSession({
       }
     };
   }, [
+    captureAttempt,
+    captureStartFailure,
     desktopHotkeysSupported,
     start,
     startWithFocusCapture,

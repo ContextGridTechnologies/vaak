@@ -66,6 +66,13 @@ Use `VITE_POSTHOG_HOST` for the selected PostHog region, for example
 When a PostHog key is bundled, Vaak still defaults usage analytics and crash
 reports to off until the user opts in from Settings.
 
+For local development, keep the real values in the ignored
+`apps/desktop/.env.development.local` file. Release workflows read
+`VITE_POSTHOG_PUBLIC_KEY` and `VITE_POSTHOG_HOST` from GitHub Actions secrets;
+do not commit a real environment file. The workflows set
+`VITE_DISTRIBUTION_CHANNEL` to `github` or `microsoft_store` for the matching
+artifact.
+
 Production-safe defaults:
 
 ```powershell

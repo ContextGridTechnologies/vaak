@@ -132,6 +132,8 @@ describe("Tauri security configuration", () => {
     expect(csp).toContain("media-src 'self' blob: asset: http://asset.localhost");
     expect(csp).toContain("https://api.openai.com");
     expect(csp).toContain("https://*.openai.azure.com");
+    expect(csp).toContain("https://us.i.posthog.com");
+    expect(csp).toContain("https://eu.i.posthog.com");
     expect(csp).toContain("script-src 'self'");
     expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
     expect(csp).not.toContain("'unsafe-eval'");
@@ -141,6 +143,8 @@ describe("Tauri security configuration", () => {
     expect(devCsp).toContain("ws://localhost:1421");
     expect(devCsp).toContain("http://127.0.0.1:1420");
     expect(devCsp).toContain("ws://127.0.0.1:1421");
+    expect(devCsp).toContain("https://us.i.posthog.com");
+    expect(devCsp).toContain("https://eu.i.posthog.com");
     expect(devCsp).toContain("script-src 'self' 'unsafe-eval' 'unsafe-inline'");
     expect(config.app.security?.capabilities).toEqual([
       "main",
@@ -170,6 +174,18 @@ describe("Tauri security configuration", () => {
 });
 
 describe("Desktop release metadata", () => {
+  it("keeps the npm lockfile version aligned with the desktop package", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    ) as { version: string };
+    const packageLock = JSON.parse(
+      readFileSync(join(process.cwd(), "package-lock.json"), "utf8"),
+    ) as { version: string; packages: { "": { version: string } } };
+
+    expect(packageLock.version).toBe(packageJson.version);
+    expect(packageLock.packages[""].version).toBe(packageJson.version);
+  });
+
   it("keeps the Microsoft Store package identity in its manifest", () => {
     const manifest = readFileSync(
       join(process.cwd(), "store", "Package.appxmanifest"),
@@ -211,7 +227,7 @@ describe("Desktop release metadata", () => {
     expect(cargoToml).toContain('license = "MIT"');
     expect(cargoToml).toContain("tauri-plugin-updater");
     expect(cargoToml).toContain("tauri-plugin-process");
-    expect(libRs).toContain("tauri_plugin_updater::Builder::new().build()");
+    expect(libRs).not.toContain("tauri_plugin_updater::Builder::new().build()");
     expect(libRs).toContain("tauri_plugin_process::init()");
     expect(cargoToml).toContain("[profile.release]");
     expect(cargoToml).toContain('codegen-units = 1');

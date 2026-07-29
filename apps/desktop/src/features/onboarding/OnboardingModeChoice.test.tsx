@@ -1,11 +1,32 @@
 import { screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderApp } from "@/test/render";
 
 import { OnboardingModeChoice } from "./OnboardingModeChoice";
 
+const analyticsState = vi.hoisted(() => ({
+  analytics: {
+    captureAppOpened: vi.fn(),
+    errorTelemetryEnabled: false,
+    setErrorTelemetryEnabled: vi.fn(),
+    setUsageAnalyticsEnabled: vi.fn(),
+    usageAnalyticsEnabled: false,
+  },
+}));
+
+vi.mock("@/lib/analytics/browser", () => analyticsState);
+
 describe("OnboardingModeChoice", () => {
+  beforeEach(() => {
+    analyticsState.analytics.errorTelemetryEnabled = false;
+    analyticsState.analytics.usageAnalyticsEnabled = false;
+    analyticsState.analytics.captureAppOpened.mockReset();
+    analyticsState.analytics.setErrorTelemetryEnabled.mockReset();
+    analyticsState.analytics.setUsageAnalyticsEnabled.mockReset();
+  });
+
   it("uses the compact onboarding shell spacing", () => {
     renderApp(
       <OnboardingModeChoice
@@ -60,5 +81,35 @@ describe("OnboardingModeChoice", () => {
     expect(
       screen.getByRole("heading", { name: "Choose how to use Vaak" }),
     ).toBeInTheDocument();
+  });
+
+  it("offers explicit anonymous analytics consent without blocking local setup", async () => {
+    const user = userEvent.setup();
+
+    renderApp(
+      <OnboardingModeChoice
+        error={null}
+        savingMode={null}
+        onSelectMode={() => undefined}
+      />,
+    );
+
+    const consent = screen.getByRole("switch", {
+      name: "Share anonymous analytics and diagnostics",
+    });
+    expect(consent).not.toBeChecked();
+
+    await user.click(consent);
+
+    expect(analyticsState.analytics.setUsageAnalyticsEnabled).toHaveBeenCalledWith(
+      true,
+    );
+    expect(analyticsState.analytics.setErrorTelemetryEnabled).toHaveBeenCalledWith(
+      true,
+    );
+    expect(analyticsState.analytics.captureAppOpened).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole("button", { name: "Continue locally" }),
+    ).toBeEnabled();
   });
 });

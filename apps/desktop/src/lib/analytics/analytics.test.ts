@@ -81,6 +81,7 @@ describe("analytics", () => {
       init: vi.fn(),
       opt_in_capturing: vi.fn(),
       opt_out_capturing: vi.fn(),
+      register: vi.fn(),
     };
 
     const analytics = createAnalytics({
@@ -101,14 +102,38 @@ describe("analytics", () => {
     expect(posthog.init).toHaveBeenCalledWith(
       "phc_public_project_key",
       expect.objectContaining({
+        advanced_disable_flags: true,
         api_host: "https://eu.i.posthog.com",
         autocapture: false,
+        capture_dead_clicks: false,
+        capture_exceptions: false,
+        capture_heatmaps: false,
         capture_pageview: false,
+        capture_pageleave: false,
+        capture_performance: false,
         disable_session_recording: true,
+        disable_surveys: true,
+        person_profiles: "identified_only",
         persistence: "localStorage",
+        property_denylist: expect.arrayContaining([
+          "$browser",
+          "$current_url",
+          "$raw_user_agent",
+          "$session_entry_host",
+          "$session_entry_pathname",
+          "$session_entry_referrer",
+          "$session_entry_referring_domain",
+          "$session_entry_url",
+          "$session_id",
+        ]),
+        rageclick: false,
+        respect_dnt: true,
       }),
     );
     expect(posthog.opt_in_capturing).toHaveBeenCalled();
+    expect(posthog.register).toHaveBeenCalledWith({
+      $geoip_disable: true,
+    });
   });
 
   it("tracks first run only once per local install", () => {
@@ -150,6 +175,98 @@ describe("analytics", () => {
       app_version: "0.1.0",
     });
     expect(posthog.capture).toHaveBeenCalledTimes(3);
+  });
+
+  it("includes the desktop distribution channel on captured events", () => {
+    const posthog = {
+      capture: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+    };
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        distributionChannel: "microsoft_store",
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: "phc_public_project_key",
+      },
+      posthog,
+      storage: storageWith({ "vaak.telemetry.usage.enabled": "true" }),
+    });
+
+    analytics.capture("app_opened");
+
+    expect(posthog.capture).toHaveBeenCalledWith("app_opened", {
+      app_env: "production",
+      app_version: "0.1.0",
+      distribution_channel: "microsoft_store",
+    });
+  });
+
+  it("merges anonymous activity on login and resets identity on logout", () => {
+    const posthog = {
+      capture: vi.fn(),
+      identify: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+      reset: vi.fn(),
+    };
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: "phc_public_project_key",
+      },
+      posthog,
+      storage: storageWith({ "vaak.telemetry.usage.enabled": "true" }),
+    });
+
+    analytics.setAuthenticatedUserId("user_123");
+    analytics.setAuthenticatedUserId(null);
+
+    expect(posthog.identify).toHaveBeenCalledWith("user_123");
+    expect(posthog.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies a known authenticated user when telemetry is enabled later", () => {
+    const posthog = {
+      capture: vi.fn(),
+      identify: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+      reset: vi.fn(),
+    };
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: "phc_public_project_key",
+      },
+      posthog,
+      storage: storageWith(),
+    });
+
+    analytics.setAuthenticatedUserId("user_123");
+    expect(posthog.identify).not.toHaveBeenCalled();
+
+    analytics.setUsageAnalyticsEnabled(true);
+
+    expect(posthog.identify).toHaveBeenCalledWith("user_123");
   });
 
   it("applies telemetry preference changes during the current app session", () => {
@@ -195,7 +312,7 @@ describe("analytics", () => {
     });
   });
 
-  it("sanitizes event properties before sending them to PostHog", () => {
+  it("drops properties outside the event allowlist", () => {
     const posthog = {
       capture: vi.fn(),
       init: vi.fn(),
@@ -217,29 +334,59 @@ describe("analytics", () => {
     });
 
     analytics.capture(
-      "app_opened",
+      "setting_changed",
       {
-        allowedBoolean: true,
-        allowedNumber: 7,
-        allowedString: "provider",
-        allowedNull: null,
+        enabled: true,
+        setting_id: "usage_analytics",
+        transcript: "must never leave the app",
         unsafeArray: ["transcript"],
         unsafeObject: { transcript: "secret" },
         unsafeUndefined: undefined,
       } as unknown as Record<string, unknown>,
     );
 
-    expect(posthog.capture).toHaveBeenCalledWith("app_opened", {
+    expect(posthog.capture).toHaveBeenCalledWith("setting_changed", {
       app_env: "production",
       app_version: "0.1.0",
-      allowedBoolean: true,
-      allowedNumber: 7,
-      allowedString: "provider",
-      allowedNull: null,
+      enabled: true,
+      setting_id: "usage_analytics",
     });
   });
 
-  it("redacts sensitive diagnostic strings before sending telemetry", () => {
+  it("does not attach an unresolved provider to a dictation attempt", () => {
+    const posthog = {
+      capture: vi.fn(),
+      init: vi.fn(),
+      opt_in_capturing: vi.fn(),
+      opt_out_capturing: vi.fn(),
+    };
+    const analytics = createAnalytics({
+      appVersion: "0.1.0",
+      environment: {
+        appEnv: "production",
+        cloudBaseUrl: null,
+        enableDebugUi: false,
+        exposeProcessedAudioArtifacts: false,
+        posthogHost: "https://us.i.posthog.com",
+        posthogPublicKey: "phc_public_project_key",
+      },
+      posthog,
+      storage: storageWith({ "vaak.telemetry.usage.enabled": "true" }),
+    });
+
+    analytics.capture("dictation_attempted", {
+      provider_id: "unknown",
+      trigger: "manual",
+    });
+
+    expect(posthog.capture).toHaveBeenCalledWith("dictation_attempted", {
+      app_env: "production",
+      app_version: "0.1.0",
+      trigger: "manual",
+    });
+  });
+
+  it("redacts sensitive values even on allowed properties", () => {
     const posthog = {
       capture: vi.fn(),
       init: vi.fn(),
@@ -262,18 +409,16 @@ describe("analytics", () => {
 
     analytics.capture("dictation_failed", {
       error_code: "provider_auth_failed",
-      error_message:
+      provider_id:
         "OpenAI key sk-test-secret failed while reading C:\\Users\\nikhi\\Desktop\\Projects\\vaak\\audio.wav",
-      provider_id: "openai",
     });
 
     expect(posthog.capture).toHaveBeenCalledWith("dictation_failed", {
       app_env: "production",
       app_version: "0.1.0",
       error_code: "provider_auth_failed",
-      error_message:
+      provider_id:
         "OpenAI key [redacted_secret] failed while reading [redacted_path]",
-      provider_id: "openai",
     });
   });
 
@@ -347,7 +492,7 @@ describe("analytics", () => {
     }).not.toThrow();
   });
 
-  it("captures sanitized handled errors only when error telemetry is enabled", () => {
+  it("captures stable handled-error codes without raw messages", () => {
     const posthog = {
       capture: vi.fn(),
       init: vi.fn(),
@@ -386,8 +531,6 @@ describe("analytics", () => {
       app_env: "production",
       app_version: "0.1.0",
       error_code: "provider_auth_failed",
-      error_message:
-        "OpenAI key [redacted_secret] failed at [redacted_path]",
       error_stage: "transcription",
       handled: true,
       provider_id: "openai",

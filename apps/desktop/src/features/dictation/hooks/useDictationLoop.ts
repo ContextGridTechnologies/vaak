@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 import { appEnvironment } from "@/config/app-env";
+import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
 import {
   getSelectedSpeechProvider,
@@ -285,6 +286,12 @@ export function useDictationLoop(
         providerId,
         trigger: session.dictationTrigger,
       });
+      analytics.capture("dictation_started", {
+        dictation_mode: dictationMode,
+        provider_id: providerId,
+        target_input_kind: classifyInputKind(session.focusedField),
+        trigger: session.dictationTrigger,
+      });
 
       setLoopState({
         error: null,
@@ -336,6 +343,13 @@ export function useDictationLoop(
           },
         });
         if (isActiveRun()) {
+          analytics.capture("dictation_skipped", {
+            duration_bucket: durationBucket(elapsedMs(processingStartedMark)),
+            provider_id: providerId,
+            skip_reason: captureAnalysis.reason ?? "speech_unclear",
+            target_input_kind: classifyInputKind(session.focusedField),
+            trigger: session.dictationTrigger,
+          });
           setLoopState({
             error: {
               kind: "capture",
@@ -483,6 +497,7 @@ export function useDictationLoop(
           textChars: text.trim().length,
         });
       } catch (err) {
+        const errorCode = providerErrorCode(err) ?? "transcription_failed";
         recordDictationLoopCheckpoint("dictation_loop_transcription_failed", {
           error: normalizeError(err),
           providerId,
@@ -490,6 +505,21 @@ export function useDictationLoop(
         if (!isActiveRun()) {
           return;
         }
+
+        analytics.capture("dictation_failed", {
+          duration_bucket: durationBucket(elapsedMs(processingStartedMark)),
+          error_code: errorCode,
+          error_stage: "transcription",
+          provider_id: providerId,
+          target_input_kind: classifyInputKind(session.focusedField),
+          trigger: session.dictationTrigger,
+        });
+        analytics.captureError(err, {
+          code: errorCode,
+          handled: true,
+          providerId,
+          stage: "transcription",
+        });
 
         await persistDraft({
           audioBlob,
@@ -550,6 +580,13 @@ export function useDictationLoop(
       }
 
       if (!text.trim()) {
+        analytics.capture("dictation_skipped", {
+          duration_bucket: durationBucket(elapsedMs(processingStartedMark)),
+          provider_id: transcriptionContext?.providerId ?? providerId,
+          skip_reason: "empty_transcript",
+          target_input_kind: classifyInputKind(session.focusedField),
+          trigger: session.dictationTrigger,
+        });
         await persistDraft({
           audioBlob,
           processedAudioBlob: captureAnalysis?.processedAudio ?? null,
@@ -653,6 +690,19 @@ export function useDictationLoop(
             status: "inserted",
           },
         });
+        analytics.capture("dictation_completed", {
+          character_count_bucket: characterCountBucket(text.length),
+          insertion_duration_bucket: durationBucket(insertionMs),
+          insertion_method: insertResult.method,
+          model_id: transcriptionContext?.modelId ?? null,
+          provider_id: transcriptionContext?.providerId ?? providerId,
+          target_input_kind: classifyInputKind(session.focusedField),
+          total_duration_bucket: durationBucket(
+            elapsedMs(processingStartedMark),
+          ),
+          transcription_duration_bucket: durationBucket(transcriptionMs),
+          trigger: session.dictationTrigger,
+        });
         if (isActiveRun()) {
           setLoopState({
             error: null,
@@ -672,6 +722,20 @@ export function useDictationLoop(
           error: normalizeError(err),
           insertionMs,
           providerId: transcriptionContext?.providerId ?? providerId,
+        });
+        analytics.capture("dictation_failed", {
+          duration_bucket: durationBucket(elapsedMs(processingStartedMark)),
+          error_code: "insertion_failed",
+          error_stage: "insertion",
+          provider_id: transcriptionContext?.providerId ?? providerId,
+          target_input_kind: classifyInputKind(session.focusedField),
+          trigger: session.dictationTrigger,
+        });
+        analytics.captureError(err, {
+          code: "insertion_failed",
+          handled: true,
+          providerId: transcriptionContext?.providerId ?? providerId,
+          stage: "insertion",
         });
         if (isActiveRun()) {
           setLoopState({
@@ -1167,8 +1231,12 @@ async function persistDraft(input: {
 }
 
 function classifyInputKind(
-  field: FocusedFieldInfo,
+  field: FocusedFieldInfo | null,
 ): DictationRecordDraft["target"]["inputKind"] {
+  if (!field) {
+    return "unknown";
+  }
+
   const haystack = [
     field.controlType,
     field.className,
@@ -1269,4 +1337,22 @@ function isoNow() {
 
 function elapsedMs(startedAt: number) {
   return Math.max(0, Math.round(now() - startedAt));
+}
+
+function durationBucket(durationMs: number) {
+  if (durationMs < 250) return "lt_250ms";
+  if (durationMs < 1_000) return "250ms_1s";
+  if (durationMs < 3_000) return "1s_3s";
+  if (durationMs < 10_000) return "3s_10s";
+  if (durationMs < 30_000) return "10s_30s";
+  return "gte_30s";
+}
+
+function characterCountBucket(characterCount: number) {
+  if (characterCount === 0) return "0";
+  if (characterCount <= 20) return "1_20";
+  if (characterCount <= 100) return "21_100";
+  if (characterCount <= 500) return "101_500";
+  if (characterCount <= 2_000) return "501_2000";
+  return "gte_2001";
 }
