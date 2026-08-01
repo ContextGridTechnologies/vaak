@@ -204,8 +204,30 @@ describe("Desktop release metadata", () => {
       readFileSync(join(process.cwd(), "package.json"), "utf8"),
     ) as { scripts?: Record<string, string> };
 
+    expect(packageJson.scripts?.["store:package"]).toContain(
+      "cargo clean --release --package vaak-desktop",
+    );
+    expect(packageJson.scripts?.["store:package"]).toContain(
+      "call tauri build --no-bundle",
+    );
+    expect(packageJson.scripts?.["store:package"]).toContain(
+      "(if not exist store\\dist mkdir store\\dist)",
+    );
+    expect(packageJson.scripts?.["store:package"]).toContain(
+      "(if exist store\\Vaak.msix del /Q store\\Vaak.msix)",
+    );
     expect(packageJson.scripts?.["store:package"]).toContain("winapp package");
     expect(packageJson.scripts?.["store:package"]).toContain("tauri build --no-bundle");
+  });
+
+  it("uses a process-scoped log file so a concurrent launch cannot abort startup", () => {
+    const libRs = readFileSync(
+      join(process.cwd(), "src-tauri", "src", "lib.rs"),
+      "utf8",
+    );
+
+    expect(libRs).toContain('format!("backend-{}", std::process::id())');
+    expect(libRs).not.toContain('file_name: Some("backend".to_string())');
   });
 
   it("uses production package metadata and release build settings", () => {

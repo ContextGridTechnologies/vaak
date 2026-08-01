@@ -753,6 +753,16 @@ mod tests {
         session::SessionStore::default().hotkey_bindings()
     }
 
+    #[test]
+    fn logging_falls_back_to_stderr_when_log_directory_is_unavailable() {
+        let blocked_path = temp_config_dir("blocked-log-path");
+        fs::write(&blocked_path, "not a directory").unwrap();
+
+        let target = log_target_for_dir(&blocked_path.join("logs"), "backend-test".to_string());
+
+        assert!(matches!(target, TargetKind::Stderr));
+    }
+
     #[derive(Default)]
     struct MockReopenWindow {
         calls: Mutex<Vec<&'static str>>,
@@ -1087,13 +1097,13 @@ fn apply_startup_launch_preference(
 fn build_log_plugin(
     runtime_config: config::RuntimeConfig,
 ) -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    let log_target = build_log_target();
+
     #[cfg(debug_assertions)]
     {
         let builder = tauri_plugin_log::Builder::new()
             .clear_targets()
-            .target(Target::new(TargetKind::LogDir {
-                file_name: Some("backend".to_string()),
-            }))
+            .target(log_target)
             .level(runtime_config.log_level.as_level_filter())
             .level_for(
                 "vaak_desktop_lib::platform::windows",
@@ -1107,14 +1117,40 @@ fn build_log_plugin(
     {
         tauri_plugin_log::Builder::new()
             .clear_targets()
-            .target(Target::new(TargetKind::LogDir {
-                file_name: Some("backend".to_string()),
-            }))
+            .target(log_target)
             .level(runtime_config.log_level.as_level_filter())
             .level_for(
                 "vaak_desktop_lib::platform::windows",
                 runtime_config.log_level.as_level_filter(),
             )
             .build()
+    }
+}
+
+fn build_log_target() -> Target {
+    let file_name = format!("backend-{}", std::process::id());
+    let Some(log_dir) = dirs::data_local_dir().map(|dir| dir.join("ai.vaak.desktop").join("logs"))
+    else {
+        return Target::new(TargetKind::Stderr);
+    };
+
+    Target::new(log_target_for_dir(&log_dir, file_name))
+}
+
+fn log_target_for_dir(log_dir: &std::path::Path, file_name: String) -> TargetKind {
+    let file_path = log_dir.join(&file_name).with_extension("log");
+    if std::fs::create_dir_all(log_dir).is_err()
+        || std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file_path)
+            .is_err()
+    {
+        return TargetKind::Stderr;
+    }
+
+    TargetKind::Folder {
+        path: log_dir.to_path_buf(),
+        file_name: Some(file_name),
     }
 }
