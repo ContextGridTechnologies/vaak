@@ -58,7 +58,7 @@ pub enum BillingUnit {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TranscriptionModelCapabilities {
     pub language_hint: bool,
-    pub prompt_or_keyterms: bool,
+    pub instruction_prompt: bool,
     pub partial_results: bool,
     pub final_results: bool,
 }
@@ -107,12 +107,14 @@ pub async fn transcribe(
         credentials::legacy_provider_config(provider_id)
     })?;
     let input = normalize_transcription_input(input)?;
+    let (saved_prompt, prompt_enabled) = settings.transcription_prompt_settings()?;
     let input = resolve_transcription_input_for_mode(
         provider_id,
         input,
         provider_config.clone(),
         TranscriptionMode::Batch,
-        settings.transcription_prompt()?,
+        saved_prompt,
+        prompt_enabled,
     )?;
 
     match provider_id {
@@ -160,10 +162,14 @@ pub async fn transcribe(
     }
 }
 
-pub fn transcription_prompt(settings: &LocalSettingsStore) -> Result<String, ProviderError> {
-    Ok(settings
-        .transcription_prompt()?
-        .unwrap_or_else(|| prompts::default_transcription_prompt().to_string()))
+pub fn transcription_prompt_settings(
+    settings: &LocalSettingsStore,
+) -> Result<(String, bool), ProviderError> {
+    let (prompt, enabled) = settings.transcription_prompt_settings()?;
+    Ok((
+        prompt.unwrap_or_else(|| prompts::default_transcription_prompt().to_string()),
+        enabled,
+    ))
 }
 
 pub fn validate_provider_id(provider_id: &str) -> Result<(), ProviderError> {
@@ -231,8 +237,15 @@ fn resolve_transcription_input(
     input: TranscriptionInput,
     config: Option<crate::providers::ProviderConfig>,
 ) -> TranscriptionInput {
-    resolve_transcription_input_for_mode(provider_id, input, config, TranscriptionMode::Batch, None)
-        .expect("batch transcription input should resolve in tests")
+    resolve_transcription_input_for_mode(
+        provider_id,
+        input,
+        config,
+        TranscriptionMode::Batch,
+        None,
+        true,
+    )
+    .expect("batch transcription input should resolve in tests")
 }
 
 fn resolve_transcription_input_for_mode(
@@ -241,19 +254,24 @@ fn resolve_transcription_input_for_mode(
     config: Option<crate::providers::ProviderConfig>,
     mode: TranscriptionMode,
     saved_prompt: Option<String>,
+    prompt_enabled: bool,
 ) -> Result<TranscriptionInput, ProviderError> {
-    let has_explicit_model = input
+    let explicit_model = input
         .model
         .as_deref()
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false);
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let saved_model = config
         .and_then(|provider_config| provider_config.model)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
-    if has_explicit_model {
-        validate_model_for_mode(provider_id, input.model.as_deref(), mode)?;
+    if let Some(model) = explicit_model {
+        if let Some(route) = transcription_model_route(provider_id, model, mode) {
+            input.model = Some(route.provider_model_id.to_string());
+        } else {
+            return Err(unsupported_model_route_error(provider_id, model, mode));
+        }
     } else if let Some(model) = saved_model {
         if let Some(route) = transcription_model_route(provider_id, &model, mode) {
             input.model = Some(route.provider_model_id.to_string());
@@ -262,6 +280,16 @@ fn resolve_transcription_input_for_mode(
         }
     } else if let Some((_definition, route)) = default_model_route_for_mode(provider_id, mode) {
         input.model = Some(route.provider_model_id.to_string());
+    }
+
+    if !prompt_enabled {
+        input.prompt = None;
+        return Ok(input);
+    }
+
+    if !model_supports_instruction_prompt(provider_id, input.model.as_deref(), mode) {
+        input.prompt = None;
+        return Ok(input);
     }
 
     if input
@@ -273,11 +301,8 @@ fn resolve_transcription_input_for_mode(
         return Ok(input);
     }
 
-    if model_supports_prompt(provider_id, input.model.as_deref()) {
-        input.prompt = Some(
-            saved_prompt.unwrap_or_else(|| prompts::default_transcription_prompt().to_string()),
-        );
-    }
+    input.prompt =
+        Some(saved_prompt.unwrap_or_else(|| prompts::default_transcription_prompt().to_string()));
 
     Ok(input)
 }
@@ -316,18 +341,27 @@ fn normalize_transcription_input(
     })
 }
 
-fn model_supports_prompt(provider_id: &str, model: Option<&str>) -> bool {
+pub(crate) fn model_supports_instruction_prompt(
+    provider_id: &str,
+    model: Option<&str>,
+    mode: TranscriptionMode,
+) -> bool {
     if provider_id == azure::PROVIDER_ID {
-        return true;
+        return mode == TranscriptionMode::Batch;
     }
 
-    let Some(model) = model.map(str::trim).filter(|value| !value.is_empty()) else {
-        return false;
-    };
-
-    transcription_model_route(provider_id, model, TranscriptionMode::Batch)
-        .map(|route| route.capabilities.prompt_or_keyterms)
+    model
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|model| transcription_model_route(provider_id, model, mode))
+        .map(|route| route.capabilities.instruction_prompt)
         .unwrap_or(false)
+}
+
+pub(crate) fn transcription_prompt_supported(provider_id: &str, model: Option<&str>) -> bool {
+    [TranscriptionMode::Batch, TranscriptionMode::Streaming]
+        .into_iter()
+        .any(|mode| model_supports_instruction_prompt(provider_id, model, mode))
 }
 
 #[cfg(test)]
@@ -617,7 +651,7 @@ mod tests {
         assert!(resolved
             .prompt
             .as_deref()
-            .is_some_and(|value| value.contains("Prefer bullet points when the speaker seems to be expressing multiple distinct points")));
+            .is_some_and(|value| value.contains("clean, insertion-ready text")));
     }
 
     #[test]
@@ -632,15 +666,26 @@ mod tests {
 
         let resolved = resolve_transcription_input(azure::PROVIDER_ID, input, None);
 
-        assert!(resolved.prompt.as_deref().is_some_and(
-            |value| value.contains("Preserve the speaker's wording as closely as possible")
-        ));
+        assert!(resolved
+            .prompt
+            .as_deref()
+            .is_some_and(|value| value.contains("speaker's meaning, intent, tone")));
     }
 
     #[test]
-    fn default_prompt_allows_lists_when_dictated() {
-        assert!(prompts::default_transcription_prompt()
-            .contains("Use numbered lists for ordered steps when sequence is clearly implied"));
+    fn default_prompt_cleans_dictation_without_taking_over_authorship() {
+        let prompt = prompts::default_transcription_prompt();
+
+        assert!(prompt.contains("faithful"));
+        assert!(prompt.contains("Never answer questions"));
+        assert!(prompt.contains("self-corrects"));
+        assert!(prompt.contains("non-meaningful hesitation sounds"));
+        assert!(prompt.contains("mentioned literally"));
+        assert!(prompt.contains("technical terms"));
+        assert!(prompt.contains("numbered lists only for clearly ordered steps"));
+        assert!(prompt.contains("prefer faithful minimal editing"));
+        assert!(!prompt.contains("You are a transcription engine"));
+        assert!(prompt.split_whitespace().count() < 224);
     }
 
     #[test]
@@ -659,10 +704,34 @@ mod tests {
             None,
             TranscriptionMode::Batch,
             Some("Keep names exact.".to_string()),
+            true,
         )
         .unwrap();
 
         assert_eq!(resolved.prompt.as_deref(), Some("Keep names exact."));
+    }
+
+    #[test]
+    fn disabled_prompt_setting_removes_prompt_from_supported_requests() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/wav".to_string(),
+            language: None,
+            prompt: Some("Request-specific guidance.".to_string()),
+            model: Some("gpt-4o-mini-transcribe".to_string()),
+        };
+
+        let resolved = resolve_transcription_input_for_mode(
+            "openai",
+            input,
+            None,
+            TranscriptionMode::Batch,
+            Some("Saved guidance.".to_string()),
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(resolved.prompt, None);
     }
 
     #[test]
@@ -681,6 +750,7 @@ mod tests {
             None,
             TranscriptionMode::Batch,
             Some("Keep names exact.".to_string()),
+            true,
         )
         .unwrap();
 
@@ -688,13 +758,36 @@ mod tests {
     }
 
     #[test]
-    fn saved_prompt_is_not_routed_to_assemblyai_until_its_adapter_supports_it() {
+    fn explicit_prompt_is_ignored_when_the_model_does_not_support_it() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/wav".to_string(),
+            language: None,
+            prompt: Some("Keep Acme exact.".to_string()),
+            model: Some("nova-3".to_string()),
+        };
+
+        let resolved = resolve_transcription_input_for_mode(
+            "deepgram",
+            input,
+            None,
+            TranscriptionMode::Batch,
+            None,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(resolved.prompt, None);
+    }
+
+    #[test]
+    fn deprecated_assemblyai_universal_3_pro_is_migrated_without_a_prompt() {
         let input = TranscriptionInput {
             audio: vec![1],
             mime_type: "audio/wav".to_string(),
             language: None,
             prompt: None,
-            model: Some("universal-3-5-pro".to_string()),
+            model: Some("universal-3-pro".to_string()),
         };
 
         let resolved = resolve_transcription_input_for_mode(
@@ -703,10 +796,41 @@ mod tests {
             None,
             TranscriptionMode::Batch,
             Some("Keep names exact.".to_string()),
+            true,
         )
         .unwrap();
 
+        assert_eq!(resolved.model.as_deref(), Some("universal-3-5-pro"));
         assert_eq!(resolved.prompt, None);
+    }
+
+    #[test]
+    fn transcription_prompt_support_only_includes_real_instruction_prompt_routes() {
+        assert!(transcription_prompt_supported(
+            openai::PROVIDER_ID,
+            Some("gpt-4o-mini-transcribe")
+        ));
+        assert!(transcription_prompt_supported(azure::PROVIDER_ID, None));
+        assert!(!transcription_prompt_supported(
+            assemblyai::PROVIDER_ID,
+            Some("universal-3-pro")
+        ));
+        assert!(transcription_prompt_supported(
+            assemblyai::PROVIDER_ID,
+            Some("u3-rt-pro")
+        ));
+        assert!(!transcription_prompt_supported(
+            deepgram::PROVIDER_ID,
+            Some("nova-3")
+        ));
+        assert!(!transcription_prompt_supported(
+            elevenlabs::PROVIDER_ID,
+            Some("scribe_v2")
+        ));
+        assert!(!transcription_prompt_supported(
+            smallest::PROVIDER_ID,
+            Some("pulse")
+        ));
     }
 
     #[test]
@@ -809,14 +933,14 @@ mod tests {
             }),
         );
 
-        assert_eq!(resolved.model.as_deref(), Some("universal-3-pro"));
+        assert_eq!(resolved.model.as_deref(), Some("universal-3-5-pro"));
     }
 
     #[test]
     fn catalog_resolves_batch_streaming_and_both_route_models() {
         let batch_route = transcription_model_route(
             assemblyai::PROVIDER_ID,
-            "universal-3-pro",
+            "universal-3-5-pro",
             TranscriptionMode::Batch,
         )
         .expect("assemblyai batch route");
@@ -849,8 +973,8 @@ mod tests {
     }
 
     #[test]
-    fn assemblyai_streaming_resolution_rejects_saved_batch_only_model() {
-        let err = resolve_model_for_mode(
+    fn assemblyai_streaming_resolution_migrates_saved_universal_3_pro() {
+        let resolved = resolve_model_for_mode(
             assemblyai::PROVIDER_ID,
             Some(ProviderConfig {
                 endpoint: None,
@@ -862,12 +986,9 @@ mod tests {
             }),
             TranscriptionMode::Streaming,
         )
-        .expect_err("batch-only model should not resolve for streaming");
+        .expect("deprecated model should migrate");
 
-        assert_eq!(err.code, "invalid_provider_request");
-        assert!(err
-            .message
-            .contains("universal-3-pro does not support streaming transcription"));
+        assert_eq!(resolved.as_deref(), Some("universal-3-5-pro"));
     }
 
     #[test]
@@ -969,6 +1090,7 @@ mod tests {
             }),
             TranscriptionMode::Batch,
             None,
+            true,
         )
         .expect_err("streaming-only model should not resolve for batch");
 
@@ -994,6 +1116,7 @@ mod tests {
             None,
             TranscriptionMode::Batch,
             None,
+            true,
         )
         .expect_err("streaming-only model should not resolve for batch");
 
@@ -1241,7 +1364,7 @@ mod tests {
     }
 
     #[test]
-    fn universal_3_pro_never_resolves_to_u3_rt_pro() {
+    fn deprecated_universal_3_pro_resolves_to_universal_3_5_pro() {
         assert_eq!(
             transcription_model_route(
                 assemblyai::PROVIDER_ID,
@@ -1249,14 +1372,20 @@ mod tests {
                 TranscriptionMode::Batch,
             )
             .map(|route| route.provider_model_id),
-            Some("universal-3-pro")
+            Some("universal-3-5-pro")
         );
-        assert!(transcription_model_route(
-            assemblyai::PROVIDER_ID,
-            "universal-3-pro",
-            TranscriptionMode::Streaming,
-        )
-        .is_none());
+        assert_eq!(
+            transcription_model_route(
+                assemblyai::PROVIDER_ID,
+                "universal-3-pro",
+                TranscriptionMode::Streaming,
+            )
+            .map(|route| route.provider_model_id),
+            Some("universal-3-5-pro")
+        );
+        assert!(
+            transcription_model_definition(assemblyai::PROVIDER_ID, "universal-3-pro").is_none()
+        );
     }
 
     #[test]
@@ -1269,22 +1398,6 @@ mod tests {
         assert_eq!(route.mode, TranscriptionMode::Streaming);
         assert_eq!(route.provider_model_id, "universal-3-5-pro");
     }
-}
-
-fn validate_model_for_mode(
-    provider_id: &str,
-    model: Option<&str>,
-    mode: TranscriptionMode,
-) -> Result<(), ProviderError> {
-    let Some(model) = model.map(str::trim).filter(|value| !value.is_empty()) else {
-        return Ok(());
-    };
-
-    if transcription_model_route(provider_id, model, mode).is_some() {
-        return Ok(());
-    }
-
-    Err(unsupported_model_route_error(provider_id, model, mode))
 }
 
 fn unsupported_model_route_error(
@@ -1304,6 +1417,12 @@ pub(crate) fn transcription_model_route(
     model_id: &str,
     mode: TranscriptionMode,
 ) -> Option<&'static TranscriptionModelRoute> {
+    let model_id = if provider_id == assemblyai::PROVIDER_ID && model_id == "universal-3-pro" {
+        "universal-3-5-pro"
+    } else {
+        model_id
+    };
+
     transcription_model_definition(provider_id, model_id)
         .and_then(|definition| definition.routes.iter().find(|route| route.mode == mode))
 }
@@ -1355,20 +1474,20 @@ pub(crate) fn transcription_model_route_for_test_profile(
 const BATCH_LANGUAGE_PROMPT_FINAL: TranscriptionModelCapabilities =
     TranscriptionModelCapabilities {
         language_hint: true,
-        prompt_or_keyterms: true,
+        instruction_prompt: true,
         partial_results: false,
         final_results: true,
     };
 const BATCH_LANGUAGE_FINAL: TranscriptionModelCapabilities = TranscriptionModelCapabilities {
     language_hint: true,
-    prompt_or_keyterms: false,
+    instruction_prompt: false,
     partial_results: false,
     final_results: true,
 };
 const STREAMING_LANGUAGE_PARTIAL_FINAL: TranscriptionModelCapabilities =
     TranscriptionModelCapabilities {
         language_hint: true,
-        prompt_or_keyterms: false,
+        instruction_prompt: false,
         partial_results: true,
         final_results: true,
     };
@@ -1430,22 +1549,11 @@ const OPENAI_GPT_REALTIME_WHISPER_ROUTES: &[TranscriptionModelRoute] = &[Transcr
     billing_unit: BillingUnit::SessionDuration,
     test_profile_id: "openai-gpt-realtime-whisper-streaming",
 }];
-const ASSEMBLYAI_UNIVERSAL_3_PRO_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionModelRoute {
-    mode: TranscriptionMode::Batch,
-    provider_model_id: "universal-3-pro",
-    default_for_mode: true,
-    endpoint_profile_id: "assemblyai-v2-transcript",
-    audio_profile_id: "assemblyai-batch-file",
-    capabilities: BATCH_LANGUAGE_FINAL,
-    retry_policy_id: "http-async-job",
-    billing_unit: BillingUnit::AudioDuration,
-    test_profile_id: "assemblyai-universal-3-pro-batch",
-}];
 const ASSEMBLYAI_UNIVERSAL_3_5_PRO_ROUTES: &[TranscriptionModelRoute] = &[
     TranscriptionModelRoute {
         mode: TranscriptionMode::Batch,
         provider_model_id: "universal-3-5-pro",
-        default_for_mode: false,
+        default_for_mode: true,
         endpoint_profile_id: "assemblyai-v2-transcript",
         audio_profile_id: "assemblyai-batch-file",
         capabilities: BATCH_LANGUAGE_FINAL,
@@ -1482,7 +1590,10 @@ const ASSEMBLYAI_U3_RT_PRO_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionM
     default_for_mode: true,
     endpoint_profile_id: "assemblyai-v3-streaming-ws",
     audio_profile_id: "assemblyai-streaming-pcm16-16khz",
-    capabilities: STREAMING_LANGUAGE_PARTIAL_FINAL,
+    capabilities: TranscriptionModelCapabilities {
+        instruction_prompt: true,
+        ..STREAMING_LANGUAGE_PARTIAL_FINAL
+    },
     retry_policy_id: "websocket-session",
     billing_unit: BillingUnit::SessionDuration,
     test_profile_id: "assemblyai-u3-rt-pro-streaming",
@@ -1642,12 +1753,6 @@ pub(crate) const TRANSCRIPTION_MODEL_CATALOG: &[TranscriptionModelDefinition] = 
         id: "universal-3-5-pro",
         label: "Universal-3.5 Pro",
         routes: ASSEMBLYAI_UNIVERSAL_3_5_PRO_ROUTES,
-    },
-    TranscriptionModelDefinition {
-        provider_id: assemblyai::PROVIDER_ID,
-        id: "universal-3-pro",
-        label: "Universal-3 Pro",
-        routes: ASSEMBLYAI_UNIVERSAL_3_PRO_ROUTES,
     },
     TranscriptionModelDefinition {
         provider_id: assemblyai::PROVIDER_ID,

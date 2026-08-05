@@ -92,8 +92,9 @@ pub(crate) async fn start_managed_session(
     state: Arc<ManagedAssemblyAiStreamingState>,
     events: tauri::ipc::Channel<AssemblyAiStreamingCommandEvent>,
     model: Option<String>,
+    prompt: Option<String>,
 ) -> Result<AssemblyAiStreamingStartResult, ProviderError> {
-    let config = AssemblyAiStreamingConfig::with_model(model)?;
+    let config = AssemblyAiStreamingConfig::with_model(model)?.with_prompt(prompt);
     let model_id = config.speech_model.clone();
     let session = AssemblyAiStreamingSession::connect_with_config(api_key, config).await?;
     let snapshot = AssemblyAiStreamingSnapshot::new("pending".to_string(), model_id.clone());
@@ -780,6 +781,7 @@ pub(crate) struct AssemblyAiStreamingConfig {
     sample_rate_hz: u32,
     mode: String,
     language_code: String,
+    prompt: Option<String>,
 }
 
 impl Default for AssemblyAiStreamingConfig {
@@ -790,6 +792,7 @@ impl Default for AssemblyAiStreamingConfig {
             sample_rate_hz: DEFAULT_SAMPLE_RATE_HZ,
             mode: DEFAULT_STREAMING_MODE.to_string(),
             language_code: DEFAULT_STREAMING_LANGUAGE_CODE.to_string(),
+            prompt: None,
         }
     }
 }
@@ -806,16 +809,30 @@ impl AssemblyAiStreamingConfig {
         Ok(config)
     }
 
+    pub(crate) fn with_prompt(mut self, prompt: Option<String>) -> Self {
+        self.prompt = prompt.filter(|value| !value.trim().is_empty());
+        self
+    }
+
     pub(crate) fn build_request(&self, api_key: &str) -> Result<Request, ProviderError> {
         if api_key.trim().is_empty() {
             return Err(ProviderFailure::MissingCredential.into());
         }
 
-        let url = format!(
-            "wss://{}/v3/ws?speech_model={}&sample_rate={}&mode={}&language_code={}",
-            self.host, self.speech_model, self.sample_rate_hz, self.mode, self.language_code
-        );
+        let mut url = reqwest::Url::parse(&format!("wss://{}/v3/ws", self.host))
+            .map_err(|error| ProviderFailure::Request(error.to_string()))?;
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("speech_model", &self.speech_model);
+            query.append_pair("sample_rate", &self.sample_rate_hz.to_string());
+            query.append_pair("mode", &self.mode);
+            query.append_pair("language_code", &self.language_code);
+            if let Some(prompt) = &self.prompt {
+                query.append_pair("prompt", prompt);
+            }
+        }
         let mut request = url
+            .as_str()
             .into_client_request()
             .map_err(|error| ProviderFailure::Request(error.to_string()))?;
         request.headers_mut().insert(
@@ -946,6 +963,20 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("assembly-test-key")
         );
+    }
+
+    #[test]
+    fn streaming_config_sends_a_url_encoded_instruction_prompt() {
+        let config = AssemblyAiStreamingConfig::with_model(Some("u3-rt-pro".to_string()))
+            .expect("config")
+            .with_prompt(Some("Keep Acme, Inc. exact.".to_string()));
+
+        let request = config.build_request("assembly-test-key").expect("request");
+
+        assert!(request
+            .uri()
+            .to_string()
+            .contains("prompt=Keep+Acme%2C+Inc.+exact."));
     }
 
     #[test]

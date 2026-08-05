@@ -123,7 +123,7 @@ describe("speech provider panels", () => {
         isLoading={false}
         isSaving={false}
         isTesting={false}
-        model="universal-3-pro"
+        model="universal-3-5-pro"
         status={{
           providerId: "assemblyai",
           configured: true,
@@ -146,11 +146,9 @@ describe("speech provider panels", () => {
   it("keeps the AssemblyAI model picker focused on dictation models", () => {
     expect(ASSEMBLYAI_MODELS.map((model) => model.value)).toEqual([
       "universal-3-5-pro",
-      "universal-3-pro",
       "u3-rt-pro",
     ]);
     expect(ASSEMBLYAI_MODELS.map((model) => Object.keys(model))).toEqual([
-      ["value", "label"],
       ["value", "label"],
       ["value", "label"],
     ]);

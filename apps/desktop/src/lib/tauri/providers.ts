@@ -14,6 +14,11 @@ export type ProviderConfig = {
   model?: string;
 };
 
+export type TranscriptionPromptSettings = {
+  prompt: string;
+  enabled: boolean;
+};
+
 export type TranscriptResult = {
   providerId: string;
   model: string;
@@ -180,12 +185,21 @@ export async function transcribeRecording(input: {
   });
 }
 
-export async function getTranscriptionPrompt(): Promise<string> {
+export async function getTranscriptionPrompt(): Promise<TranscriptionPromptSettings> {
   return invokeTauri("get_transcription_prompt");
 }
 
-export async function saveTranscriptionPrompt(prompt: string): Promise<string> {
-  return invokeTauri("save_transcription_prompt", { prompt });
+export async function getTranscriptionPromptSupport(
+  providerId: SpeechProviderId,
+  model?: string,
+): Promise<boolean> {
+  return invokeTauri("get_transcription_prompt_support", { providerId, model });
+}
+
+export async function saveTranscriptionPrompt(
+  settings: TranscriptionPromptSettings,
+): Promise<TranscriptionPromptSettings> {
+  return invokeTauri("save_transcription_prompt", settings);
 }
 
 export async function startAssemblyAiStreamingSession(input: {

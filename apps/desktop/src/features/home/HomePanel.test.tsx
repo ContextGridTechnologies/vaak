@@ -481,7 +481,6 @@ describe("HomePanel", () => {
         providerId: "azure-openai",
         audioBlob: expect.any(Blob),
         language: "en",
-        model: "gpt-4o-transcribe",
       });
       expect(updateDictationRecord).toHaveBeenCalledWith("failed-record", {
         recording: expect.any(Object),
@@ -549,6 +548,40 @@ describe("HomePanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("uses the provider's current model when retrying a historical recording", async () => {
+    const user = userEvent.setup();
+    getRecentDictationRecords.mockResolvedValue([
+      {
+        ...makeRecord({
+          recordId: "failed-assemblyai-record",
+          capturedAt: "2025-05-19T10:23:31Z",
+          finalText: "",
+          insertionStatus: "failed",
+        }),
+        provider: {
+          providerId: "assemblyai",
+          modelId: "universal-3-pro",
+        },
+      },
+    ]);
+
+    renderApp(<HomePanel />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Retry transcription for Windows Terminal",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(transcribeRecording).toHaveBeenCalledWith({
+        providerId: "assemblyai",
+        audioBlob: expect.any(Blob),
+        language: "en",
+      });
+    });
+  });
+
   it("does not reuse stale processed audio when retrying failed records", async () => {
     const user = userEvent.setup();
     loadSavedDictationAudio.mockResolvedValue({
@@ -595,7 +628,6 @@ describe("HomePanel", () => {
         providerId: "azure-openai",
         audioBlob: expect.any(Blob),
         language: "en",
-        model: "gpt-4o-transcribe",
       });
     });
   });
@@ -645,13 +677,11 @@ describe("HomePanel", () => {
         providerId: "azure-openai",
         audioBlob: firstSegment,
         language: "en",
-        model: "gpt-4o-transcribe",
       });
       expect(transcribeRecording).toHaveBeenNthCalledWith(2, {
         providerId: "azure-openai",
         audioBlob: secondSegment,
         language: "en",
-        model: "gpt-4o-transcribe",
       });
       expect(updateDictationRecord).toHaveBeenCalledWith(
         "failed-record-needs-reprocessing",
@@ -718,7 +748,6 @@ describe("HomePanel", () => {
         providerId: "azure-openai",
         audioBlob: fullProcessedAudio,
         language: "en",
-        model: "gpt-4o-transcribe",
       });
       expect(updateDictationRecord).toHaveBeenCalledWith(
         "failed-record-empty-segments",

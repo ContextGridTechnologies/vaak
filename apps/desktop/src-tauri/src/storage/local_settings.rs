@@ -38,6 +38,8 @@ struct LocalSettings {
     provider_configs: BTreeMap<String, ProviderConfig>,
     #[serde(default)]
     transcription_prompt: Option<String>,
+    #[serde(default = "default_transcription_prompt_enabled")]
+    transcription_prompt_enabled: bool,
     #[serde(default)]
     microphone_selection: MicrophoneSelection,
     #[serde(default)]
@@ -174,6 +176,7 @@ impl Default for LocalSettings {
             selected_speech_provider: default_selected_speech_provider(),
             provider_configs: BTreeMap::new(),
             transcription_prompt: None,
+            transcription_prompt_enabled: default_transcription_prompt_enabled(),
             microphone_selection: MicrophoneSelection::default(),
             hotkeys: HotkeySettings::default(),
             onboarding: OnboardingState::default(),
@@ -294,18 +297,27 @@ impl LocalSettingsStore {
         self.save_unlocked(&settings)
     }
 
-    pub fn transcription_prompt(&self) -> Result<Option<String>, ProviderError> {
+    pub fn transcription_prompt_settings(&self) -> Result<(Option<String>, bool), ProviderError> {
         let _guard = self.lock()?;
-        Ok(self.load_unlocked()?.transcription_prompt)
+        let settings = self.load_unlocked()?;
+        Ok((
+            settings.transcription_prompt,
+            settings.transcription_prompt_enabled,
+        ))
     }
 
-    pub fn save_transcription_prompt(&self, prompt: &str) -> Result<(), ProviderError> {
+    pub fn save_transcription_prompt(
+        &self,
+        prompt: &str,
+        enabled: bool,
+    ) -> Result<(), ProviderError> {
         let _guard = self.lock()?;
         let mut settings = self.load_unlocked()?;
         settings.transcription_prompt = match prompt.trim() {
             "" => None,
             prompt => Some(prompt.to_string()),
         };
+        settings.transcription_prompt_enabled = enabled;
         self.save_unlocked(&settings)
     }
 
@@ -562,6 +574,10 @@ fn default_selected_speech_provider() -> String {
     DEFAULT_SPEECH_PROVIDER.to_string()
 }
 
+fn default_transcription_prompt_enabled() -> bool {
+    true
+}
+
 fn default_dictation_hotkey() -> String {
     DEFAULT_DICTATION_BINDING_LABEL.to_string()
 }
@@ -789,16 +805,37 @@ mod tests {
         let store = LocalSettingsStore::new(&dir);
 
         store
-            .save_transcription_prompt("Keep names exact.")
+            .save_transcription_prompt("Keep names exact.", false)
             .unwrap();
 
-        assert_eq!(
-            LocalSettingsStore::new(&dir)
-                .transcription_prompt()
-                .unwrap()
-                .as_deref(),
-            Some("Keep names exact.")
-        );
+        let (prompt, enabled) = LocalSettingsStore::new(&dir)
+            .transcription_prompt_settings()
+            .unwrap();
+
+        assert_eq!(prompt.as_deref(), Some("Keep names exact."));
+        assert!(!enabled);
+    }
+
+    #[test]
+    fn enables_transcription_prompt_for_existing_settings_by_default() {
+        let dir = temp_config_dir("transcription-prompt-default");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join(SETTINGS_FILE_NAME),
+            r#"{
+  "version": 1,
+  "selectedSpeechProvider": "openai",
+  "providerConfigs": {},
+  "transcriptionPrompt": "Keep names exact."
+}"#,
+        )
+        .unwrap();
+        let store = LocalSettingsStore::new(&dir);
+
+        let (prompt, enabled) = store.transcription_prompt_settings().unwrap();
+
+        assert_eq!(prompt.as_deref(), Some("Keep names exact."));
+        assert!(enabled);
     }
 
     #[test]

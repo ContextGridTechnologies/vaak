@@ -11,7 +11,7 @@ use crate::providers::{
 };
 
 pub const PROVIDER_ID: &str = "assemblyai";
-pub const DEFAULT_MODEL: &str = "universal-3-pro";
+pub const DEFAULT_MODEL: &str = "universal-3-5-pro";
 
 const BASE_URL: &str = "https://api.assemblyai.com";
 const MAX_AUDIO_BYTES: usize = 2_200_000_000;
@@ -32,6 +32,8 @@ struct CreateTranscriptRequest {
     speech_models: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     language_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,6 +97,7 @@ impl SpeechProvider for AssemblyAiSpeechProvider {
                 audio_url,
                 &model,
                 input.language.as_deref(),
+                input.prompt.as_deref(),
             )
         })
         .await?;
@@ -265,6 +268,7 @@ fn build_transcript_request(
     audio_url: &str,
     model: &str,
     language: Option<&str>,
+    prompt: Option<&str>,
 ) -> Result<reqwest::Request, ProviderError> {
     client
         .post(format!("{BASE_URL}/v2/transcript"))
@@ -273,6 +277,7 @@ fn build_transcript_request(
             audio_url: audio_url.to_string(),
             speech_models: vec![model.to_string()],
             language_code: resolve_language_code(language),
+            prompt: prompt.map(str::to_string),
         })
         .build()
         .map_err(ProviderError::from)
@@ -374,6 +379,7 @@ mod tests {
             "https://cdn.example.com/audio.wav",
             "universal-3-pro",
             Some("en"),
+            Some("Keep product names exact."),
         )
         .expect("request to build");
 
@@ -400,7 +406,8 @@ mod tests {
             serde_json::json!({
                 "audio_url": "https://cdn.example.com/audio.wav",
                 "speech_models": ["universal-3-pro"],
-                "language_code": "en"
+                "language_code": "en",
+                "prompt": "Keep product names exact."
             })
         );
     }

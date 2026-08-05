@@ -38,6 +38,7 @@ export function createTauriCommandHarness(): TauriCommandHarness {
   const eventListeners = new Map<string, Set<TauriEventHandler>>();
 
   setTauriRuntimeAvailable();
+  resolved.set("get_transcription_prompt_support", true);
   invokeMock.mockReset();
   listenMock.mockReset();
   listenMock.mockImplementation(

@@ -13,6 +13,7 @@ const providerApi = vi.hoisted(() => ({
   getProviderConfig: vi.fn(),
   getSelectedSpeechProvider: vi.fn(),
   getTranscriptionPrompt: vi.fn(),
+  getTranscriptionPromptSupport: vi.fn(),
   saveSpeechProviderSetup: vi.fn(),
   saveTranscriptionPrompt: vi.fn(),
   testSpeechProvider: vi.fn(),
@@ -84,8 +85,22 @@ describe("SpeechProviderSettings", () => {
     });
     providerApi.getProviderConfig.mockResolvedValue(null);
     providerApi.getSelectedSpeechProvider.mockResolvedValue("openai");
-    providerApi.getTranscriptionPrompt.mockResolvedValue("Keep the transcript faithful.");
-    providerApi.saveTranscriptionPrompt.mockResolvedValue("Use concise sentences.");
+    providerApi.getTranscriptionPrompt.mockResolvedValue({
+      prompt: "Keep the transcript faithful.",
+      enabled: true,
+    });
+    providerApi.getTranscriptionPromptSupport.mockImplementation(
+      (providerId: string, model?: string) =>
+        Promise.resolve(
+          providerId === "azure-openai" ||
+            providerId === "openai" ||
+            (providerId === "assemblyai" && model === "u3-rt-pro"),
+        ),
+    );
+    providerApi.saveTranscriptionPrompt.mockResolvedValue({
+      prompt: "Use concise sentences.",
+      enabled: true,
+    });
     providerApi.saveSpeechProviderSetup.mockResolvedValue({
       providerId: "openai",
       configured: true,
@@ -98,30 +113,84 @@ describe("SpeechProviderSettings", () => {
     });
   });
 
-  it("shows and saves the transcription prompt in provider settings", async () => {
+  it("shows a read-only prompt until the user edits and saves it", async () => {
     const user = userEvent.setup();
 
     renderApp(<SpeechProviderSettings variant="settings" />);
 
-    const prompt = await screen.findByRole("textbox", {
-      name: "Transcription prompt",
-    });
-    expect(prompt).toHaveValue("Keep the transcript faithful.");
     expect(
-      screen.getByText(
-        "Used by OpenAI and Azure OpenAI batch transcription. Streaming providers do not use it yet.",
-      ),
+      await screen.findByRole("heading", { name: "Transcription input prompt" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Keep the transcript faithful.")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Prompt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Add context, exact terms/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Shared across every provider/)).not.toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const prompt = await screen.findByRole("textbox", { name: "Prompt" });
     await user.clear(prompt);
     await user.type(prompt, "Use concise sentences.");
-    await user.click(screen.getByRole("button", { name: "Save prompt" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save changes" }),
+    );
 
     await waitFor(() => {
-      expect(providerApi.saveTranscriptionPrompt).toHaveBeenCalledWith(
-        "Use concise sentences.",
+      expect(providerApi.saveTranscriptionPrompt).toHaveBeenCalledWith({
+        prompt: "Use concise sentences.",
+        enabled: true,
+      });
+    });
+    expect(screen.queryByRole("textbox", { name: "Prompt" })).not.toBeInTheDocument();
+    expect(screen.getByText("Use concise sentences.")).toBeInTheDocument();
+  });
+
+  it("saves prompt enablement immediately from the read-only view", async () => {
+    const user = userEvent.setup();
+    providerApi.saveTranscriptionPrompt.mockResolvedValueOnce({
+      prompt: "Keep the transcript faithful.",
+      enabled: false,
+    });
+
+    renderApp(<SpeechProviderSettings variant="settings" />);
+
+    const enabled = await screen.findByRole("switch", {
+      name: "Send transcription guidance",
+    });
+    await user.click(enabled);
+
+    await waitFor(() => {
+      expect(providerApi.saveTranscriptionPrompt).toHaveBeenCalledWith({
+        prompt: "Keep the transcript faithful.",
+        enabled: false,
+      });
+    });
+    expect(screen.getByText("Disabled")).toBeInTheDocument();
+  });
+
+  it("only shows prompt controls for providers whose current path sends them", async () => {
+    const user = userEvent.setup();
+
+    renderApp(<SpeechProviderSettings variant="settings" />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Transcription input prompt" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "AssemblyAI" }));
+    await waitFor(() => {
+      expect(providerApi.getTranscriptionPromptSupport).toHaveBeenLastCalledWith(
+        "assemblyai",
+        "universal-3-5-pro",
       );
     });
+    expect(
+      screen.queryByRole("heading", { name: "Transcription input prompt" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Azure OpenAI" }));
+    expect(
+      screen.getByRole("heading", { name: "Transcription input prompt" }),
+    ).toBeInTheDocument();
   });
 
   it("renders provider setup without the generic Settings heading in onboarding variant", async () => {
@@ -357,14 +426,14 @@ describe("SpeechProviderSettings", () => {
     const user = userEvent.setup();
     const verifyOnboardingProvider = vi.fn().mockResolvedValue({
       providerId: "assemblyai",
-      model: "universal-3-pro",
+      model: "universal-3-5-pro",
       text: "He began a confused complaint against the wizard who had vanished behind the curtain on the left.",
       durationMs: 1800,
     });
     providerApi.getProviderConfig.mockImplementation((providerId: string) => {
       if (providerId === "assemblyai") {
         return Promise.resolve({
-          model: "universal-3-5-pro",
+          model: "universal-3-pro",
         });
       }
 
@@ -391,7 +460,6 @@ describe("SpeechProviderSettings", () => {
     await waitFor(() => {
       expect(modelCombobox).toHaveTextContent("Universal-3.5 Pro");
     });
-    await selectComboboxOption(user, modelCombobox, "Universal-3 Pro");
     await user.type(screen.getByLabelText("API key"), "aa-test");
     await user.click(screen.getByRole("button", { name: "Save and use AssemblyAI" }));
 
@@ -400,7 +468,7 @@ describe("SpeechProviderSettings", () => {
         providerId: "assemblyai",
         apiKey: "aa-test",
         config: {
-          model: "universal-3-pro",
+          model: "universal-3-5-pro",
         },
         activate: true,
       });

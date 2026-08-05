@@ -12,6 +12,7 @@ const providerApi = vi.hoisted(() => ({
   getProviderConfig: vi.fn(),
   getSelectedSpeechProvider: vi.fn(),
   getTranscriptionPrompt: vi.fn(),
+  getTranscriptionPromptSupport: vi.fn(),
   saveSpeechProviderSetup: vi.fn(),
   saveTranscriptionPrompt: vi.fn(),
   testSpeechProvider: vi.fn(),
@@ -169,8 +170,15 @@ describe("SettingsPanel provider setup", () => {
       apiVersion: "2025-04-01-preview",
     });
     providerApi.getSelectedSpeechProvider.mockResolvedValue("azure-openai");
-    providerApi.getTranscriptionPrompt.mockResolvedValue("Keep the transcript faithful.");
-    providerApi.saveTranscriptionPrompt.mockResolvedValue("Keep the transcript faithful.");
+    providerApi.getTranscriptionPrompt.mockResolvedValue({
+      prompt: "Keep the transcript faithful.",
+      enabled: true,
+    });
+    providerApi.getTranscriptionPromptSupport.mockResolvedValue(true);
+    providerApi.saveTranscriptionPrompt.mockResolvedValue({
+      prompt: "Keep the transcript faithful.",
+      enabled: true,
+    });
     providerApi.testSpeechProvider.mockResolvedValue(azureReadyStatus());
   });
 

@@ -23,10 +23,6 @@ export const ASSEMBLYAI_MODELS = [
     label: "Universal-3.5 Pro",
   },
   {
-    value: "universal-3-pro",
-    label: "Universal-3 Pro",
-  },
-  {
     value: "u3-rt-pro",
     label: "Universal-3 Realtime Pro",
   },
@@ -56,7 +52,7 @@ export const SMALLEST_MODELS = [
   },
 ] as const;
 export const DEFAULT_OPENAI_MODEL = OPENAI_MODELS[0].value;
-export const DEFAULT_ASSEMBLYAI_MODEL = "universal-3-pro";
+export const DEFAULT_ASSEMBLYAI_MODEL = ASSEMBLYAI_MODELS[0].value;
 export const DEFAULT_ELEVENLABS_MODEL = ELEVENLABS_MODELS[0].value;
 export const DEFAULT_DEEPGRAM_MODEL = "nova-3";
 export const DEFAULT_SMALLEST_MODEL = SMALLEST_MODELS[0].value;

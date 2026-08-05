@@ -308,7 +308,6 @@ export function HomePanel() {
         },
       );
       const transcription = await transcribeRetryAudio({
-        model: activity.sourceRecord.provider.modelId ?? undefined,
         providerId,
         reprocessedAudio,
         fallbackAudioBlob: originalAudioBlob,
@@ -995,14 +994,12 @@ function resolveRetryTranscriptionBlobs(input: {
 
 async function transcribeRetryAudio(input: {
   providerId: string;
-  model?: string;
   reprocessedAudio: Awaited<ReturnType<typeof analyzeAudioForRetry>> | null;
   fallbackAudioBlob: Blob;
 }) {
   const primaryBlobs = resolveRetryTranscriptionBlobs(input);
   const primary = await transcribeRetryBlobs({
     audioBlobs: primaryBlobs,
-    model: input.model,
     providerId: input.providerId,
   });
 
@@ -1013,7 +1010,6 @@ async function transcribeRetryAudio(input: {
   if (input.reprocessedAudio?.processedAudio) {
     const fullProcessed = await transcribeRetryBlobs({
       audioBlobs: [input.reprocessedAudio.processedAudio],
-      model: input.model,
       providerId: input.providerId,
     });
     if (fullProcessed.text.length > 0) {
@@ -1024,7 +1020,6 @@ async function transcribeRetryAudio(input: {
   if (primaryBlobs.length > 1) {
     return transcribeRetryBlobs({
       audioBlobs: [input.fallbackAudioBlob],
-      model: input.model,
       providerId: input.providerId,
     });
   }
@@ -1034,7 +1029,6 @@ async function transcribeRetryAudio(input: {
 
 async function transcribeRetryBlobs(input: {
   providerId: string;
-  model?: string;
   audioBlobs: Blob[];
 }) {
   let providerId: string | null = null;
@@ -1048,7 +1042,6 @@ async function transcribeRetryBlobs(input: {
         providerId: input.providerId,
         audioBlob,
         language: "en",
-        model: input.model,
       });
       providerId = providerId ?? result.providerId;
       model = model ?? result.model;

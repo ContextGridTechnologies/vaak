@@ -106,6 +106,7 @@ fn command_window_policy(command: &str) -> Option<CommandWindowPolicy> {
         | "save_speech_provider_setup"
         | "get_provider_config"
         | "get_transcription_prompt"
+        | "get_transcription_prompt_support"
         | "save_transcription_prompt"
         | "save_selected_speech_provider"
         | "get_provider_status"
@@ -160,6 +161,13 @@ fn ensure_platform_command_allowed(command: &str, window_label: &str) -> Result<
 pub struct DiagnosticsLocations {
     pub log_dir: String,
     pub config_dir: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionPromptSettings {
+    pub prompt: String,
+    pub enabled: bool,
 }
 
 #[tauri::command]
@@ -564,22 +572,39 @@ pub fn get_provider_config(
 pub fn get_transcription_prompt(
     window: WebviewWindow,
     settings: State<'_, LocalSettingsStore>,
-) -> Result<String, ProviderError> {
+) -> Result<TranscriptionPromptSettings, ProviderError> {
     ensure_command_allowed_for_window("get_transcription_prompt", window.label())?;
-    speech::transcription_prompt(&settings)
+    let (prompt, enabled) = speech::transcription_prompt_settings(&settings)?;
+    Ok(TranscriptionPromptSettings { prompt, enabled })
+}
+
+#[tauri::command]
+pub fn get_transcription_prompt_support(
+    window: WebviewWindow,
+    provider_id: String,
+    model: Option<String>,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("get_transcription_prompt_support", window.label())?;
+    speech::validate_provider_id(&provider_id)?;
+    Ok(speech::transcription_prompt_supported(
+        &provider_id,
+        model.as_deref(),
+    ))
 }
 
 #[tauri::command]
 pub fn save_transcription_prompt(
     window: WebviewWindow,
     prompt: String,
+    enabled: bool,
     settings: State<'_, LocalSettingsStore>,
-) -> Result<String, ProviderError> {
+) -> Result<TranscriptionPromptSettings, ProviderError> {
     ensure_command_allowed_for_window("save_transcription_prompt", window.label())?;
     let prompt =
         crate::providers::normalize_transcription_prompt(Some(prompt))?.unwrap_or_default();
-    settings.save_transcription_prompt(&prompt)?;
-    speech::transcription_prompt(&settings)
+    settings.save_transcription_prompt(&prompt, enabled)?;
+    let (prompt, enabled) = speech::transcription_prompt_settings(&settings)?;
+    Ok(TranscriptionPromptSettings { prompt, enabled })
 }
 
 #[tauri::command]
@@ -1022,11 +1047,20 @@ pub async fn start_assemblyai_streaming_session(
         provider_config,
         speech::TranscriptionMode::Streaming,
     )?;
+    let (saved_prompt, prompt_enabled) = speech::transcription_prompt_settings(&settings)?;
+    let prompt = prompt_enabled.then_some(saved_prompt).filter(|_| {
+        speech::model_supports_instruction_prompt(
+            "assemblyai",
+            model.as_deref(),
+            speech::TranscriptionMode::Streaming,
+        )
+    });
     assemblyai_streaming::start_managed_session(
         &api_key,
         Arc::clone(streaming.inner()),
         events,
         model,
+        prompt,
     )
     .await
 }

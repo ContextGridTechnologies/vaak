@@ -10,10 +10,12 @@ import {
   getProviderConfig,
   getProviderStatus,
   getSelectedSpeechProvider,
+  getTranscriptionPrompt,
   cleanupAssemblyAiStreamingSessions,
   cleanupDeepgramStreamingSessions,
   cleanupElevenLabsStreamingSessions,
   saveSpeechProviderSetup,
+  saveTranscriptionPrompt,
   sendAssemblyAiStreamingAudio,
   sendDeepgramStreamingAudio,
   sendElevenLabsStreamingAudio,
@@ -179,6 +181,38 @@ describe("provider Tauri API", () => {
       language: "en",
       prompt: undefined,
       model: "universal-3-pro",
+    });
+  });
+
+  it("maps shared transcription prompt settings to the backend", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_transcription_prompt", {
+      prompt: "Desktop dictation context.",
+      enabled: true,
+    });
+    tauri.resolveCommand("save_transcription_prompt", {
+      prompt: "Updated dictation context.",
+      enabled: false,
+    });
+
+    await expect(getTranscriptionPrompt()).resolves.toEqual({
+      prompt: "Desktop dictation context.",
+      enabled: true,
+    });
+    await expect(
+      saveTranscriptionPrompt({
+        prompt: "Updated dictation context.",
+        enabled: false,
+      }),
+    ).resolves.toEqual({
+      prompt: "Updated dictation context.",
+      enabled: false,
+    });
+
+    expectTauriCommand(tauri, "get_transcription_prompt", undefined);
+    expectTauriCommand(tauri, "save_transcription_prompt", {
+      prompt: "Updated dictation context.",
+      enabled: false,
     });
   });
 

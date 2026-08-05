@@ -4,14 +4,20 @@ import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
@@ -20,6 +26,7 @@ import {
   getProviderStatus,
   getSelectedSpeechProvider,
   getTranscriptionPrompt,
+  getTranscriptionPromptSupport,
   saveSpeechProviderSetup,
   saveTranscriptionPrompt,
   testSpeechProvider,
@@ -70,6 +77,10 @@ export function SpeechProviderSettings({
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
   const [smallestApiKey, setSmallestApiKey] = useState("");
   const [transcriptionPrompt, setTranscriptionPrompt] = useState("");
+  const [transcriptionPromptEnabled, setTranscriptionPromptEnabled] =
+    useState(true);
+  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
+  const [sendsTranscriptionPrompt, setSendsTranscriptionPrompt] = useState(false);
   const [openAiModel, setOpenAiModel] = useState<string>(DEFAULT_OPENAI_MODEL);
   const [assemblyAiModel, setAssemblyAiModel] = useState<string>(
     DEFAULT_ASSEMBLYAI_MODEL,
@@ -111,6 +122,26 @@ export function SpeechProviderSettings({
     providerStatuses["azure-ai-speech"]?.configured,
   );
   const isOnboarding = variant === "onboarding";
+  const selectedModel =
+    selectedProviderId === "openai"
+      ? openAiModel
+      : selectedProviderId === "assemblyai"
+        ? assemblyAiModel
+        : undefined;
+
+  useEffect(() => {
+    let disposed = false;
+
+    void getTranscriptionPromptSupport(selectedProviderId, selectedModel).then(
+      (supported) => {
+        if (!disposed) setSendsTranscriptionPrompt(supported);
+      },
+    );
+
+    return () => {
+      disposed = true;
+    };
+  }, [selectedModel, selectedProviderId]);
 
   useEffect(() => {
     let disposed = false;
@@ -151,7 +182,9 @@ export function SpeechProviderSettings({
             getProviderConfig("elevenlabs"),
             getProviderConfig("smallest"),
             getSelectedSpeechProvider(),
-            isOnboarding ? Promise.resolve("") : getTranscriptionPrompt(),
+            isOnboarding
+              ? Promise.resolve({ prompt: "", enabled: true })
+              : getTranscriptionPrompt(),
           ]);
         if (!disposed) {
           setProviderStatuses({
@@ -173,7 +206,9 @@ export function SpeechProviderSettings({
           );
           setAzureAiSpeechEndpoint(azureAiSpeechConfig?.endpoint ?? "");
           setAssemblyAiModel(
-            assemblyAiConfig?.model ?? DEFAULT_ASSEMBLYAI_MODEL,
+            assemblyAiConfig?.model === "universal-3-pro"
+              ? DEFAULT_ASSEMBLYAI_MODEL
+              : assemblyAiConfig?.model ?? DEFAULT_ASSEMBLYAI_MODEL,
           );
           setElevenLabsModel(
             elevenLabsConfig?.model ?? DEFAULT_ELEVENLABS_MODEL,
@@ -184,7 +219,8 @@ export function SpeechProviderSettings({
               ? "openai"
               : selectedProvider,
           );
-          setTranscriptionPrompt(savedTranscriptionPrompt);
+          setTranscriptionPrompt(savedTranscriptionPrompt.prompt);
+          setTranscriptionPromptEnabled(savedTranscriptionPrompt.enabled);
         }
       } catch (err) {
         if (!disposed) {
@@ -678,9 +714,35 @@ export function SpeechProviderSettings({
     setGlobalError(null);
     setIsSavingPrompt(true);
     try {
-      setTranscriptionPrompt(await saveTranscriptionPrompt(transcriptionPrompt));
-      toast.success("Transcription prompt saved");
+      const saved = await saveTranscriptionPrompt({
+        prompt: transcriptionPrompt,
+        enabled: transcriptionPromptEnabled,
+      });
+      setTranscriptionPrompt(saved.prompt);
+      setTranscriptionPromptEnabled(saved.enabled);
+      setIsEditingPrompt(false);
+      toast.success("Transcription prompt settings saved");
     } catch (err) {
+      setGlobalError(normalizeError(err));
+    } finally {
+      setIsSavingPrompt(false);
+    }
+  };
+
+  const savePromptEnabled = async (enabled: boolean) => {
+    const previousEnabled = transcriptionPromptEnabled;
+    setGlobalError(null);
+    setTranscriptionPromptEnabled(enabled);
+    setIsSavingPrompt(true);
+    try {
+      const saved = await saveTranscriptionPrompt({
+        prompt: transcriptionPrompt,
+        enabled,
+      });
+      setTranscriptionPrompt(saved.prompt);
+      setTranscriptionPromptEnabled(saved.enabled);
+    } catch (err) {
+      setTranscriptionPromptEnabled(previousEnabled);
       setGlobalError(normalizeError(err));
     } finally {
       setIsSavingPrompt(false);
@@ -845,36 +907,77 @@ export function SpeechProviderSettings({
         </div>
       ) : null}
 
-      {!isOnboarding ? (
+      {!isOnboarding && sendsTranscriptionPrompt ? (
         <>
           <Separator className="bg-border/70" />
-          <form onSubmit={savePrompt}>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="transcription-prompt">
-                  Transcription prompt
-                </FieldLabel>
-                <FieldDescription>
-                  Used by OpenAI and Azure OpenAI batch transcription. Streaming providers do not use it yet.
-                </FieldDescription>
-                <Textarea
-                  id="transcription-prompt"
-                  value={transcriptionPrompt}
-                  maxLength={4096}
-                  rows={8}
-                  disabled={isLoading || isSavingPrompt}
-                  onChange={(event) => setTranscriptionPrompt(event.target.value)}
-                />
-              </Field>
-              <Button
-                type="submit"
-                className="w-fit"
-                disabled={isLoading || isSavingPrompt}
-              >
-                {isSavingPrompt ? "Saving..." : "Save prompt"}
-              </Button>
-            </FieldGroup>
-          </form>
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>
+                <h4>Transcription input prompt</h4>
+              </CardTitle>
+              <CardAction className="self-center">
+                <div className="flex items-center gap-3">
+                  <Field orientation="horizontal" className="w-auto gap-3">
+                    <FieldLabel htmlFor="transcription-prompt-enabled">
+                      {transcriptionPromptEnabled ? "Enabled" : "Disabled"}
+                    </FieldLabel>
+                    <Switch
+                      id="transcription-prompt-enabled"
+                      aria-label="Send transcription guidance"
+                      checked={transcriptionPromptEnabled}
+                      disabled={isLoading || isSavingPrompt}
+                      onCheckedChange={(enabled) => void savePromptEnabled(enabled)}
+                    />
+                  </Field>
+                  {!isEditingPrompt ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isLoading || isSavingPrompt}
+                      onClick={() => setIsEditingPrompt(true)}
+                    >
+                      Edit
+                    </Button>
+                  ) : null}
+                </div>
+              </CardAction>
+            </CardHeader>
+            {isEditingPrompt ? (
+              <form onSubmit={savePrompt} className="contents">
+                <CardContent>
+                  <FieldGroup>
+                    <Field>
+                      <Textarea
+                        id="transcription-prompt"
+                        aria-label="Prompt"
+                        value={transcriptionPrompt}
+                        maxLength={4096}
+                        rows={5}
+                        disabled={isLoading || isSavingPrompt}
+                        onChange={(event) => setTranscriptionPrompt(event.target.value)}
+                      />
+                    </Field>
+                    <div className="flex justify-end">
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={isLoading || isSavingPrompt}
+                      >
+                        {isSavingPrompt ? "Saving..." : "Save changes"}
+                      </Button>
+                    </div>
+                  </FieldGroup>
+                </CardContent>
+              </form>
+            ) : (
+              <CardContent>
+                <article className="whitespace-pre-wrap text-sm leading-relaxed">
+                  {transcriptionPrompt}
+                </article>
+              </CardContent>
+            )}
+          </Card>
         </>
       ) : null}
     </>
