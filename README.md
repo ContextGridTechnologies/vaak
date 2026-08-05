@@ -117,6 +117,7 @@ asset.
 Useful docs:
 
 - `docs/ROADMAP.md`
+- `docs/DICTATION_EXPERIENCE_FUTURE_SCOPE.md`
 - `docs/POSITIONING.md`
 - `docs/OPEN_SOURCE_PRODUCT_BASELINE.md`
 - `docs/PROVIDER_STRATEGY.md`

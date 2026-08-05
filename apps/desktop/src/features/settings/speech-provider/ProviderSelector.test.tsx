@@ -25,6 +25,9 @@ describe("ProviderSelector", () => {
     const deepgram = screen.getByRole("button", { name: "Deepgram" });
     const elevenLabs = screen.getByRole("button", { name: "ElevenLabs" });
     const smallest = screen.getByRole("button", { name: "Smallest AI" });
+    expect(
+      screen.queryByRole("button", { name: "Azure AI Speech" }),
+    ).not.toBeInTheDocument();
 
     expect(
       screen.getByText("Select the transcription service used for dictation."),

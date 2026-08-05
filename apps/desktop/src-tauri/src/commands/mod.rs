@@ -105,6 +105,8 @@ fn command_window_policy(command: &str) -> Option<CommandWindowPolicy> {
         | "save_provider_config"
         | "save_speech_provider_setup"
         | "get_provider_config"
+        | "get_transcription_prompt"
+        | "save_transcription_prompt"
         | "save_selected_speech_provider"
         | "get_provider_status"
         | "test_speech_provider"
@@ -556,6 +558,28 @@ pub fn get_provider_config(
     settings.provider_config_or_migrate(&provider_id, || {
         credentials::legacy_provider_config(&provider_id)
     })
+}
+
+#[tauri::command]
+pub fn get_transcription_prompt(
+    window: WebviewWindow,
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<String, ProviderError> {
+    ensure_command_allowed_for_window("get_transcription_prompt", window.label())?;
+    speech::transcription_prompt(&settings)
+}
+
+#[tauri::command]
+pub fn save_transcription_prompt(
+    window: WebviewWindow,
+    prompt: String,
+    settings: State<'_, LocalSettingsStore>,
+) -> Result<String, ProviderError> {
+    ensure_command_allowed_for_window("save_transcription_prompt", window.label())?;
+    let prompt =
+        crate::providers::normalize_transcription_prompt(Some(prompt))?.unwrap_or_default();
+    settings.save_transcription_prompt(&prompt)?;
+    speech::transcription_prompt(&settings)
 }
 
 #[tauri::command]

@@ -11,7 +11,6 @@ describe("providerCatalog", () => {
       expect.arrayContaining([
         "openai",
         "azure-openai",
-        "azure-ai-speech",
         "assemblyai",
         "deepgram",
         "groq",
@@ -19,6 +18,7 @@ describe("providerCatalog", () => {
         "smallest",
       ]),
     );
+    expect(ids).not.toContain("azure-ai-speech");
 
     for (const provider of providerCatalog) {
       expect(provider.name.trim()).not.toHaveLength(0);
@@ -52,7 +52,6 @@ describe("providerCatalog", () => {
       expect.arrayContaining([
         "openai",
         "azure-openai",
-        "azure-ai-speech",
         "assemblyai",
         "deepgram",
         "elevenlabs",

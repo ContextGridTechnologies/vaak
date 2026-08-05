@@ -12,7 +12,9 @@ const providerApi = vi.hoisted(() => ({
   getProviderStatus: vi.fn(),
   getProviderConfig: vi.fn(),
   getSelectedSpeechProvider: vi.fn(),
+  getTranscriptionPrompt: vi.fn(),
   saveSpeechProviderSetup: vi.fn(),
+  saveTranscriptionPrompt: vi.fn(),
   testSpeechProvider: vi.fn(),
 }));
 
@@ -82,6 +84,8 @@ describe("SpeechProviderSettings", () => {
     });
     providerApi.getProviderConfig.mockResolvedValue(null);
     providerApi.getSelectedSpeechProvider.mockResolvedValue("openai");
+    providerApi.getTranscriptionPrompt.mockResolvedValue("Keep the transcript faithful.");
+    providerApi.saveTranscriptionPrompt.mockResolvedValue("Use concise sentences.");
     providerApi.saveSpeechProviderSetup.mockResolvedValue({
       providerId: "openai",
       configured: true,
@@ -91,6 +95,32 @@ describe("SpeechProviderSettings", () => {
       providerId: "openai",
       configured: true,
       configComplete: true,
+    });
+  });
+
+  it("shows and saves the transcription prompt in provider settings", async () => {
+    const user = userEvent.setup();
+
+    renderApp(<SpeechProviderSettings variant="settings" />);
+
+    const prompt = await screen.findByRole("textbox", {
+      name: "Transcription prompt",
+    });
+    expect(prompt).toHaveValue("Keep the transcript faithful.");
+    expect(
+      screen.getByText(
+        "Used by OpenAI and Azure OpenAI batch transcription. Streaming providers do not use it yet.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.clear(prompt);
+    await user.type(prompt, "Use concise sentences.");
+    await user.click(screen.getByRole("button", { name: "Save prompt" }));
+
+    await waitFor(() => {
+      expect(providerApi.saveTranscriptionPrompt).toHaveBeenCalledWith(
+        "Use concise sentences.",
+      );
     });
   });
 
@@ -108,6 +138,9 @@ describe("SpeechProviderSettings", () => {
     expect(
       screen.getByRole("button", { name: "Azure OpenAI" }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Azure AI Speech" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "AssemblyAI" }),
     ).toBeInTheDocument();
@@ -152,6 +185,55 @@ describe("SpeechProviderSettings", () => {
         /Stored locally in the operating system keychain\. Re-enter the key when changing Azure settings\./,
       ),
     ).not.toBeInTheDocument();
+  });
+
+  it("defaults new Azure OpenAI setup to the full GPT-4o transcription deployment", async () => {
+    const user = userEvent.setup();
+    renderApp(<SpeechProviderSettings variant="onboarding" />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Azure OpenAI" }),
+    );
+
+    expect(screen.getByLabelText("Deployment ID")).toHaveValue(
+      "gpt-4o-transcribe",
+    );
+    expect(screen.getByLabelText("Deployment ID")).not.toHaveValue(
+      "gpt-4o-mini-transcribe",
+    );
+  });
+
+  it("does not surface a legacy Azure AI Speech selection during onboarding", async () => {
+    providerApi.getSelectedSpeechProvider.mockResolvedValue("azure-ai-speech");
+
+    renderApp(<SpeechProviderSettings variant="onboarding" />);
+
+    expect(
+      await screen.findByRole("heading", { name: "OpenAI" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Azure AI Speech" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("preserves a saved custom Azure OpenAI deployment ID", async () => {
+    const user = userEvent.setup();
+    providerApi.getProviderConfig.mockImplementation((providerId: string) => {
+      if (providerId === "azure-openai") {
+        return Promise.resolve({ deploymentId: "company-transcribe" });
+      }
+
+      return Promise.resolve(null);
+    });
+
+    renderApp(<SpeechProviderSettings variant="settings" />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Azure OpenAI" }),
+    );
+    expect(screen.getByLabelText("Deployment ID")).toHaveValue(
+      "company-transcribe",
+    );
   });
 
   it("auto-verifies onboarding provider setup after save and reports success", async () => {

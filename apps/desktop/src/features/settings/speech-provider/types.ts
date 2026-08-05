@@ -1,6 +1,7 @@
 import type { ProviderStatus, SpeechProviderId } from "@/lib/tauri";
 
 export const AZURE_OPENAI_API_VERSION = "2025-04-01-preview";
+export const DEFAULT_AZURE_OPENAI_DEPLOYMENT = "gpt-4o-transcribe";
 export const SAVED_KEY_PLACEHOLDER = "************";
 export const OPENAI_MODELS = [
   {

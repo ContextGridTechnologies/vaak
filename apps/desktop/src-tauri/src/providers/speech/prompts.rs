@@ -1,4 +1,4 @@
-pub fn default_transcription_prompt() -> &'static str {
+pub(crate) fn default_transcription_prompt() -> &'static str {
     r#"You are a transcription engine for a desktop dictation app.
 
 Your goal is to produce insertion-ready text that stays faithful to the speaker while improving readability when structure is clearly implied.

@@ -5,14 +5,23 @@ import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { analytics } from "@/lib/analytics/browser";
 import { normalizeError } from "@/lib/errors";
 import {
   getProviderConfig,
   getProviderStatus,
   getSelectedSpeechProvider,
+  getTranscriptionPrompt,
   saveSpeechProviderSetup,
+  saveTranscriptionPrompt,
   testSpeechProvider,
   type SpeechProviderId,
 } from "@/lib/tauri";
@@ -29,6 +38,7 @@ import { verifyOnboardingProviderTranscription } from "./onboardingProviderVerif
 import { normalizeProviderError } from "./status";
 import {
   AZURE_OPENAI_API_VERSION,
+  DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_ASSEMBLYAI_MODEL,
   DEFAULT_DEEPGRAM_MODEL,
   DEFAULT_ELEVENLABS_MODEL,
@@ -59,6 +69,7 @@ export function SpeechProviderSettings({
   const [deepgramApiKey, setDeepgramApiKey] = useState("");
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
   const [smallestApiKey, setSmallestApiKey] = useState("");
+  const [transcriptionPrompt, setTranscriptionPrompt] = useState("");
   const [openAiModel, setOpenAiModel] = useState<string>(DEFAULT_OPENAI_MODEL);
   const [assemblyAiModel, setAssemblyAiModel] = useState<string>(
     DEFAULT_ASSEMBLYAI_MODEL,
@@ -70,7 +81,9 @@ export function SpeechProviderSettings({
     DEFAULT_SMALLEST_MODEL,
   );
   const [azureEndpoint, setAzureEndpoint] = useState("");
-  const [azureDeploymentId, setAzureDeploymentId] = useState("");
+  const [azureDeploymentId, setAzureDeploymentId] = useState(
+    DEFAULT_AZURE_OPENAI_DEPLOYMENT,
+  );
   const [azureApiVersion, setAzureApiVersion] = useState(
     AZURE_OPENAI_API_VERSION,
   );
@@ -83,6 +96,7 @@ export function SpeechProviderSettings({
   const [isLoading, setIsLoading] = useState(true);
   const [savingProviderId, setSavingProviderId] =
     useState<SpeechProviderId | null>(null);
+  const [isSavingPrompt, setIsSavingPrompt] = useState(false);
   const [testingProviderId, setTestingProviderId] =
     useState<SpeechProviderId | null>(null);
   const [providerErrors, setProviderErrors] = useState<ProviderErrors>({});
@@ -120,6 +134,7 @@ export function SpeechProviderSettings({
           elevenLabsConfig,
           smallestConfig,
           selectedProvider,
+          savedTranscriptionPrompt,
         ] =
           await Promise.all([
             getProviderStatus("openai"),
@@ -136,6 +151,7 @@ export function SpeechProviderSettings({
             getProviderConfig("elevenlabs"),
             getProviderConfig("smallest"),
             getSelectedSpeechProvider(),
+            isOnboarding ? Promise.resolve("") : getTranscriptionPrompt(),
           ]);
         if (!disposed) {
           setProviderStatuses({
@@ -149,7 +165,9 @@ export function SpeechProviderSettings({
           });
           setOpenAiModel(openAiConfig?.model ?? DEFAULT_OPENAI_MODEL);
           setAzureEndpoint(azureConfig?.endpoint ?? "");
-          setAzureDeploymentId(azureConfig?.deploymentId ?? "");
+          setAzureDeploymentId(
+            azureConfig?.deploymentId ?? DEFAULT_AZURE_OPENAI_DEPLOYMENT,
+          );
           setAzureApiVersion(
             azureConfig?.apiVersion ?? AZURE_OPENAI_API_VERSION,
           );
@@ -161,7 +179,12 @@ export function SpeechProviderSettings({
             elevenLabsConfig?.model ?? DEFAULT_ELEVENLABS_MODEL,
           );
           setSmallestModel(smallestConfig?.model ?? DEFAULT_SMALLEST_MODEL);
-          setSelectedProviderId(selectedProvider);
+          setSelectedProviderId(
+            isOnboarding && selectedProvider === "azure-ai-speech"
+              ? "openai"
+              : selectedProvider,
+          );
+          setTranscriptionPrompt(savedTranscriptionPrompt);
         }
       } catch (err) {
         if (!disposed) {
@@ -650,6 +673,20 @@ export function SpeechProviderSettings({
     void testSelectedProvider();
   };
 
+  const savePrompt = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setGlobalError(null);
+    setIsSavingPrompt(true);
+    try {
+      setTranscriptionPrompt(await saveTranscriptionPrompt(transcriptionPrompt));
+      toast.success("Transcription prompt saved");
+    } catch (err) {
+      setGlobalError(normalizeError(err));
+    } finally {
+      setIsSavingPrompt(false);
+    }
+  };
+
   const providerSetup = (
     <>
       {globalError ? (
@@ -806,6 +843,39 @@ export function SpeechProviderSettings({
               : "Retry provider test"}
           </Button>
         </div>
+      ) : null}
+
+      {!isOnboarding ? (
+        <>
+          <Separator className="bg-border/70" />
+          <form onSubmit={savePrompt}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="transcription-prompt">
+                  Transcription prompt
+                </FieldLabel>
+                <FieldDescription>
+                  Used by OpenAI and Azure OpenAI batch transcription. Streaming providers do not use it yet.
+                </FieldDescription>
+                <Textarea
+                  id="transcription-prompt"
+                  value={transcriptionPrompt}
+                  maxLength={4096}
+                  rows={8}
+                  disabled={isLoading || isSavingPrompt}
+                  onChange={(event) => setTranscriptionPrompt(event.target.value)}
+                />
+              </Field>
+              <Button
+                type="submit"
+                className="w-fit"
+                disabled={isLoading || isSavingPrompt}
+              >
+                {isSavingPrompt ? "Saving..." : "Save prompt"}
+              </Button>
+            </FieldGroup>
+          </form>
+        </>
       ) : null}
     </>
   );

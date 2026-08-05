@@ -57,7 +57,6 @@ function isSpeechProvider(
   return (
     provider.id === "openai" ||
     provider.id === "azure-openai" ||
-    provider.id === "azure-ai-speech" ||
     provider.id === "assemblyai" ||
     provider.id === "deepgram" ||
     provider.id === "elevenlabs" ||

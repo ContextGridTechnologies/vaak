@@ -129,12 +129,12 @@ describe("VoiceSetupPanel", () => {
 
     expect(screen.getByText("OpenAI")).toBeInTheDocument();
     expect(screen.getByText("Azure OpenAI")).toBeInTheDocument();
-    expect(screen.getByText("Azure AI Speech")).toBeInTheDocument();
+    expect(screen.queryByText("Azure AI Speech")).not.toBeInTheDocument();
     expect(screen.getByText("AssemblyAI")).toBeInTheDocument();
     expect(screen.getByText("ElevenLabs")).toBeInTheDocument();
     expect(screen.getByText("Smallest AI")).toBeInTheDocument();
     expect(screen.getByText("Deepgram")).toBeInTheDocument();
     expect(screen.getByText("Groq")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Configure" })).toHaveLength(8);
+    expect(screen.getAllByRole("button", { name: "Configure" })).toHaveLength(7);
   });
 });

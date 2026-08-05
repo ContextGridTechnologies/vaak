@@ -255,7 +255,23 @@ pub fn normalize_language_field(value: Option<String>) -> Result<Option<String>,
 pub fn normalize_transcription_prompt(
     value: Option<String>,
 ) -> Result<Option<String>, ProviderError> {
-    normalize_optional_field(value, "prompt", MAX_TRANSCRIPTION_PROMPT_LEN)
+    let Some(value) = value else {
+        return Ok(None);
+    };
+
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let has_unsupported_control = trimmed
+        .chars()
+        .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'));
+    if trimmed.chars().count() > MAX_TRANSCRIPTION_PROMPT_LEN || has_unsupported_control {
+        return Err(ProviderFailure::InvalidRequest("prompt is invalid".to_string()).into());
+    }
+
+    Ok(Some(trimmed.to_string()))
 }
 
 fn normalize_optional_field(
@@ -382,7 +398,11 @@ fn request_failure_with_context(
             format!("{provider_name} rejected the audio request"),
         )
     } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        ProviderError::new("provider_rate_limited", message)
+        if looks_like_quota_error(body) {
+            ProviderError::new("provider_quota_exhausted", message)
+        } else {
+            ProviderError::new("provider_rate_limited", message)
+        }
     } else if status.is_server_error() {
         ProviderError::new("provider_upstream_failed", message)
     } else {
@@ -418,11 +438,16 @@ fn is_retryable_status(status: reqwest::StatusCode) -> bool {
 fn looks_like_quota_error(body: &str) -> bool {
     let normalized = body.to_ascii_lowercase();
     [
+        "credit_balance_exhausted",
         "insufficient balance",
         "insufficient credit",
         "insufficient quota",
+        "insufficient_quota",
         "no credits",
+        "organization_spend_limit_exceeded",
+        "organization_usage_limit_exceeded",
         "out of credits",
+        "project_spend_limit_exceeded",
         "quota exceeded",
         "usage limit",
         "limit reached",
@@ -740,6 +765,18 @@ mod tests {
     }
 
     #[test]
+    fn accepts_multiline_transcription_prompts() {
+        let prompt = "Keep the wording faithful.\n\nUse bullet points when dictated.";
+
+        assert_eq!(
+            normalize_transcription_prompt(Some(prompt.to_string()))
+                .unwrap()
+                .as_deref(),
+            Some(prompt)
+        );
+    }
+
+    #[test]
     fn rejects_over_limit_transcription_prompts() {
         let prompt = "a".repeat(4_097);
         let err = normalize_transcription_prompt(Some(prompt)).unwrap_err();
@@ -788,6 +825,27 @@ mod tests {
 
         assert_eq!(err.code, "provider_quota_exhausted");
         assert_eq!(err.message, "AssemblyAI returned 401 Unauthorized");
+    }
+
+    #[test]
+    fn classifies_openai_quota_429_separately_from_rate_limits() {
+        for code in [
+            "credit_balance_exhausted",
+            "organization_spend_limit_exceeded",
+            "project_spend_limit_exceeded",
+            "organization_usage_limit_exceeded",
+            "insufficient_quota",
+        ] {
+            let body = format!(r#"{{"error":{{"code":"{code}"}}}}"#);
+            let err = request_failure_with_context(
+                "OpenAI",
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                None,
+                Some(&body),
+            );
+
+            assert_eq!(err.code, "provider_quota_exhausted", "code: {code}");
+        }
     }
 
     #[test]

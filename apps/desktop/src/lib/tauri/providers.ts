@@ -180,6 +180,14 @@ export async function transcribeRecording(input: {
   });
 }
 
+export async function getTranscriptionPrompt(): Promise<string> {
+  return invokeTauri("get_transcription_prompt");
+}
+
+export async function saveTranscriptionPrompt(prompt: string): Promise<string> {
+  return invokeTauri("save_transcription_prompt", { prompt });
+}
+
 export async function startAssemblyAiStreamingSession(input: {
   onEvent: (event: AssemblyAiStreamingEvent) => void;
 }): Promise<AssemblyAiStreamingStartResult> {

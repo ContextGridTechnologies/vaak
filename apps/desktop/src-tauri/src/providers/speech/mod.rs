@@ -112,6 +112,7 @@ pub async fn transcribe(
         input,
         provider_config.clone(),
         TranscriptionMode::Batch,
+        settings.transcription_prompt()?,
     )?;
 
     match provider_id {
@@ -157,6 +158,12 @@ pub async fn transcribe(
         gemini::PROVIDER_ID => Err(ProviderFailure::UnsupportedProvider.into()),
         _ => Err(ProviderFailure::UnsupportedProvider.into()),
     }
+}
+
+pub fn transcription_prompt(settings: &LocalSettingsStore) -> Result<String, ProviderError> {
+    Ok(settings
+        .transcription_prompt()?
+        .unwrap_or_else(|| prompts::default_transcription_prompt().to_string()))
 }
 
 pub fn validate_provider_id(provider_id: &str) -> Result<(), ProviderError> {
@@ -224,7 +231,7 @@ fn resolve_transcription_input(
     input: TranscriptionInput,
     config: Option<crate::providers::ProviderConfig>,
 ) -> TranscriptionInput {
-    resolve_transcription_input_for_mode(provider_id, input, config, TranscriptionMode::Batch)
+    resolve_transcription_input_for_mode(provider_id, input, config, TranscriptionMode::Batch, None)
         .expect("batch transcription input should resolve in tests")
 }
 
@@ -233,6 +240,7 @@ fn resolve_transcription_input_for_mode(
     mut input: TranscriptionInput,
     config: Option<crate::providers::ProviderConfig>,
     mode: TranscriptionMode,
+    saved_prompt: Option<String>,
 ) -> Result<TranscriptionInput, ProviderError> {
     let has_explicit_model = input
         .model
@@ -266,7 +274,9 @@ fn resolve_transcription_input_for_mode(
     }
 
     if model_supports_prompt(provider_id, input.model.as_deref()) {
-        input.prompt = Some(prompts::default_transcription_prompt().to_string());
+        input.prompt = Some(
+            saved_prompt.unwrap_or_else(|| prompts::default_transcription_prompt().to_string()),
+        );
     }
 
     Ok(input)
@@ -634,6 +644,72 @@ mod tests {
     }
 
     #[test]
+    fn saved_prompt_is_used_when_the_request_has_no_explicit_prompt() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/wav".to_string(),
+            language: None,
+            prompt: None,
+            model: Some("gpt-4o-mini-transcribe".to_string()),
+        };
+
+        let resolved = resolve_transcription_input_for_mode(
+            "openai",
+            input,
+            None,
+            TranscriptionMode::Batch,
+            Some("Keep names exact.".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.prompt.as_deref(), Some("Keep names exact."));
+    }
+
+    #[test]
+    fn saved_prompt_is_ignored_when_the_model_does_not_support_it() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/wav".to_string(),
+            language: None,
+            prompt: None,
+            model: Some("nova-3".to_string()),
+        };
+
+        let resolved = resolve_transcription_input_for_mode(
+            "deepgram",
+            input,
+            None,
+            TranscriptionMode::Batch,
+            Some("Keep names exact.".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.prompt, None);
+    }
+
+    #[test]
+    fn saved_prompt_is_not_routed_to_assemblyai_until_its_adapter_supports_it() {
+        let input = TranscriptionInput {
+            audio: vec![1],
+            mime_type: "audio/wav".to_string(),
+            language: None,
+            prompt: None,
+            model: Some("universal-3-5-pro".to_string()),
+        };
+
+        let resolved = resolve_transcription_input_for_mode(
+            "assemblyai",
+            input,
+            None,
+            TranscriptionMode::Batch,
+            Some("Keep names exact.".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.prompt, None);
+    }
+
+    #[test]
     fn preserves_explicit_prompt_when_present() {
         let input = TranscriptionInput {
             audio: vec![1],
@@ -892,6 +968,7 @@ mod tests {
                 transcription_mode: None,
             }),
             TranscriptionMode::Batch,
+            None,
         )
         .expect_err("streaming-only model should not resolve for batch");
 
@@ -916,6 +993,7 @@ mod tests {
             input,
             None,
             TranscriptionMode::Batch,
+            None,
         )
         .expect_err("streaming-only model should not resolve for batch");
 
@@ -1287,13 +1365,6 @@ const BATCH_LANGUAGE_FINAL: TranscriptionModelCapabilities = TranscriptionModelC
     partial_results: false,
     final_results: true,
 };
-const STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL: TranscriptionModelCapabilities =
-    TranscriptionModelCapabilities {
-        language_hint: true,
-        prompt_or_keyterms: true,
-        partial_results: true,
-        final_results: true,
-    };
 const STREAMING_LANGUAGE_PARTIAL_FINAL: TranscriptionModelCapabilities =
     TranscriptionModelCapabilities {
         language_hint: true,
@@ -1377,7 +1448,7 @@ const ASSEMBLYAI_UNIVERSAL_3_5_PRO_ROUTES: &[TranscriptionModelRoute] = &[
         default_for_mode: false,
         endpoint_profile_id: "assemblyai-v2-transcript",
         audio_profile_id: "assemblyai-batch-file",
-        capabilities: BATCH_LANGUAGE_PROMPT_FINAL,
+        capabilities: BATCH_LANGUAGE_FINAL,
         retry_policy_id: "http-async-job",
         billing_unit: BillingUnit::AudioDuration,
         test_profile_id: "assemblyai-universal-3-5-pro-batch",
@@ -1388,7 +1459,7 @@ const ASSEMBLYAI_UNIVERSAL_3_5_PRO_ROUTES: &[TranscriptionModelRoute] = &[
         default_for_mode: false,
         endpoint_profile_id: "assemblyai-v3-streaming-ws",
         audio_profile_id: "assemblyai-streaming-pcm16-16khz",
-        capabilities: STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL,
+        capabilities: STREAMING_LANGUAGE_PARTIAL_FINAL,
         retry_policy_id: "websocket-session",
         billing_unit: BillingUnit::SessionDuration,
         test_profile_id: "assemblyai-universal-3-5-pro-streaming",
@@ -1411,7 +1482,7 @@ const ASSEMBLYAI_U3_RT_PRO_ROUTES: &[TranscriptionModelRoute] = &[TranscriptionM
     default_for_mode: true,
     endpoint_profile_id: "assemblyai-v3-streaming-ws",
     audio_profile_id: "assemblyai-streaming-pcm16-16khz",
-    capabilities: STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL,
+    capabilities: STREAMING_LANGUAGE_PARTIAL_FINAL,
     retry_policy_id: "websocket-session",
     billing_unit: BillingUnit::SessionDuration,
     test_profile_id: "assemblyai-u3-rt-pro-streaming",
@@ -1423,7 +1494,7 @@ const ASSEMBLYAI_UNIVERSAL_STREAMING_ENGLISH_ROUTES: &[TranscriptionModelRoute] 
         default_for_mode: false,
         endpoint_profile_id: "assemblyai-v3-streaming-ws",
         audio_profile_id: "assemblyai-streaming-pcm16-16khz",
-        capabilities: STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL,
+        capabilities: STREAMING_LANGUAGE_PARTIAL_FINAL,
         retry_policy_id: "websocket-session",
         billing_unit: BillingUnit::SessionDuration,
         test_profile_id: "assemblyai-universal-streaming-english-streaming",
@@ -1435,7 +1506,7 @@ const ASSEMBLYAI_UNIVERSAL_STREAMING_MULTILINGUAL_ROUTES: &[TranscriptionModelRo
         default_for_mode: false,
         endpoint_profile_id: "assemblyai-v3-streaming-ws",
         audio_profile_id: "assemblyai-streaming-pcm16-16khz",
-        capabilities: STREAMING_LANGUAGE_PROMPT_PARTIAL_FINAL,
+        capabilities: STREAMING_LANGUAGE_PARTIAL_FINAL,
         retry_policy_id: "websocket-session",
         billing_unit: BillingUnit::SessionDuration,
         test_profile_id: "assemblyai-universal-streaming-multilingual-streaming",

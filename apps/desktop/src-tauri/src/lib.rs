@@ -251,6 +251,8 @@ pub fn run() {
             commands::save_provider_config,
             commands::save_speech_provider_setup,
             commands::get_provider_config,
+            commands::get_transcription_prompt,
+            commands::save_transcription_prompt,
             commands::save_selected_speech_provider,
             commands::get_selected_speech_provider,
             commands::get_provider_status,

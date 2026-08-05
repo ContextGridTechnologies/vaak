@@ -14,7 +14,7 @@
   <Identity
     Name="ContextGridTechnologies.Vaak"
     Publisher="CN=B20D8AD7-41D7-401F-B407-EA718E9EC445"
-    Version="0.1.16.0" />
+    Version="0.1.17.0" />
 
   <Properties>
     <DisplayName>Vaak</DisplayName>

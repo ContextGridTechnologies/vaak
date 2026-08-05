@@ -37,6 +37,8 @@ struct LocalSettings {
     #[serde(default)]
     provider_configs: BTreeMap<String, ProviderConfig>,
     #[serde(default)]
+    transcription_prompt: Option<String>,
+    #[serde(default)]
     microphone_selection: MicrophoneSelection,
     #[serde(default)]
     hotkeys: HotkeySettings,
@@ -171,6 +173,7 @@ impl Default for LocalSettings {
             version: SETTINGS_VERSION,
             selected_speech_provider: default_selected_speech_provider(),
             provider_configs: BTreeMap::new(),
+            transcription_prompt: None,
             microphone_selection: MicrophoneSelection::default(),
             hotkeys: HotkeySettings::default(),
             onboarding: OnboardingState::default(),
@@ -288,6 +291,21 @@ impl LocalSettingsStore {
         settings
             .provider_configs
             .insert(provider_id.to_string(), config.clone());
+        self.save_unlocked(&settings)
+    }
+
+    pub fn transcription_prompt(&self) -> Result<Option<String>, ProviderError> {
+        let _guard = self.lock()?;
+        Ok(self.load_unlocked()?.transcription_prompt)
+    }
+
+    pub fn save_transcription_prompt(&self, prompt: &str) -> Result<(), ProviderError> {
+        let _guard = self.lock()?;
+        let mut settings = self.load_unlocked()?;
+        settings.transcription_prompt = match prompt.trim() {
+            "" => None,
+            prompt => Some(prompt.to_string()),
+        };
         self.save_unlocked(&settings)
     }
 
@@ -763,6 +781,24 @@ mod tests {
             .provider_config_or_migrate("azure-openai", || Ok(None))
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn persists_transcription_prompt() {
+        let dir = temp_config_dir("transcription-prompt");
+        let store = LocalSettingsStore::new(&dir);
+
+        store
+            .save_transcription_prompt("Keep names exact.")
+            .unwrap();
+
+        assert_eq!(
+            LocalSettingsStore::new(&dir)
+                .transcription_prompt()
+                .unwrap()
+                .as_deref(),
+            Some("Keep names exact.")
+        );
     }
 
     #[test]
