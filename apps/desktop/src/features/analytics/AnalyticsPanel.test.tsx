@@ -94,13 +94,45 @@ describe("AnalyticsPanel", () => {
     expect(screen.getByText("Words dictated")).toBeInTheDocument();
     expect(screen.getByText("Dictations")).toBeInTheDocument();
     expect(screen.getByText("Active days")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Productivity this week" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: /^Productivity this week:/ }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Most used apps")).toBeInTheDocument();
     expect(screen.getByText("VS Code")).toBeInTheDocument();
     expect(screen.getByText("Chrome")).toBeInTheDocument();
     expect(screen.queryByText("Recent activity")).not.toBeInTheDocument();
     expect(screen.queryByText("Recent dictations")).not.toBeInTheDocument();
     expect(screen.queryByText("Insertion target rejected text.")).not.toBeInTheDocument();
+  });
+
+  it("gives every chart an accessible data summary", async () => {
+    getAllRecentDictationRecords.mockResolvedValue([
+      createRecord({
+        recordId: "record-1",
+        status: "inserted",
+        providerId: "openai",
+        modelId: "gpt-4o-transcribe",
+        capturedAt: "2026-06-12T09:00:00.000Z",
+        startedAt: "2026-06-12T09:00:00.000Z",
+        endedAt: "2026-06-12T09:00:02.000Z",
+        windowTitle: "Visual Studio Code",
+      }),
+    ]);
+
+    renderApp(<AnalyticsPanel />);
+
+    await waitFor(() => expect(screen.getByText("VS Code")).toBeInTheDocument());
+    expect(
+      screen.getByRole("img", { name: /^Seven-day trend:.*Fri 0 minutes/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: /^Productivity this week:.*Fri 0 minutes/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", {
+        name: "App usage: VS Code 100%, 1 dictation.",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("reuses the loaded analytics snapshot across remounts", async () => {

@@ -402,7 +402,7 @@ function ProductivityChart({ rows }: { rows: TrendRow[] }) {
 
   return (
     <div
-      aria-label="Productivity this week"
+      aria-label={formatTrendAriaLabel("Productivity this week", rows)}
       role="img"
       className="grid min-h-72 grid-cols-[2rem_minmax(0,1fr)] gap-3"
     >
@@ -420,7 +420,11 @@ function ProductivityChart({ rows }: { rows: TrendRow[] }) {
             <div
               className={cn(
                 "w-full max-w-10 rounded-t-md shadow-sm",
-                row.minutesSaved > 0 ? "bg-chart-1" : "bg-muted",
+                row.minutesSaved === maxValue && row.minutesSaved > 0
+                  ? "bg-chart-1"
+                  : row.minutesSaved > 0
+                    ? "bg-chart-1/65"
+                    : "bg-muted",
               )}
               style={{
                 height:
@@ -429,7 +433,14 @@ function ProductivityChart({ rows }: { rows: TrendRow[] }) {
                     : "0.375rem",
               }}
             />
-            <div className="min-w-0 text-center text-[0.7rem] leading-4 text-muted-foreground sm:text-xs">
+            <div
+              className={cn(
+                "min-w-0 text-center text-[0.7rem] leading-4 sm:text-xs",
+                row.minutesSaved === maxValue && row.minutesSaved > 0
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground",
+              )}
+            >
               <div>{row.label}</div>
               <div>{row.dateLabel}</div>
             </div>
@@ -450,30 +461,43 @@ function MostUsedApps({ rows }: { rows: AppRow[] }) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      aria-label={formatAppUsageAriaLabel(rows)}
+      role="img"
+      className="flex flex-col divide-y divide-border/70"
+    >
       {rows.map((row, index) => (
         <div
           key={row.label}
-          className="grid grid-cols-[minmax(0,1fr)_3.5rem] gap-2 rounded-lg border border-border/70 bg-muted/20 p-3"
+          className="flex flex-col gap-2.5 py-3 first:pt-0 last:pb-0"
         >
-          <div className="min-w-0 flex flex-col gap-2">
-            <div className="flex min-w-0 items-start justify-between gap-3">
-              <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-3">
+            <Badge
+              variant={index === 0 ? "default" : "secondary"}
+              className="size-6 shrink-0 rounded-full p-0 tabular-nums"
+            >
+              {index + 1}
+            </Badge>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-3">
                 <div className="truncate text-sm font-medium">{row.label}</div>
-                <div className="text-xs text-muted-foreground">
-                  #{index + 1} · {formatDictationCount(row.count)}
+                <div className="shrink-0 text-sm font-semibold tabular-nums">
+                  {formatPercent(row.share)}
                 </div>
               </div>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-background">
-              <div
-                className="h-full rounded-full bg-chart-1"
-                style={{ width: `${Math.max(4, row.share * 100)}%` }}
-              />
+              <div className="text-xs text-muted-foreground">
+                {formatDictationCount(row.count)}
+              </div>
             </div>
           </div>
-          <div className="self-start text-right text-sm font-medium tabular-nums">
-            {formatPercent(row.share)}
+          <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                "h-full rounded-full",
+                index === 0 ? "bg-chart-1" : "bg-chart-1/60",
+              )}
+              style={{ width: `${Math.max(4, row.share * 100)}%` }}
+            />
           </div>
         </div>
       ))}
@@ -482,15 +506,20 @@ function MostUsedApps({ rows }: { rows: AppRow[] }) {
 }
 
 function MiniTrendLine({ rows }: { rows: TrendRow[] }) {
-  const width = 520;
-  const height = 92;
-  const padding = 10;
-  const chartWidth = width - padding * 2;
-  const chartHeight = height - padding * 2;
+  const width = 640;
+  const height = 128;
+  const horizontalPadding = 24;
+  const plotTop = 14;
+  const plotBottom = 90;
+  const labelY = 118;
+  const chartWidth = width - horizontalPadding * 2;
+  const chartHeight = plotBottom - plotTop;
   const maxValue = Math.max(1, ...rows.map((row) => row.minutesSaved));
   const points = rows.map((row, index) => {
-    const x = padding + (chartWidth / Math.max(rows.length - 1, 1)) * index;
-    const y = padding + chartHeight - (row.minutesSaved / maxValue) * chartHeight;
+    const x =
+      horizontalPadding +
+      (chartWidth / Math.max(rows.length - 1, 1)) * index;
+    const y = plotTop + chartHeight - (row.minutesSaved / maxValue) * chartHeight;
 
     return { x, y, row };
   });
@@ -500,14 +529,27 @@ function MiniTrendLine({ rows }: { rows: TrendRow[] }) {
 
   return (
     <svg
-      aria-hidden="true"
-      className="h-24 w-full overflow-visible"
+      aria-label={formatTrendAriaLabel("Seven-day trend", rows)}
+      role="img"
+      className="h-32 w-full overflow-visible"
       viewBox={`0 0 ${width} ${height}`}
     >
+      {[plotTop, plotTop + chartHeight / 2, plotBottom].map((y) => (
+        <line
+          key={y}
+          x1={horizontalPadding}
+          x2={width - horizontalPadding}
+          y1={y}
+          y2={y}
+          className="stroke-border"
+          opacity="0.7"
+          strokeDasharray={y === plotBottom ? undefined : "3 5"}
+        />
+      ))}
       <path
-        d={`${path} L ${width - padding} ${height - padding} L ${padding} ${height - padding} Z`}
+        d={`${path} L ${width - horizontalPadding} ${plotBottom} L ${horizontalPadding} ${plotBottom} Z`}
         className="fill-chart-1"
-        opacity="0.1"
+        opacity="0.08"
       />
       <path
         d={path}
@@ -518,14 +560,33 @@ function MiniTrendLine({ rows }: { rows: TrendRow[] }) {
         strokeWidth="3"
       />
       {points.map((point) => (
-        <circle
-          key={point.row.key}
-          cx={point.x}
-          cy={point.y}
-          className="fill-card stroke-card"
-          r="3"
-          strokeWidth="2"
-        />
+        <g key={point.row.key}>
+          {point.row.minutesSaved > 0 ? (
+            <text
+              x={point.x}
+              y={Math.max(10, point.y - 9)}
+              textAnchor="middle"
+              className="fill-foreground text-[11px] font-semibold tabular-nums"
+            >
+              {point.row.minutesSaved}
+            </text>
+          ) : null}
+          <circle
+            cx={point.x}
+            cy={point.y}
+            className="fill-card stroke-chart-1"
+            r="4"
+            strokeWidth="2.5"
+          />
+          <text
+            x={point.x}
+            y={labelY}
+            textAnchor="middle"
+            className="fill-muted-foreground text-[11px] font-medium"
+          >
+            {point.row.label}
+          </text>
+        </g>
       ))}
     </svg>
   );
@@ -753,6 +814,28 @@ function formatDictationCount(value: number): string {
 
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+function formatTrendAriaLabel(title: string, rows: TrendRow[]): string {
+  const values = rows
+    .map(
+      (row) =>
+        `${row.label} ${formatNumber(row.minutesSaved)} ${row.minutesSaved === 1 ? "minute" : "minutes"}`,
+    )
+    .join(", ");
+
+  return `${title}: ${values}.`;
+}
+
+function formatAppUsageAriaLabel(rows: AppRow[]): string {
+  const values = rows
+    .map(
+      (row) =>
+        `${row.label} ${formatPercent(row.share)}, ${formatDictationCount(row.count)}`,
+    )
+    .join("; ");
+
+  return `App usage: ${values}.`;
 }
 
 function getNiceChartMax(value: number): number {
