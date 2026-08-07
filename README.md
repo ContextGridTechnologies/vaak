@@ -116,6 +116,7 @@ asset.
 
 Useful docs:
 
+- [MCP platform architecture](docs/MCP_PLATFORM_ARCHITECTURE.md)
 - `docs/ROADMAP.md`
 - `docs/DICTATION_EXPERIENCE_FUTURE_SCOPE.md`
 - `docs/POSITIONING.md`
@@ -124,6 +125,7 @@ Useful docs:
 - `docs/MODEL_CALLING_RETRY_BASE.md`
 - `docs/PROVIDER_SPECIFIC_RETRY.md`
 - `docs/ARCHITECTURE.md`
+- `docs/VOICE_AGENT_ARCHITECTURE.md`
 - `docs/DEVELOPMENT.md`
 - `docs/SECURITY.md`
 

@@ -1,6 +1,7 @@
 pub mod credentials;
 pub mod errors;
 pub mod speech;
+pub mod voice_agent;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

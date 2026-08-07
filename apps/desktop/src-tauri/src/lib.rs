@@ -1,5 +1,7 @@
+mod agent;
 mod commands;
 mod config;
+mod mcp;
 mod platform;
 mod providers;
 mod session;
@@ -66,6 +68,7 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default()
         .manage(session::SessionStore::default())
+        .manage(agent::AgentToolBroker::default())
         .manage(Arc::new(
             providers::speech::assemblyai_streaming::ManagedAssemblyAiStreamingState::default(),
         ))
@@ -105,7 +108,6 @@ pub fn run() {
             }
         }));
     }
-
     builder
         .plugin(build_log_plugin(runtime_config))
         .plugin(tauri_plugin_opener::init())
@@ -208,12 +210,61 @@ pub fn run() {
                 app.path().app_config_dir().map_err(|err| err.to_string())?,
             );
             startup_diagnostics.record_backend_checkpoint("dictation_record_store_created", None);
+            let mcp_store = mcp::McpStateStore::new(
+                app.path().app_config_dir().map_err(|err| err.to_string())?,
+            );
+            mcp_store
+                .reconcile_catalog()
+                .map_err(|err| err.message.clone())?;
+            let resource_archive = app
+                .path()
+                .resource_dir()
+                .map_err(|err| err.to_string())?
+                .join("resources")
+                .join("mcp")
+                .join(mcp::FLAUI_ARCHIVE_NAME);
+            let source_archive = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources")
+                .join("mcp")
+                .join(mcp::FLAUI_ARCHIVE_NAME);
+            let bundled_archive = if resource_archive.is_file() {
+                resource_archive
+            } else {
+                source_archive
+            };
+            let mcp_runtime = mcp::McpRuntimeManager::with_bundled_archive(
+                app.path().app_data_dir().map_err(|err| err.to_string())?,
+                bundled_archive,
+            );
+            if mcp_store
+                .should_provision_default()
+                .map_err(|err| err.message.clone())?
+            {
+                match mcp_runtime.install_bundled() {
+                    Ok(_) => {
+                        mcp_store
+                            .set_installed(mcp::DEFAULT_CONNECTOR_ID, true)
+                            .map_err(|err| err.message.clone())?;
+                        startup_diagnostics
+                            .record_backend_checkpoint("default_mcp_provisioned", None);
+                    }
+                    Err(err) => {
+                        log::warn!("default FlaUI MCP provisioning failed: {}", err.message);
+                        startup_diagnostics.record_backend_checkpoint(
+                            "default_mcp_provision_failed",
+                            Some(&err.message),
+                        );
+                    }
+                }
+            }
             let bindings = load_startup_hotkey_bindings_with_diagnostics(
                 &settings_store,
                 &startup_diagnostics,
             );
             app.manage(settings_store);
             app.manage(records_store);
+            app.manage(mcp_store);
+            app.manage(mcp_runtime);
             let session = app.state::<session::SessionStore>();
             session
                 .set_dictation_hotkey(&bindings.dictation)
@@ -277,6 +328,19 @@ pub fn run() {
             commands::save_onboarding_step,
             commands::complete_onboarding,
             commands::transcribe_recording,
+            commands::get_assemblyai_voice_agent_token,
+            commands::execute_voice_agent_tool,
+            commands::resolve_voice_agent_tool_approval,
+            commands::release_voice_agent_tool_snapshot,
+            commands::get_mcp_connectors,
+            commands::install_mcp_connector,
+            commands::uninstall_mcp_connector,
+            commands::set_mcp_connector_enabled,
+            commands::set_mcp_agent_binding,
+            commands::set_mcp_tool_grant,
+            commands::get_mcp_skills,
+            commands::set_mcp_skill_binding,
+            commands::test_mcp_connector,
             commands::start_assemblyai_streaming_session,
             commands::send_assemblyai_streaming_audio,
             commands::stop_assemblyai_streaming_session,

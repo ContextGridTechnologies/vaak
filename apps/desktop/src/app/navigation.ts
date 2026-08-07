@@ -1,5 +1,7 @@
 import {
   AudioLinesIcon,
+  BlocksIcon,
+  BotIcon,
   ChartNoAxesCombinedIcon,
   InfoIcon,
   SlidersHorizontalIcon,
@@ -7,7 +9,7 @@ import {
 } from "lucide-react";
 
 type AppSectionConfig = {
-  value: "home" | "analytics" | "settings" | "info";
+  value: "home" | "voiceAgent" | "mcps" | "analytics" | "settings" | "info";
   label: string;
   icon: LucideIcon;
 };
@@ -17,6 +19,16 @@ export const primarySections: readonly AppSectionConfig[] = [
     value: "home",
     label: "Voice",
     icon: AudioLinesIcon,
+  },
+  {
+    value: "voiceAgent",
+    label: "Voice Agent",
+    icon: BotIcon,
+  },
+  {
+    value: "mcps",
+    label: "MCPs",
+    icon: BlocksIcon,
   },
   {
     value: "analytics",

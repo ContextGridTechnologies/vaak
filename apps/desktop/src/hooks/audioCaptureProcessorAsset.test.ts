@@ -9,4 +9,13 @@ describe("audio capture processor asset", () => {
 
     expect(existsSync(assetPath)).toBe(true);
   });
+
+  it("ships the voice-agent PCM16 worklet used by the floating capsule", () => {
+    const assetPath = resolve(
+      process.cwd(),
+      "public/voiceAgentPcmProcessor.js",
+    );
+
+    expect(existsSync(assetPath)).toBe(true);
+  });
 });

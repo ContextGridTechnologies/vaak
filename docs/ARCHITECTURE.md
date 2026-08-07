@@ -135,3 +135,11 @@ Managed cloud mode:
 
 Backend is not part of Milestone 1. Do not add backend dependency to the local
 dictation path.
+
+## Agent Tool Platform
+
+The voice-agent tool boundary and production connector manager are defined in
+[Voice Agent Architecture](VOICE_AGENT_ARCHITECTURE.md) and
+[MCP Platform Architecture](MCP_PLATFORM_ARCHITECTURE.md). MCP installation,
+authorization, runtime, and agent binding belong to the Rust/Tauri core and
+remain optional to the dictation path.

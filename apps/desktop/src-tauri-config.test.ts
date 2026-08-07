@@ -36,6 +36,7 @@ type TauriConfig = {
     shortDescription?: string | null;
     longDescription?: string | null;
     icon?: string[];
+    resources?: string[];
     windows?: {
       allowDowngrades?: boolean;
       webviewInstallMode?: {
@@ -131,6 +132,7 @@ describe("Tauri security configuration", () => {
     expect(csp).toContain("asset: http://asset.localhost");
     expect(csp).toContain("media-src 'self' blob: asset: http://asset.localhost");
     expect(csp).toContain("https://api.openai.com");
+    expect(csp).toContain("wss://agents.assemblyai.com");
     expect(csp).toContain("https://*.openai.azure.com");
     expect(csp).toContain("https://us.i.posthog.com");
     expect(csp).toContain("https://eu.i.posthog.com");
@@ -143,6 +145,7 @@ describe("Tauri security configuration", () => {
     expect(devCsp).toContain("ws://localhost:1421");
     expect(devCsp).toContain("http://127.0.0.1:1420");
     expect(devCsp).toContain("ws://127.0.0.1:1421");
+    expect(devCsp).toContain("wss://agents.assemblyai.com");
     expect(devCsp).toContain("https://us.i.posthog.com");
     expect(devCsp).toContain("https://eu.i.posthog.com");
     expect(devCsp).toContain("script-src 'self' 'unsafe-eval' 'unsafe-inline'");
@@ -158,12 +161,29 @@ describe("Tauri security configuration", () => {
     expect(mainCapability.permissions).toContain("process:allow-restart");
     expect(mainCapability.permissions).not.toContain("opener:default");
     expect(voiceCapsuleCapability.windows).toEqual(["voice-capsule"]);
-    expect(voiceCapsuleCapability.permissions).toEqual([
-      "core:window:default",
-      "core:event:default",
-      "core:window:allow-start-dragging",
-      "core:window:allow-set-position",
-    ]);
+    expect(voiceCapsuleCapability.permissions).toEqual(
+      expect.arrayContaining([
+        "core:window:default",
+        "core:event:default",
+        "core:window:allow-start-dragging",
+        "core:window:allow-set-position",
+        "allow-get-assemblyai-voice-agent-token",
+        "allow-execute-voice-agent-tool",
+        "allow-resolve-voice-agent-tool-approval",
+      ]),
+    );
+    expect(mainCapability.permissions).toContain("allow-get-mcp-connectors");
+    expect(mainCapability.permissions).toContain("allow-set-mcp-tool-grant");
+    expect(voiceCapsuleCapability.permissions).not.toContain("allow-get-mcp-connectors");
+    expect(voiceCapsuleCapability.permissions).not.toContain("process:allow-restart");
+    expect(voiceCapsuleCapability.permissions).not.toContain("opener:allow-open-url");
+    const buildScript = readFileSync(
+      join(process.cwd(), "src-tauri", "build.rs"),
+      "utf8",
+    );
+    expect(buildScript).toContain("AppManifest::new().commands(APP_COMMANDS)");
+    expect(buildScript).toContain('"resolve_voice_agent_tool_approval"');
+    expect(buildScript).toContain('"set_mcp_tool_grant"');
   });
 
   it("does not duplicate CSP delivery in index.html", () => {
@@ -184,6 +204,82 @@ describe("Desktop release metadata", () => {
 
     expect(packageLock.version).toBe(packageJson.version);
     expect(packageLock.packages[""].version).toBe(packageJson.version);
+  });
+
+  it("keeps generated app-command permissions aligned with registration and window policy", () => {
+    const libRs = readFileSync(
+      join(process.cwd(), "src-tauri", "src", "lib.rs"),
+      "utf8",
+    );
+    const commandsRs = readFileSync(
+      join(process.cwd(), "src-tauri", "src", "commands", "mod.rs"),
+      "utf8",
+    );
+    const buildRs = readFileSync(join(process.cwd(), "src-tauri", "build.rs"), "utf8");
+    const mainCapability = JSON.parse(
+      readFileSync(join(process.cwd(), "src-tauri", "capabilities", "main.json"), "utf8"),
+    ) as { permissions: string[] };
+    const voiceCapability = JSON.parse(
+      readFileSync(
+        join(process.cwd(), "src-tauri", "capabilities", "voice-capsule.json"),
+        "utf8",
+      ),
+    ) as { permissions: string[] };
+
+    const handler = libRs.slice(
+      libRs.indexOf(".invoke_handler(tauri::generate_handler!["),
+      libRs.indexOf("])\n        .run", libRs.indexOf(".invoke_handler")),
+    );
+    const registered = [...handler.matchAll(/commands::([a-z0-9_]+)/g)].map(
+      (match) => match[1],
+    );
+    const manifestBlock = buildRs.slice(
+      buildRs.indexOf("const APP_COMMANDS"),
+      buildRs.indexOf("];"),
+    );
+    const manifested = [...manifestBlock.matchAll(/"([a-z0-9_]+)"/g)].map(
+      (match) => match[1],
+    );
+    expect(manifested.sort()).toEqual(registered.sort());
+
+    for (const command of registered) {
+      expect(mainCapability.permissions).toContain(`allow-${command.replaceAll("_", "-")}`);
+    }
+
+    const capsulePolicyBlock = commandsRs.slice(
+      commandsRs.indexOf("match command {"),
+      commandsRs.indexOf("Some(CommandWindowPolicy::CapsuleAllowed)", commandsRs.indexOf("match command {")),
+    );
+    const capsuleCommands = [
+      ...capsulePolicyBlock.matchAll(/"([a-z0-9_]+)"/g),
+    ].map((match) => `allow-${match[1].replaceAll("_", "-")}`);
+    expect(
+      voiceCapability.permissions.filter((permission) => permission.startsWith("allow-")),
+    ).toEqual(capsuleCommands);
+  });
+
+  it("pins and bundles the verified FlaUI MCP runtime", () => {
+    const config = JSON.parse(
+      readFileSync(join(process.cwd(), "src-tauri", "tauri.conf.json"), "utf8"),
+    ) as TauriConfig;
+    const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const preparation = readFileSync(
+      join(process.cwd(), "scripts", "ensure-mcp-runtime.mjs"),
+      "utf8",
+    );
+
+    expect(config.bundle?.resources).toEqual(["resources/mcp/"]);
+    expect(packageJson.scripts["tauri:dev"]).toContain("ensure-mcp-runtime.mjs");
+    expect(packageJson.scripts.build).toContain("ensure-mcp-runtime.mjs");
+    expect(preparation).toContain('const VERSION = "0.2.0"');
+    expect(preparation).toContain(
+      "6428bb38aef433d8754b48cbaaff4f1eca5e98c107e89b0ad90399a9fcb1a106",
+    );
+    expect(preparation).toContain(
+      "1a00162fc1a7c3fac924dfc5702cd66deb51d3a9f6a870c1e339a3defb6e20a4",
+    );
   });
 
   it("keeps the Microsoft Store package identity in its manifest", () => {

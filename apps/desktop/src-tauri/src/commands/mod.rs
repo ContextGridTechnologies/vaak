@@ -1,3 +1,5 @@
+use crate::agent;
+use crate::mcp;
 use crate::platform;
 use crate::platform::common::{
     CaptureInsertResult, FocusedFieldInfo, PermissionStatus, PlatformError, TextInsertResult,
@@ -21,6 +23,7 @@ use crate::providers::speech::smallest_streaming::{
     SmallestStreamingStartResult,
 };
 use crate::providers::speech::streaming_common::StreamingAudioWrite;
+use crate::providers::voice_agent;
 use crate::providers::{
     speech, ProviderConfig, ProviderStatus, TranscriptResult, TranscriptionInput,
 };
@@ -48,6 +51,13 @@ const MICROPHONE_SELECTION_CHANGED_EVENT: &str = "vaak://microphone-selection-ch
 const MAX_RECENT_RECORD_LIMIT: usize = 200;
 const MAX_RECENT_RECORD_OFFSET: usize = 10_000;
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssemblyAiVoiceSessionBootstrap {
+    pub token: String,
+    pub session: agent::AgentToolSnapshot,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CommandWindowPolicy {
     CapsuleAllowed,
@@ -67,6 +77,10 @@ fn command_window_policy(command: &str) -> Option<CommandWindowPolicy> {
         | "save_dictation_record"
         | "persist_dictation_audio"
         | "get_selected_speech_provider"
+        | "get_assemblyai_voice_agent_token"
+        | "execute_voice_agent_tool"
+        | "resolve_voice_agent_tool_approval"
+        | "release_voice_agent_tool_snapshot"
         | "start_assemblyai_streaming_session"
         | "send_assemblyai_streaming_audio"
         | "stop_assemblyai_streaming_session"
@@ -119,6 +133,15 @@ fn command_window_policy(command: &str) -> Option<CommandWindowPolicy> {
         | "save_onboarding_mode"
         | "save_onboarding_step"
         | "complete_onboarding"
+        | "get_mcp_connectors"
+        | "install_mcp_connector"
+        | "uninstall_mcp_connector"
+        | "set_mcp_connector_enabled"
+        | "set_mcp_agent_binding"
+        | "set_mcp_tool_grant"
+        | "get_mcp_skills"
+        | "set_mcp_skill_binding"
+        | "test_mcp_connector"
         | "restart_voice_capsule"
         | "reset_voice_capsule_position"
         | "disable_voice_capsule"
@@ -132,7 +155,15 @@ fn ensure_command_allowed_for_window(
     window_label: &str,
 ) -> Result<(), ProviderError> {
     match command_window_policy(command) {
-        Some(CommandWindowPolicy::CapsuleAllowed) => Ok(()),
+        Some(CommandWindowPolicy::CapsuleAllowed)
+            if window_label == MAIN_WINDOW_LABEL || window_label == VOICE_CAPSULE_LABEL =>
+        {
+            Ok(())
+        }
+        Some(CommandWindowPolicy::CapsuleAllowed) => Err(ProviderFailure::InvalidRequest(format!(
+            "{command} is not available to the {window_label} window"
+        ))
+        .into()),
         Some(CommandWindowPolicy::MainOnly) if window_label == MAIN_WINDOW_LABEL => Ok(()),
         Some(CommandWindowPolicy::MainOnly) => Err(ProviderFailure::InvalidRequest(format!(
             "{command} is not available to the {window_label} window"
@@ -1066,6 +1097,304 @@ pub async fn start_assemblyai_streaming_session(
 }
 
 #[tauri::command]
+pub async fn get_assemblyai_voice_agent_token(
+    window: WebviewWindow,
+    broker: State<'_, agent::AgentToolBroker>,
+    mcp_store: State<'_, mcp::McpStateStore>,
+    mcp_runtime: State<'_, mcp::McpRuntimeManager>,
+) -> Result<AssemblyAiVoiceSessionBootstrap, ProviderError> {
+    ensure_command_allowed_for_window("get_assemblyai_voice_agent_token", window.label())?;
+    let api_key = credentials::provider_key("assemblyai")?;
+    let client = crate::providers::build_http_client()?;
+    let token = voice_agent::mint_assemblyai_voice_token(&client, &api_key).await?;
+    Ok(AssemblyAiVoiceSessionBootstrap {
+        token: token.token,
+        session: broker.create_snapshot_with_mcp_and_instructions(
+            window.label(),
+            load_agent_mcp_tools(&mcp_store, &mcp_runtime).await?,
+            mcp_store.active_skill_instructions(mcp::DEFAULT_AGENT_ID)?,
+        ),
+    })
+}
+
+#[tauri::command]
+pub async fn execute_voice_agent_tool(
+    window: WebviewWindow,
+    broker: State<'_, agent::AgentToolBroker>,
+    mcp_store: State<'_, mcp::McpStateStore>,
+    mcp_runtime: State<'_, mcp::McpRuntimeManager>,
+    session_id: String,
+    revision: u64,
+    alias: String,
+    provider_call_id: String,
+    arguments: serde_json::Value,
+) -> Result<serde_json::Value, ProviderError> {
+    ensure_command_allowed_for_window("execute_voice_agent_tool", window.label())?;
+    let prepared = broker.prepare_execution(
+        &session_id,
+        window.label(),
+        revision,
+        &alias,
+        &provider_call_id,
+        arguments,
+    )?;
+    finish_agent_tool_call(prepared, &session_id, &mcp_store, &mcp_runtime).await
+}
+
+#[tauri::command]
+pub async fn resolve_voice_agent_tool_approval(
+    window: WebviewWindow,
+    broker: State<'_, agent::AgentToolBroker>,
+    mcp_store: State<'_, mcp::McpStateStore>,
+    mcp_runtime: State<'_, mcp::McpRuntimeManager>,
+    session_id: String,
+    approval_id: String,
+    approved: bool,
+) -> Result<serde_json::Value, ProviderError> {
+    ensure_command_allowed_for_window("resolve_voice_agent_tool_approval", window.label())?;
+    let prepared = broker.resolve_approval(&session_id, window.label(), &approval_id, approved)?;
+    finish_agent_tool_call(prepared, &session_id, &mcp_store, &mcp_runtime).await
+}
+
+async fn finish_agent_tool_call(
+    prepared: agent::AgentPreparedToolCall,
+    runtime_session_id: &str,
+    mcp_store: &mcp::McpStateStore,
+    mcp_runtime: &mcp::McpRuntimeManager,
+) -> Result<serde_json::Value, ProviderError> {
+    match prepared {
+        agent::AgentPreparedToolCall::Complete(result) => Ok(result),
+        agent::AgentPreparedToolCall::ApprovalRequired {
+            approval_id,
+            tool_name,
+            risk,
+        } => Ok(serde_json::json!({
+            "status": "approvalRequired",
+            "approval": {
+                "approvalId": approval_id,
+                "toolName": tool_name,
+                "risk": risk,
+            }
+        })),
+        agent::AgentPreparedToolCall::Mcp {
+            connector_id,
+            name,
+            policy,
+            arguments,
+            ..
+        } => {
+            if connector_id != mcp::DEFAULT_CONNECTOR_ID {
+                return Err(ProviderError::new(
+                    "mcp_tool_denied",
+                    "MCP connector is not available",
+                ));
+            }
+            let current = mcp_store.active_granted_tools(mcp::DEFAULT_AGENT_ID)?;
+            if !current
+                .iter()
+                .any(|tool| tool.name == name && tool.policy == policy)
+            {
+                return Err(ProviderError::new(
+                    "mcp_tool_denied",
+                    "MCP tool grant changed after the voice session started",
+                ));
+            }
+            mcp_runtime
+                .call_tool_for(runtime_session_id, &name, arguments)
+                .await
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConnectorTestResult {
+    pub ready: bool,
+    pub discovered_tools: Vec<String>,
+}
+
+#[tauri::command]
+pub fn get_mcp_connectors(
+    window: WebviewWindow,
+    store: State<'_, mcp::McpStateStore>,
+) -> Result<Vec<mcp::McpConnectorView>, ProviderError> {
+    ensure_command_allowed_for_window("get_mcp_connectors", window.label())?;
+    store.list_connectors(mcp::DEFAULT_AGENT_ID)
+}
+
+#[tauri::command]
+pub fn install_mcp_connector(
+    window: WebviewWindow,
+    store: State<'_, mcp::McpStateStore>,
+    runtime: State<'_, mcp::McpRuntimeManager>,
+    connector_id: String,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("install_mcp_connector", window.label())?;
+    if connector_id != mcp::DEFAULT_CONNECTOR_ID {
+        return Err(ProviderFailure::InvalidRequest("unknown MCP connector".to_string()).into());
+    }
+    let installed = runtime.install_bundled()?;
+    store.set_installed(&connector_id, true)?;
+    Ok(installed)
+}
+
+#[tauri::command]
+pub async fn uninstall_mcp_connector(
+    window: WebviewWindow,
+    store: State<'_, mcp::McpStateStore>,
+    runtime: State<'_, mcp::McpRuntimeManager>,
+    connector_id: String,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("uninstall_mcp_connector", window.label())?;
+    if connector_id != mcp::DEFAULT_CONNECTOR_ID {
+        return Err(ProviderFailure::InvalidRequest("unknown MCP connector".to_string()).into());
+    }
+    let removed = runtime.uninstall().await?;
+    store.set_installed(&connector_id, false)?;
+    Ok(removed)
+}
+
+#[tauri::command]
+pub async fn set_mcp_connector_enabled(
+    window: WebviewWindow,
+    store: State<'_, mcp::McpStateStore>,
+    runtime: State<'_, mcp::McpRuntimeManager>,
+    connector_id: String,
+    enabled: bool,
+) -> Result<(), ProviderError> {
+    ensure_command_allowed_for_window("set_mcp_connector_enabled", window.label())?;
+    store.set_enabled(&connector_id, enabled)?;
+    if !enabled {
+        runtime.stop().await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_mcp_agent_binding(
+    window: WebviewWindow,
+    store: State<'_, mcp::McpStateStore>,
+    connector_id: String,
+    enabled: bool,
+) -> Result<(), ProviderError> {
+    ensure_command_allowed_for_window("set_mcp_agent_binding", window.label())?;
+    store.set_binding(mcp::DEFAULT_AGENT_ID, &connector_id, enabled)
+}
+
+#[tauri::command]
+pub async fn set_mcp_tool_grant(
+    window: WebviewWindow,
+    store: State<'_, mcp::McpStateStore>,
+    runtime: State<'_, mcp::McpRuntimeManager>,
+    connector_id: String,
+    tool_name: String,
+    grant: String,
+) -> Result<(), ProviderError> {
+    ensure_command_allowed_for_window("set_mcp_tool_grant", window.label())?;
+    let schema_hash = if matches!(grant.as_str(), "always" | "ask") {
+        let discovered = runtime.list_tools().await?;
+        let tool = discovered
+            .iter()
+            .find(|tool| tool.name == tool_name)
+            .ok_or_else(|| {
+                ProviderFailure::InvalidRequest("MCP tool is unavailable".to_string())
+            })?;
+        Some(mcp::schema_hash(&tool.input_schema)?)
+    } else {
+        None
+    };
+    store.set_tool_grant_with_schema(
+        mcp::DEFAULT_AGENT_ID,
+        &connector_id,
+        &tool_name,
+        &grant,
+        schema_hash.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn get_mcp_skills(
+    window: WebviewWindow,
+    store: State<'_, mcp::McpStateStore>,
+) -> Result<Vec<mcp::McpSkillView>, ProviderError> {
+    ensure_command_allowed_for_window("get_mcp_skills", window.label())?;
+    store.list_skills(mcp::DEFAULT_AGENT_ID)
+}
+
+#[tauri::command]
+pub fn set_mcp_skill_binding(
+    window: WebviewWindow,
+    store: State<'_, mcp::McpStateStore>,
+    skill_id: String,
+    enabled: bool,
+) -> Result<(), ProviderError> {
+    ensure_command_allowed_for_window("set_mcp_skill_binding", window.label())?;
+    store.set_skill_binding(mcp::DEFAULT_AGENT_ID, &skill_id, enabled)
+}
+
+#[tauri::command]
+pub async fn test_mcp_connector(
+    window: WebviewWindow,
+    runtime: State<'_, mcp::McpRuntimeManager>,
+) -> Result<McpConnectorTestResult, ProviderError> {
+    ensure_command_allowed_for_window("test_mcp_connector", window.label())?;
+    let tools = runtime.list_tools().await?;
+    Ok(McpConnectorTestResult {
+        ready: true,
+        discovered_tools: tools.into_iter().map(|tool| tool.name).collect(),
+    })
+}
+
+async fn load_agent_mcp_tools(
+    store: &mcp::McpStateStore,
+    runtime: &mcp::McpRuntimeManager,
+) -> Result<Vec<agent::AgentMcpTool>, ProviderError> {
+    let grants = store.active_granted_tools(mcp::DEFAULT_AGENT_ID)?;
+    if grants.is_empty() {
+        return Ok(Vec::new());
+    }
+    let discovered = runtime.list_tools().await?;
+    let mut tools = Vec::new();
+    for grant in grants {
+        let Some(tool) = discovered.iter().find(|tool| tool.name == grant.name) else {
+            continue;
+        };
+        let discovered_hash = mcp::schema_hash(&tool.input_schema)?;
+        if grant.schema_hash.as_deref() != Some(discovered_hash.as_str()) {
+            log::warn!("MCP tool schema changed; grant disabled for {}", grant.name);
+            continue;
+        }
+        let Some(description) = mcp::reviewed_tool_description(&grant.name) else {
+            continue;
+        };
+        tools.push(agent::AgentMcpTool {
+            connector_id: mcp::DEFAULT_CONNECTOR_ID.to_string(),
+            name: grant.name,
+            description: description.to_string(),
+            input_schema: tool.input_schema.clone(),
+            policy: grant.policy,
+            risk: grant.risk,
+        });
+    }
+    Ok(tools)
+}
+
+#[tauri::command]
+pub async fn release_voice_agent_tool_snapshot(
+    window: WebviewWindow,
+    broker: State<'_, agent::AgentToolBroker>,
+    runtime: State<'_, mcp::McpRuntimeManager>,
+    session_id: String,
+) -> Result<bool, ProviderError> {
+    ensure_command_allowed_for_window("release_voice_agent_tool_snapshot", window.label())?;
+    let released = broker.release_snapshot(&session_id, window.label());
+    if released {
+        runtime.stop_session(&session_id).await;
+    }
+    Ok(released)
+}
+
+#[tauri::command]
 pub fn send_assemblyai_streaming_audio(
     window: WebviewWindow,
     audio_bytes: Vec<u8>,
@@ -1349,6 +1678,9 @@ mod tests {
             "capture_dictation_target",
             "insert_into_active_target",
             "get_selected_speech_provider",
+            "get_assemblyai_voice_agent_token",
+            "execute_voice_agent_tool",
+            "release_voice_agent_tool_snapshot",
             "transcribe_recording",
             "start_assemblyai_streaming_session",
             "send_assemblyai_streaming_audio",
@@ -1377,6 +1709,15 @@ mod tests {
                 "{command}"
             );
         }
+    }
+
+    #[test]
+    fn capsule_commands_reject_unregistered_window_labels() {
+        let error =
+            ensure_command_allowed_for_window("get_assemblyai_voice_agent_token", "future-window")
+                .unwrap_err();
+
+        assert_eq!(error.code, "invalid_provider_request");
     }
 
     #[test]

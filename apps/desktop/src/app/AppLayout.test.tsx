@@ -76,6 +76,40 @@ describe("AppLayout", () => {
     expect(screen.getByRole("button", { name: "Analytics" })).toBeInTheDocument();
   });
 
+  it("opens the voice agent destination from the sidebar", () => {
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+        <TabsContent value="voiceAgent">Voice agent content</TabsContent>
+      </AppLayout>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Voice Agent" }));
+
+    expect(screen.getByText("Voice agent content")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Voice Agent" })).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+  });
+
+  it("opens MCP management from the sidebar", () => {
+    renderLayout(
+      <AppLayout>
+        <TabsContent value="home">Home content</TabsContent>
+        <TabsContent value="mcps">MCP content</TabsContent>
+      </AppLayout>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "MCPs" }));
+
+    expect(screen.getByText("MCP content")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "MCPs" })).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+  });
+
   it("switches the sidebar to settings categories when Settings is opened", async () => {
     renderLayout(
       <AppLayout>

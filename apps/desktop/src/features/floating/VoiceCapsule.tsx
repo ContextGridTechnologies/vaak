@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { DictationLifecycleState } from "@/features/dictation/hooks/useDictationLoop";
+import type { VoiceAgentState } from "./useAssemblyAiVoiceAgent";
 import {
   openMainWindow,
   setVoiceCapsuleSizeMode,
@@ -32,13 +33,17 @@ import { cn } from "@/lib/utils";
 
 type VoiceCapsuleProps = {
   audioLevel: number;
+  agentDisabled: boolean;
+  agentState: VoiceAgentState;
   canRecoverInsertion: boolean;
   message: string;
   onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
   onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
   onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
+  onToggleAgent: () => void;
   onToggleRecording: () => void;
+  recordingDisabled: boolean;
   state: DictationLifecycleState;
   transcript: string | null;
 };
@@ -59,13 +64,17 @@ const RECOVERY_SUCCESS_CLOSE_MS = 1_500;
 
 export function VoiceCapsule({
   audioLevel,
+  agentDisabled,
+  agentState,
   canRecoverInsertion,
   message,
   onPointerDown,
   onPointerMove,
   onPointerUp,
   onPointerCancel,
+  onToggleAgent,
   onToggleRecording,
+  recordingDisabled,
   state,
   transcript,
 }: VoiceCapsuleProps) {
@@ -79,6 +88,7 @@ export function VoiceCapsule({
   const visualState = getVoiceCapsuleVisualState(state);
   const isRecording = visualState === "recording";
   const isBusy = visualState === "busy";
+  const agentActive = agentState !== "idle" && agentState !== "error";
   const recoverableTranscript = canRecoverInsertion ? transcript?.trim() : "";
   const showRecovery = Boolean(canRecoverInsertion && recoverableTranscript);
   const recoveryVisible = showRecovery && recoveryOpen;
@@ -234,7 +244,7 @@ export function VoiceCapsule({
             visualState === "error" && "bg-rose-500/18 text-rose-100",
           )}
           onClick={onToggleRecording}
-          disabled={isBusy}
+          disabled={isBusy || recordingDisabled}
           aria-label={
             isRecording
               ? "Stop recording"
@@ -250,9 +260,25 @@ export function VoiceCapsule({
           />
         </button>
 
-        <div className="flex h-5 min-w-4 items-center justify-center pr-px">
-          <VoiceCapsuleMeter audioLevel={audioLevel} state={state} />
-        </div>
+        <button
+          type="button"
+          className={cn(
+            "flex h-5 min-w-4 flex-1 items-center justify-center rounded-sm pr-px transition-colors hover:bg-white/8 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/55 disabled:cursor-not-allowed disabled:opacity-45",
+            agentActive && "text-sky-100",
+            agentState === "error" && "text-rose-200",
+          )}
+          onClick={onToggleAgent}
+          disabled={agentDisabled}
+          aria-label={agentActive ? "Stop voice agent" : "Start voice agent"}
+          aria-pressed={agentActive}
+          title={agentState === "error" ? message : undefined}
+        >
+          <VoiceCapsuleMeter
+            agentState={agentState}
+            audioLevel={audioLevel}
+            state={state}
+          />
+        </button>
 
         <span className="sr-only" aria-live="polite">
           {message}
@@ -354,12 +380,27 @@ function RecoveryTray({
 }
 
 function VoiceCapsuleMeter({
+  agentState,
   audioLevel,
   state,
 }: {
+  agentState: VoiceAgentState;
   audioLevel: number;
   state: DictationLifecycleState;
 }) {
+  if (agentState !== "idle" && agentState !== "error") {
+    return (
+      <div
+        className="voice-wave-active flex items-end gap-0.5"
+        aria-hidden="true"
+      >
+        <span className="voice-wave-bar h-1.5" />
+        <span className="voice-wave-bar h-2.5" />
+        <span className="voice-wave-bar h-2" />
+      </div>
+    );
+  }
+
   if (state === "recording") {
     return (
       <div

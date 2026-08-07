@@ -8,9 +8,14 @@ import { FloatingVoiceWindow } from "./FloatingVoiceWindow";
 const {
   useDictationLoop,
   useDictationSession,
+  useAssemblyAiVoiceAgent,
+  startVoiceAgent,
+  stopVoiceAgent,
+  respondToApproval,
   getOnboardingState,
   moveFloatingWindow,
   getFloatingWindowStartState,
+  recordStartupCheckpoint,
   getFloatingMonitorWorkArea,
   saveVoiceCapsulePlacement,
   setVoiceCapsuleSizeMode,
@@ -18,13 +23,17 @@ const {
   openMainWindow,
   getVoiceCapsuleReadyChallenge,
   recordVoiceCapsuleReady,
-  recordStartupCheckpoint,
 } = vi.hoisted(() => ({
   useDictationLoop: vi.fn(),
   useDictationSession: vi.fn(),
+  useAssemblyAiVoiceAgent: vi.fn(),
+  startVoiceAgent: vi.fn(),
+  stopVoiceAgent: vi.fn(),
+  respondToApproval: vi.fn(),
   getOnboardingState: vi.fn(),
   moveFloatingWindow: vi.fn(),
   getFloatingWindowStartState: vi.fn(),
+  recordStartupCheckpoint: vi.fn(),
   getFloatingMonitorWorkArea: vi.fn(),
   saveVoiceCapsulePlacement: vi.fn(),
   setVoiceCapsuleSizeMode: vi.fn(),
@@ -32,7 +41,6 @@ const {
   openMainWindow: vi.fn(),
   getVoiceCapsuleReadyChallenge: vi.fn(),
   recordVoiceCapsuleReady: vi.fn(),
-  recordStartupCheckpoint: vi.fn(),
 }));
 
 vi.mock("@/features/dictation/hooks/useDictationLoop", () => ({
@@ -41,6 +49,10 @@ vi.mock("@/features/dictation/hooks/useDictationLoop", () => ({
 
 vi.mock("@/features/dictation/hooks/useDictationSession", () => ({
   useDictationSession,
+}));
+
+vi.mock("./useAssemblyAiVoiceAgent", () => ({
+  useAssemblyAiVoiceAgent,
 }));
 
 vi.mock("@/lib/tauri", () => ({
@@ -135,6 +147,137 @@ describe("FloatingVoiceWindow", () => {
       state: "idle",
       transcript: null,
     });
+    startVoiceAgent.mockReset();
+    startVoiceAgent.mockResolvedValue(undefined);
+    stopVoiceAgent.mockReset();
+    stopVoiceAgent.mockResolvedValue(undefined);
+    useAssemblyAiVoiceAgent.mockReset();
+    useAssemblyAiVoiceAgent.mockReturnValue({
+      isActive: false,
+      message: "Voice agent ready.",
+      pendingApproval: null,
+      respondToApproval,
+      start: startVoiceAgent,
+      state: "idle",
+      stop: stopVoiceAgent,
+    });
+    recordStartupCheckpoint.mockReset();
+    recordStartupCheckpoint.mockResolvedValue(undefined);
+  });
+
+  it("records the waveform button click before applying agent guards", async () => {
+    const user = userEvent.setup();
+    render(<FloatingVoiceWindow />);
+
+    await user.click(screen.getByRole("button", { name: "Start voice agent" }));
+
+    expect(recordStartupCheckpoint).toHaveBeenCalledWith({
+      windowLabel: "voice-capsule",
+      checkpoint: "voice_agent_button_clicked",
+      detail: "agentState=idle_isRecording=false_isBusy=false_dragSuppressed=false",
+    });
+  });
+
+  it("shows a pending MCP approval without hiding the voice controls", async () => {
+    useAssemblyAiVoiceAgent.mockReturnValue({
+      isActive: true,
+      message: "Voice agent needs approval.",
+      pendingApproval: {
+        approvalId: "approval_opaque",
+        callId: "call-1",
+        toolName: "windows_click",
+        risk: "mutating",
+        arguments: { ref: "button-4" },
+      },
+      respondToApproval,
+      start: startVoiceAgent,
+      state: "approval",
+      stop: stopVoiceAgent,
+    });
+    render(<FloatingVoiceWindow />);
+
+    expect(await screen.findByText("Approve windows_click?")).toBeInTheDocument();
+    expect(screen.getByText('{"ref":"button-4"}')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve once" }));
+    expect(respondToApproval).toHaveBeenCalledWith(true);
+    expect(screen.getByRole("button", { name: "Stop voice agent" })).toBeInTheDocument();
+  });
+
+  it("records whether the rendered voice-agent control is available", async () => {
+    render(<FloatingVoiceWindow />);
+
+    await waitFor(() => {
+      expect(recordStartupCheckpoint).toHaveBeenCalledWith({
+        windowLabel: "voice-capsule",
+        checkpoint: "voice_agent_control_state",
+        detail: "agentState=idle_isRecording=false_isBusy=false",
+      });
+    });
+  });
+
+  it("makes the waveform button fill the capsule space beside the microphone", () => {
+    render(<FloatingVoiceWindow />);
+
+    expect(screen.getByRole("button", { name: "Start voice agent" })).toHaveClass(
+      "flex-1",
+    );
+  });
+
+  it("starts the voice agent from the waveform button", async () => {
+    const user = userEvent.setup();
+    render(<FloatingVoiceWindow />);
+
+    await user.click(screen.getByRole("button", { name: "Start voice agent" }));
+
+    expect(startVoiceAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops an active voice agent and prevents dictation from starting", async () => {
+    const user = userEvent.setup();
+    useAssemblyAiVoiceAgent.mockReturnValue({
+      isActive: true,
+      message: "Voice agent is listening.",
+      start: startVoiceAgent,
+      state: "listening",
+      stop: stopVoiceAgent,
+    });
+    render(<FloatingVoiceWindow />);
+
+    expect(screen.getByRole("button", { name: "Start recording" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Stop voice agent" }));
+
+    expect(stopVoiceAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the voice agent disabled while dictation is recording", () => {
+    useDictationLoop.mockReturnValue({
+      error: null,
+      insertResult: null,
+      message: "Recording...",
+      state: "recording",
+      transcript: null,
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    expect(screen.getByRole("button", { name: "Start voice agent" })).toBeDisabled();
+  });
+
+  it("shows the voice-agent failure reason on the waveform control", () => {
+    useAssemblyAiVoiceAgent.mockReturnValue({
+      isActive: false,
+      message: "Microphone access was denied.",
+      start: startVoiceAgent,
+      state: "error",
+      stop: stopVoiceAgent,
+    });
+
+    render(<FloatingVoiceWindow />);
+
+    expect(screen.getByRole("button", { name: "Start voice agent" })).toHaveAttribute(
+      "title",
+      "Microphone access was denied.",
+    );
   });
 
   it("keeps the hidden capsule hotkey session disabled until onboarding is complete", async () => {

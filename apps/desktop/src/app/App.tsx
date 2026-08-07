@@ -7,8 +7,10 @@ import { AppProviders } from "./AppProviders";
 import { isTauriRuntime } from "../lib/tauri";
 import { AccountPanel } from "../features/account";
 import { AnalyticsPanel } from "../features/analytics";
+import { CommandModePanel } from "../features/command-mode";
 import { HomePanel } from "../features/home";
 import { InfoPanel } from "../features/info";
+import { McpPanel } from "../features/mcp";
 import { OnboardingGate } from "../features/onboarding";
 import { SettingsPanel } from "../features/settings";
 import "../styles/globals.css";
@@ -40,6 +42,14 @@ function App() {
             >
               <TabsContent value="home" className="flex flex-col">
                 <HomePanel />
+              </TabsContent>
+
+              <TabsContent value="voiceAgent" className="flex flex-col">
+                <CommandModePanel />
+              </TabsContent>
+
+              <TabsContent value="mcps" className="flex flex-col gap-4">
+                <McpPanel />
               </TabsContent>
 
               <TabsContent value="settings" className="flex flex-col gap-4">

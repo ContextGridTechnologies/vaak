@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --mode development",
-    "build": "tsc && vite build --mode production",
+    "build": "node scripts/ensure-mcp-runtime.mjs && tsc && vite build --mode production",
     "build:dev": "tsc && vite build --mode development",
     "lint": "eslint .",
     "test": "vitest run",
@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "startup:preflight": "node scripts/startup-production-preflight.mjs",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "node scripts/ensure-mcp-runtime.mjs && tauri dev",
     "tauri:build": "tauri build",
     "store:package": "cargo clean --release --package vaak-desktop --manifest-path src-tauri\\Cargo.toml && call tauri build --no-bundle && (if not exist store\\dist mkdir store\\dist) && copy /Y src-tauri\\target\\release\\vaak-desktop.exe store\\dist\\ >nul && (if exist store\\Vaak.msix del /Q store\\Vaak.msix) && winapp package store\\dist --manifest store\\Package.appxmanifest --output store\\Vaak.msix"
   },
