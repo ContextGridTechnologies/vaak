@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import {
   Card,
@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 
 type SectionPanelProps = {
   title: string;
+  titleLevel?: 1 | 2;
+  titleRef?: Ref<HTMLHeadingElement>;
   description?: string;
   actions?: ReactNode;
   children: ReactNode;
@@ -24,6 +26,8 @@ type SectionPanelProps = {
 
 export function SectionPanel({
   title,
+  titleLevel = 2,
+  titleRef,
   description,
   actions,
   children,
@@ -32,10 +36,16 @@ export function SectionPanel({
   contentClassName,
   footerClassName,
 }: SectionPanelProps) {
+  const Title = titleLevel === 1 ? "h1" : "h2";
+
   return (
     <Card size="sm" className={cn("rounded-lg shadow-none", className)}>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle>
+          <Title ref={titleRef} tabIndex={titleRef ? -1 : undefined}>
+            {title}
+          </Title>
+        </CardTitle>
         {description ? (
           <CardDescription>{description}</CardDescription>
         ) : null}

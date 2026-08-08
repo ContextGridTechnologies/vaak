@@ -4,7 +4,9 @@
 
 This is the production design for adding Model Context Protocol (MCP)
 connectors to Vaak. The first Windows vertical slice is implemented; later
-catalog and remote-transport phases remain future work.
+catalog execution and remote-transport phases remain future work. The reviewed
+candidate metadata now lives in [MCP_REGISTRY.md](MCP_REGISTRY.md) and the
+bundled registry JSON; metadata does not make an entry executable.
 
 FlaUI-MCP is the first curated Windows connector. The same platform must later
 support multiple connectors, multiple agents, remote MCP servers, and native
@@ -17,6 +19,8 @@ The current code implements the first reviewed local connector end to end:
 
 - a top-level MCPs screen with separate install, enable, Voice Agent binding,
   per-tool grant, health-test, and skill controls;
+- a versioned bundled registry with one installable connector and explicit
+  candidate/deferred statuses for future adapters;
 - a pinned FlaUI-MCP v0.2.0 self-contained x64/ARM64 artifact, verified by
   SHA-256 before atomic per-user extraction;
 - a separate `mcp-state.sqlite` with explicit schema versions, uninstall
@@ -150,6 +154,9 @@ Skipping any transition is an authorization failure, not an automatic repair.
 
 Add a top-level MCPs item beside Voice Agent. One page can initially provide
 Installed, Discover, and Issues filters.
+
+The implemented catalog/card/detail interaction and the requirements for adding
+connector number two are documented in [MCP_CATALOG_UI.md](MCP_CATALOG_UI.md).
 
 Each connector view shows:
 
@@ -734,6 +741,8 @@ approval, and denial/cancellation creates a clear audit event.
 
 ### Phase 7: Catalog Expansion and Remote MCP
 
+- Promote one registry candidate at a time through reviewed connector adapters,
+  pinned artifacts, discovery tests, and tool-policy mappings.
 - Add reviewed connector import and updates.
 - Design Streamable HTTP, OAuth, endpoint and redirect policy, DNS rebinding,
   audience, SSRF, tenancy, and revocation controls.

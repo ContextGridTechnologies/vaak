@@ -1,0 +1,377 @@
+{
+  "$schema": "./registry.schema.json",
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-07",
+  "policy": {
+    "registryType": "vaak-reviewed",
+    "installableStatuses": [
+      "available"
+    ],
+    "supportedPlatforms": [
+      "windows"
+    ],
+    "supportedTransports": [
+      "stdio"
+    ],
+    "remoteInstall": "disabled",
+    "notes": "A registry entry is discovery metadata. Only entries marked available with a verified Vaak install strategy may be installed by the app."
+  },
+  "entries": [
+    {
+      "id": "io.github.shanselman.flaui-mcp",
+      "name": "Windows Desktop (FlaUI)",
+      "description": "Semantic Windows UI Automation through a reviewed local accessibility connector.",
+      "publisher": "Scott Hanselman",
+      "repositoryUrl": "https://github.com/shanselman/FlaUI-MCP",
+      "license": "MIT",
+      "tags": [
+        "windows",
+        "desktop-automation",
+        "ui-automation"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "0.2.0",
+        "url": "https://github.com/shanselman/FlaUI-MCP/releases/tag/v0.2.0"
+      },
+      "distribution": {
+        "type": "bundledArchive",
+        "runtime": "self-contained-dotnet",
+        "artifactSha256": {
+          "x86_64": "6428bb38aef433d8754b48cbaaff4f1eca5e98c107e89b0ad90399a9fcb1a106",
+          "aarch64": "1a00162fc1a7c3fac924dfc5702cd66deb51d3a9f6a870c1e339a3defb6e20a4"
+        }
+      },
+      "vaak": {
+        "status": "available",
+        "installStrategy": "bundled-verified-artifact",
+        "reviewStatus": "verified",
+        "reviewedAt": "2026-08-07",
+        "risk": "high",
+        "notes": "The current Vaak runtime exposes a restricted reviewed tool surface and fails closed for protected windows and blocked raw tools."
+      }
+    },
+    {
+      "id": "io.github.CursorTouch/Windows-MCP",
+      "name": "Windows-MCP",
+      "description": "Broad Windows computer-use tools for UI interaction, files, processes, PowerShell, and registry access.",
+      "publisher": "CursorTouch",
+      "repositoryUrl": "https://github.com/CursorTouch/Windows-MCP",
+      "license": "MIT",
+      "tags": [
+        "windows",
+        "desktop-automation",
+        "computer-use"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "0.8.5",
+        "url": "https://github.com/CursorTouch/Windows-MCP/releases/tag/v0.8.5"
+      },
+      "distribution": {
+        "type": "pypi",
+        "runtime": "uvx",
+        "package": "windows-mcp",
+        "version": "0.8.5",
+        "command": "uvx",
+        "args": [
+          "windows-mcp==0.8.5",
+          "serve"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "security-review-required",
+        "reviewedAt": "2026-08-07",
+        "risk": "critical",
+        "notes": "The upstream server exposes PowerShell, FileSystem, Process, Registry, and destructive desktop controls. Its default telemetry and broad authority require a narrower Vaak adapter before one-click installation."
+      }
+    },
+    {
+      "id": "io.github.sbroenne/mcp-windows",
+      "name": "Windows MCP Server",
+      "description": "Semantic Windows UI Automation with named controls, UIA snapshots, table extraction, and optional input fallbacks.",
+      "publisher": "Søren Broenne",
+      "repositoryUrl": "https://github.com/sbroenne/mcp-windows",
+      "license": "MIT",
+      "tags": [
+        "windows",
+        "desktop-automation",
+        "ui-automation",
+        "rpa"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "1.3.18",
+        "url": "https://github.com/sbroenne/mcp-windows/releases/tag/v1.3.18"
+      },
+      "distribution": {
+        "type": "githubRelease",
+        "runtime": "standalone-executable",
+        "releaseAssetRequired": true
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "release-pinned-review-required",
+        "reviewStatus": "security-review-required",
+        "reviewedAt": "2026-08-07",
+        "risk": "high",
+        "notes": "This is the strongest alternative for a semantic Windows adapter, but its batch, macro, clipboard, app-launch, keyboard, and mouse tools still need Vaak policy mapping and signed per-architecture artifacts."
+      }
+    },
+    {
+      "id": "io.github.microsoft/playwright-mcp",
+      "name": "Playwright",
+      "description": "Structured browser automation through Playwright accessibility snapshots rather than coordinate-based screenshots.",
+      "publisher": "Microsoft",
+      "repositoryUrl": "https://github.com/microsoft/playwright-mcp",
+      "license": "Apache-2.0",
+      "tags": [
+        "browser",
+        "web-automation",
+        "testing"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "0.0.79",
+        "url": "https://github.com/microsoft/playwright-mcp/releases/tag/v0.0.79"
+      },
+      "distribution": {
+        "type": "npm",
+        "runtime": "npx",
+        "package": "@playwright/mcp",
+        "version": "0.0.79",
+        "command": "npx",
+        "args": [
+          "--yes",
+          "@playwright/mcp@0.0.79"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "security-review-required",
+        "reviewedAt": "2026-08-07",
+        "risk": "high",
+        "notes": "Recommended next connector. Browser navigation and file access must be constrained with allowed hosts, origins, workspace roots, and explicit browser-session lifecycle controls."
+      }
+    },
+    {
+      "id": "io.github.modelcontextprotocol/server-filesystem",
+      "name": "Filesystem",
+      "description": "Read, write, search, and manage files inside explicitly approved directories.",
+      "publisher": "Model Context Protocol",
+      "repositoryUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "license": "MIT",
+      "tags": [
+        "files",
+        "local-data",
+        "productivity"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "2026.7.10",
+        "url": "https://github.com/modelcontextprotocol/servers/releases/tag/2026.7.10"
+      },
+      "distribution": {
+        "type": "npm",
+        "runtime": "npx",
+        "package": "@modelcontextprotocol/server-filesystem",
+        "version": null,
+        "command": "npx",
+        "args": [
+          "--yes",
+          "@modelcontextprotocol/server-filesystem"
+        ],
+        "requiresUserInput": [
+          "allowedDirectories"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "package-version-pinning-required",
+        "reviewedAt": "2026-08-07",
+        "risk": "high",
+        "notes": "Only expose selected roots. Do not pass the user profile or a broad drive root by default; every write and delete operation needs explicit policy coverage."
+      }
+    },
+    {
+      "id": "io.github.modelcontextprotocol/server-git",
+      "name": "Git",
+      "description": "Inspect and operate on Git repositories through structured repository tools.",
+      "publisher": "Model Context Protocol",
+      "repositoryUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+      "license": "MIT",
+      "tags": [
+        "git",
+        "developer-tools",
+        "repositories"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "2026.7.10",
+        "url": "https://github.com/modelcontextprotocol/servers/releases/tag/2026.7.10"
+      },
+      "distribution": {
+        "type": "pypi",
+        "runtime": "uvx",
+        "package": "mcp-server-git",
+        "version": null,
+        "command": "uvx",
+        "args": [
+          "mcp-server-git"
+        ],
+        "requiresUserInput": [
+          "repositoryPath"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "package-version-pinning-required",
+        "reviewedAt": "2026-08-07",
+        "risk": "high",
+        "notes": "The upstream project describes itself as early development. Start with read-only status, log, and diff tools; keep commit, add, reset, checkout, and branch mutations denied until scoped."
+      }
+    },
+    {
+      "id": "io.github.modelcontextprotocol/server-fetch",
+      "name": "Fetch",
+      "description": "Fetch web pages and convert HTML to Markdown for agent context.",
+      "publisher": "Model Context Protocol",
+      "repositoryUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+      "license": "MIT",
+      "tags": [
+        "web",
+        "research",
+        "content"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "2026.7.10",
+        "url": "https://github.com/modelcontextprotocol/servers/releases/tag/2026.7.10"
+      },
+      "distribution": {
+        "type": "pypi",
+        "runtime": "uvx",
+        "package": "mcp-server-fetch",
+        "version": null,
+        "command": "uvx",
+        "args": [
+          "mcp-server-fetch"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "package-version-pinning-required",
+        "reviewedAt": "2026-08-07",
+        "risk": "medium",
+        "notes": "The upstream documentation warns that this server can reach local or internal IP addresses. Add URL allowlists and SSRF protection before exposing it to the Voice Agent."
+      }
+    },
+    {
+      "id": "io.github.github/github-mcp-server",
+      "name": "GitHub",
+      "description": "Read repositories and automate issues, pull requests, actions, and other GitHub workflows.",
+      "publisher": "GitHub",
+      "repositoryUrl": "https://github.com/github/github-mcp-server",
+      "license": "MIT",
+      "tags": [
+        "github",
+        "repositories",
+        "issues",
+        "pull-requests"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "1.8.0",
+        "url": "https://github.com/github/github-mcp-server/releases/tag/v1.8.0"
+      },
+      "distribution": {
+        "type": "oci",
+        "runtime": "docker",
+        "image": "ghcr.io/github/github-mcp-server:1.8.0",
+        "requiresUserInput": [
+          "githubAuthentication"
+        ]
+      },
+      "vaak": {
+        "status": "deferred",
+        "installStrategy": "container-deferred",
+        "reviewStatus": "remote-and-credentials-review-required",
+        "reviewedAt": "2026-08-07",
+        "risk": "high",
+        "notes": "Useful for developer workflows, but the current Vaak runtime does not launch OCI containers or remote MCP transports. Add credential storage, OAuth callback handling, and repository/tool scopes before admission."
+      }
+    }
+  ]
+}

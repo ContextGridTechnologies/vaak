@@ -1,7 +1,8 @@
 use crate::providers::errors::{ProviderError, ProviderFailure};
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -15,6 +16,7 @@ pub const DEFAULT_AGENT_ID: &str = "voice.default";
 pub const DEFAULT_SKILL_ID: &str = "windows.desktop.basics";
 const DEFAULT_CONNECTOR_VERSION: &str = "0.2.0";
 const MCP_SCHEMA_VERSION: u32 = 2;
+const MCP_REGISTRY_JSON: &str = include_str!("../resources/mcp/registry.json");
 
 const FLAUI_TOOLS: &[(&str, &str)] = &[
     ("windows_launch", "mutating"),
@@ -30,6 +32,58 @@ const FLAUI_TOOLS: &[(&str, &str)] = &[
     ("windows_close", "destructive"),
     ("windows_batch", "mutating"),
 ];
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpRegistry {
+    schema_version: u32,
+    entries: Vec<McpRegistryEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpRegistryEntry {
+    id: String,
+    #[allow(dead_code)]
+    name: String,
+    #[allow(dead_code)]
+    description: String,
+    #[allow(dead_code)]
+    repository_url: String,
+    #[allow(dead_code)]
+    license: String,
+    #[allow(dead_code)]
+    platforms: Vec<String>,
+    transport: String,
+    release: McpRegistryRelease,
+    distribution: McpRegistryDistribution,
+    vaak: McpRegistryPolicy,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpRegistryRelease {
+    version: String,
+    url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpRegistryDistribution {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    artifact_sha256: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpRegistryPolicy {
+    status: String,
+    install_strategy: String,
+    review_status: String,
+    risk: String,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +136,7 @@ impl McpStateStore {
     }
 
     pub fn reconcile_catalog(&self) -> Result<(), ProviderError> {
+        load_registry()?;
         let _guard = self.lock()?;
         let conn = self.open_connection()?;
         conn.execute(
@@ -533,6 +588,93 @@ impl McpStateStore {
     }
 }
 
+fn load_registry() -> Result<McpRegistry, ProviderError> {
+    let registry: McpRegistry = serde_json::from_str(MCP_REGISTRY_JSON)
+        .map_err(|err| invalid_request(&format!("invalid bundled MCP registry: {err}")))?;
+    if registry.schema_version != 1 {
+        return Err(invalid_request("unsupported bundled MCP registry schema"));
+    }
+
+    let mut ids = HashSet::new();
+    for entry in &registry.entries {
+        validate_id(&entry.id, "connector")?;
+        if !ids.insert(entry.id.as_str()) {
+            return Err(invalid_request(
+                "bundled MCP registry contains duplicate IDs",
+            ));
+        }
+        if entry.name.trim().is_empty()
+            || entry.description.trim().is_empty()
+            || entry.repository_url.trim().is_empty()
+            || entry.license.trim().is_empty()
+            || entry.platforms.is_empty()
+            || entry.transport != "stdio"
+            || entry.release.version.trim().is_empty()
+            || entry.release.url.trim().is_empty()
+            || entry.distribution.kind.trim().is_empty()
+            || entry.vaak.review_status.trim().is_empty()
+            || entry.vaak.risk.trim().is_empty()
+        {
+            return Err(invalid_request(
+                "bundled MCP registry contains incomplete metadata",
+            ));
+        }
+        if !matches!(
+            entry.vaak.status.as_str(),
+            "available" | "candidate" | "deferred"
+        ) {
+            return Err(invalid_request(
+                "bundled MCP registry contains an invalid status",
+            ));
+        }
+        if entry
+            .distribution
+            .artifact_sha256
+            .as_ref()
+            .is_some_and(|digests| {
+                digests.values().any(|digest| {
+                    digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit())
+                })
+            })
+        {
+            return Err(invalid_request(
+                "bundled MCP registry contains an invalid artifact digest",
+            ));
+        }
+        if entry.vaak.status == "available"
+            && entry.vaak.install_strategy != "bundled-verified-artifact"
+        {
+            return Err(invalid_request(
+                "only bundled verified artifacts may be installable in this runtime",
+            ));
+        }
+    }
+
+    let Some(default_entry) = registry
+        .entries
+        .iter()
+        .find(|entry| entry.id == DEFAULT_CONNECTOR_ID)
+    else {
+        return Err(invalid_request(
+            "bundled MCP registry is missing the default connector",
+        ));
+    };
+    if default_entry.vaak.status != "available"
+        || default_entry.release.version != DEFAULT_CONNECTOR_VERSION
+        || default_entry
+            .distribution
+            .artifact_sha256
+            .as_ref()
+            .is_none_or(HashMap::is_empty)
+    {
+        return Err(invalid_request(
+            "bundled MCP registry default connector is not safely installable",
+        ));
+    }
+
+    Ok(registry)
+}
+
 fn state_is_installed(conn: &Connection) -> Result<bool, ProviderError> {
     conn.query_row(
         "SELECT installed_version IS NOT NULL FROM connectors WHERE connector_id = ?1",
@@ -657,6 +799,42 @@ mod tests {
             .all(|tool| tool.grant == "deny"));
 
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn bundled_registry_has_a_verified_default_and_reviewed_candidates() {
+        let registry = load_registry().unwrap();
+
+        assert_eq!(registry.schema_version, 1);
+        let default_entry = registry
+            .entries
+            .iter()
+            .find(|entry| entry.id == DEFAULT_CONNECTOR_ID)
+            .expect("default MCP must remain in the registry");
+        assert_eq!(default_entry.vaak.status, "available");
+        assert_eq!(
+            default_entry.vaak.install_strategy,
+            "bundled-verified-artifact"
+        );
+        assert!(default_entry
+            .distribution
+            .artifact_sha256
+            .as_ref()
+            .is_some_and(|digests| !digests.is_empty()));
+
+        for candidate_id in [
+            "io.github.CursorTouch/Windows-MCP",
+            "io.github.sbroenne/mcp-windows",
+            "io.github.microsoft/playwright-mcp",
+        ] {
+            let candidate = registry
+                .entries
+                .iter()
+                .find(|entry| entry.id == candidate_id)
+                .expect("candidate MCP must remain in the registry");
+            assert_eq!(candidate.vaak.status, "candidate");
+            assert_ne!(candidate.vaak.install_strategy, "bundled-verified-artifact");
+        }
     }
 
     #[test]

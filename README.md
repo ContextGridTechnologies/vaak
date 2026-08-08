@@ -117,6 +117,7 @@ asset.
 Useful docs:
 
 - [MCP platform architecture](docs/MCP_PLATFORM_ARCHITECTURE.md)
+- [MCP registry and connector shortlist](docs/MCP_REGISTRY.md)
 - `docs/ROADMAP.md`
 - `docs/DICTATION_EXPERIENCE_FUTURE_SCOPE.md`
 - `docs/POSITIONING.md`

@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ContextGridTechnologies/vaak/blob/main/apps/desktop/src-tauri/resources/mcp/registry.schema.json",
+  "title": "Vaak reviewed MCP registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "updatedAt",
+    "policy",
+    "entries"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date"
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registryType",
+        "installableStatuses",
+        "supportedPlatforms",
+        "supportedTransports",
+        "remoteInstall",
+        "notes"
+      ],
+      "properties": {
+        "registryType": {
+          "const": "vaak-reviewed"
+        },
+        "installableStatuses": {
+          "type": "array",
+          "const": [
+            "available"
+          ]
+        },
+        "supportedPlatforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "supportedTransports": {
+          "type": "array",
+          "items": {
+            "const": "stdio"
+          }
+        },
+        "remoteInstall": {
+          "const": "disabled"
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "publisher",
+        "repositoryUrl",
+        "license",
+        "tags",
+        "platforms",
+        "architectures",
+        "transport",
+        "release",
+        "distribution",
+        "vaak"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repositoryUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://github\\.com/"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tags": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "platforms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "windows",
+              "macos",
+              "linux"
+            ]
+          }
+        },
+        "architectures": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "x86_64",
+              "aarch64"
+            ]
+          }
+        },
+        "transport": {
+          "const": "stdio"
+        },
+        "release": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "url"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://github\\.com/"
+            }
+          }
+        },
+        "distribution": {
+          "type": "object",
+          "required": [
+            "type",
+            "runtime"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "bundledArchive",
+                "pypi",
+                "npm",
+                "githubRelease",
+                "oci"
+              ]
+            },
+            "runtime": {
+              "type": "string",
+              "minLength": 1
+            },
+            "artifactSha256": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "package": {
+              "type": "string",
+              "minLength": 1
+            },
+            "command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1
+            },
+            "releaseAssetRequired": {
+              "type": "boolean"
+            },
+            "requiresUserInput": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "vaak": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "installStrategy",
+            "reviewStatus",
+            "reviewedAt",
+            "risk",
+            "notes"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "available",
+                "candidate",
+                "deferred"
+              ]
+            },
+            "installStrategy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reviewStatus": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reviewedAt": {
+              "type": "string",
+              "format": "date"
+            },
+            "risk": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical"
+              ]
+            },
+            "notes": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}
