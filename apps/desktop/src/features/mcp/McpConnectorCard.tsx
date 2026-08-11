@@ -30,12 +30,12 @@ export function McpConnectorCard({
   return (
     <Card
       size="sm"
-      className="min-h-52 rounded-lg shadow-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:shadow-md hover:ring-primary/25"
+      className="group min-h-52 rounded-lg shadow-sm transition-[box-shadow,transform,border-color] duration-150 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md hover:ring-primary/25"
       role="listitem"
     >
       <CardHeader className="gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/8 text-primary">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/25 via-primary/10 to-primary/5 text-primary ring-1 ring-primary/20 transition-transform duration-150 group-hover:scale-105">
             <PlugZapIcon className="size-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
@@ -43,13 +43,17 @@ export function McpConnectorCard({
               <h2 className="truncate">{connector.name}</h2>
             </CardTitle>
             <CardDescription className="mt-1 leading-5">
-              {connectorDescription(connector.connectorId)}
+              {connector.description}
             </CardDescription>
           </div>
         </div>
         <CardAction>
           <Badge variant={connector.installed ? "secondary" : "outline"}>
-            {connector.installed ? "Installed" : "Available"}
+            {connector.installed
+              ? "Installed"
+              : connector.status === "candidate"
+                ? "Under review"
+                : "Available"}
           </Badge>
         </CardAction>
       </CardHeader>
@@ -71,15 +75,12 @@ export function McpConnectorCard({
           onClick={onSelect}
         >
           {action}
-          <ChevronRightIcon data-icon="inline-end" />
+          <ChevronRightIcon
+            data-icon="inline-end"
+            className="transition-transform duration-150 group-hover:translate-x-0.5"
+          />
         </Button>
       </CardFooter>
     </Card>
   );
-}
-
-function connectorDescription(connectorId: string): string {
-  return connectorId === "io.github.shanselman.flaui-mcp"
-    ? "Control Windows apps through a reviewed local accessibility connector."
-    : "Reviewed local MCP connector available to Vaak agents.";
 }

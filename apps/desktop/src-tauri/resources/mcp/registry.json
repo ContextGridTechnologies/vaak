@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-08-07",
+  "updatedAt": "2026-08-08",
   "policy": {
     "registryType": "vaak-reviewed",
     "installableStatuses": [
@@ -327,6 +327,281 @@
         "reviewedAt": "2026-08-07",
         "risk": "medium",
         "notes": "The upstream documentation warns that this server can reach local or internal IP addresses. Add URL allowlists and SSRF protection before exposing it to the Voice Agent."
+      }
+    },
+    {
+      "id": "io.github.ChromeDevTools/chrome-devtools-mcp",
+      "name": "Chrome DevTools MCP",
+      "description": "Drive a real Chrome or Edge instance through the DevTools Protocol: navigate, inspect, click, fill forms, and extract page data.",
+      "publisher": "Chrome DevTools",
+      "repositoryUrl": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+      "license": "Apache-2.0",
+      "tags": [
+        "browser",
+        "web-automation",
+        "debugging"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "1.6.0",
+        "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/releases"
+      },
+      "distribution": {
+        "type": "npm",
+        "runtime": "npx",
+        "package": "chrome-devtools-mcp",
+        "version": "1.6.0",
+        "command": "npx",
+        "args": [
+          "--yes",
+          "chrome-devtools-mcp@1.6.0"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "security-review-required",
+        "reviewedAt": "2026-08-08",
+        "risk": "high",
+        "notes": "CDP drives the user's real browser, so file and credential exposure follow browser trust. Needs allowed-origins, session lifecycle control, and a mapping of Page/Runtime/Network domains onto Vaak grants before admission."
+      }
+    },
+    {
+      "id": "io.github.upstash/context7",
+      "name": "Context7",
+      "description": "Up-to-date, version-specific documentation for 7,000+ libraries, injected into agent context on demand.",
+      "publisher": "Upstash",
+      "repositoryUrl": "https://github.com/upstash/context7",
+      "license": "MIT",
+      "tags": [
+        "docs",
+        "developer-tools",
+        "research"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "4.0.0",
+        "url": "https://github.com/upstash/context7/releases"
+      },
+      "distribution": {
+        "type": "npm",
+        "runtime": "npx",
+        "package": "@upstash/context7-mcp",
+        "version": "4.0.0",
+        "command": "npx",
+        "args": [
+          "--yes",
+          "@upstash/context7-mcp@4.0.0"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "security-review-required",
+        "reviewedAt": "2026-08-08",
+        "risk": "low",
+        "notes": "Outbound doc-lookup service; works keyless on a free rate limit. Verify the fetched-content path and telemetry before admission."
+      }
+    },
+    {
+      "id": "io.github.modelcontextprotocol/server-memory",
+      "name": "Memory",
+      "description": "Persistent knowledge-graph memory stored locally in a JSON file.",
+      "publisher": "Model Context Protocol",
+      "repositoryUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "license": "MIT",
+      "tags": [
+        "memory",
+        "knowledge-graph",
+        "persistence"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "2026.7.4",
+        "url": "https://github.com/modelcontextprotocol/servers/releases/tag/2026.7.4"
+      },
+      "distribution": {
+        "type": "npm",
+        "runtime": "npx",
+        "package": "@modelcontextprotocol/server-memory",
+        "version": "2026.7.4",
+        "command": "npx",
+        "args": [
+          "--yes",
+          "@modelcontextprotocol/server-memory@2026.7.4"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "security-review-required",
+        "reviewedAt": "2026-08-08",
+        "risk": "low",
+        "notes": "Writes only its own memory file. Overlaps with Vaak's local skills/state, so admission should weigh whether the agent needs an external memory graph at all."
+      }
+    },
+    {
+      "id": "io.github.modelcontextprotocol/server-sequential-thinking",
+      "name": "Sequential Thinking",
+      "description": "Structured multi-step reasoning with the ability to revisit and revise prior steps.",
+      "publisher": "Model Context Protocol",
+      "repositoryUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+      "license": "MIT",
+      "tags": [
+        "reasoning",
+        "planning",
+        "agent"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "2026.7.4",
+        "url": "https://github.com/modelcontextprotocol/servers/releases/tag/2026.7.4"
+      },
+      "distribution": {
+        "type": "npm",
+        "runtime": "npx",
+        "package": "@modelcontextprotocol/server-sequential-thinking",
+        "version": "2026.7.4",
+        "command": "npx",
+        "args": [
+          "--yes",
+          "@modelcontextprotocol/server-sequential-thinking@2026.7.4"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "security-review-required",
+        "reviewedAt": "2026-08-08",
+        "risk": "low",
+        "notes": "Pure reasoning aid with no I/O side effects. This is an agent behavior rather than an external capability, so treat as optional."
+      }
+    },
+    {
+      "id": "io.github.wonderwhy-er/desktop-commander",
+      "name": "Desktop Commander",
+      "description": "Terminal commands, file editing, and clipboard through an approved shell with command approval and timeouts.",
+      "publisher": "wonderwhy-er",
+      "repositoryUrl": "https://github.com/wonderwhy-er/DesktopCommanderMCP",
+      "license": "MIT",
+      "tags": [
+        "terminal",
+        "files",
+        "developer-tools"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "0.2.47",
+        "url": "https://github.com/wonderwhy-er/DesktopCommanderMCP/releases"
+      },
+      "distribution": {
+        "type": "npm",
+        "runtime": "npx",
+        "package": "@wonderwhy-er/desktop-commander",
+        "version": "0.2.47",
+        "command": "npx",
+        "args": [
+          "--yes",
+          "@wonderwhy-er/desktop-commander@0.2.47"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "security-review-required",
+        "reviewedAt": "2026-08-08",
+        "risk": "critical",
+        "notes": "Shell access is the widest possible authority. Requires an explicit per-command approval flow, timeout, and deny-list before admission."
+      }
+    },
+    {
+      "id": "io.github.nickclyde/duckduckgo-mcp-server",
+      "name": "DuckDuckGo",
+      "description": "Web search and page-content fetching through DuckDuckGo with built-in SSRF protection and rate limiting.",
+      "publisher": "Nick Clyde",
+      "repositoryUrl": "https://github.com/nickclyde/duckduckgo-mcp-server",
+      "license": "MIT",
+      "tags": [
+        "web",
+        "search",
+        "research"
+      ],
+      "platforms": [
+        "windows",
+        "macos",
+        "linux"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "transport": "stdio",
+      "release": {
+        "version": "0.6.1",
+        "url": "https://github.com/nickclyde/duckduckgo-mcp-server/releases"
+      },
+      "distribution": {
+        "type": "pypi",
+        "runtime": "uvx",
+        "package": "duckduckgo-mcp-server",
+        "version": "0.6.1",
+        "command": "uvx",
+        "args": [
+          "duckduckgo-mcp-server==0.6.1"
+        ]
+      },
+      "vaak": {
+        "status": "candidate",
+        "installStrategy": "package-pinned-review-required",
+        "reviewStatus": "security-review-required",
+        "reviewedAt": "2026-08-08",
+        "risk": "medium",
+        "notes": "SSRF-protected by default, but still an outbound network tool; confirm SafeSearch defaults and rate-limit behavior before admission."
       }
     },
     {

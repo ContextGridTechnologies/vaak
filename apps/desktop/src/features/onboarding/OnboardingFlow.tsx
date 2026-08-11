@@ -15,8 +15,9 @@ import {
   type OnboardingState,
 } from "@/lib/tauri";
 
-import { MicrophoneReadinessStep } from "./MicrophoneReadinessStep";
+import { AnalyticsConsentStep } from "./AnalyticsConsentStep";
 import { HotkeyReadinessStep } from "./HotkeyReadinessStep";
+import { MicrophoneReadinessStep } from "./MicrophoneReadinessStep";
 import { OnboardingLoadingScreen } from "./OnboardingLoadingScreen";
 import { OnboardingModeChoice } from "./OnboardingModeChoice";
 import { ProviderSetupStep } from "./ProviderSetupStep";
@@ -172,6 +173,14 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
     return children;
   }
 
+  function handleAnalyticsChoice(enabled: boolean) {
+    analytics.setUsageAnalyticsEnabled(enabled);
+    if (enabled) {
+      analytics.captureAppOpened();
+    }
+    void handleCompleteOnboarding();
+  }
+
   if (!state && error) {
     return <OnboardingLoadError error={error} onRetry={handleSetupRetry} />;
   }
@@ -211,7 +220,17 @@ export function OnboardingGate({ children }: OnboardingGateProps) {
       <HotkeyReadinessStep
         error={error}
         onBack={() => void handleStepChange("providerSetup")}
-        onContinue={() => void handleCompleteOnboarding()}
+        onContinue={() => void handleStepChange("analyticsConsent")}
+      />
+    );
+  }
+
+  if (state.currentStep === "analyticsConsent") {
+    return (
+      <AnalyticsConsentStep
+        error={error}
+        onBack={() => void handleStepChange("hotkeyReadiness")}
+        onChoice={handleAnalyticsChoice}
       />
     );
   }

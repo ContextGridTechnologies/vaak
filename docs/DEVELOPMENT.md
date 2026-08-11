@@ -64,7 +64,7 @@ Use `VITE_POSTHOG_HOST` for the selected PostHog region, for example
 `https://us.i.posthog.com` or `https://eu.i.posthog.com`.
 
 When a PostHog key is bundled, Vaak still defaults usage analytics and crash
-reports to off until the user opts in from Settings.
+reports to off until the user opts in during setup or from Settings.
 
 For local development, keep the real values in the ignored
 `apps/desktop/.env.development.local` file. Release workflows read

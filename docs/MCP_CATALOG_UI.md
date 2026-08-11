@@ -12,10 +12,11 @@ The first catalog entry is **Windows Desktop (FlaUI)**. Adding more entries must
 not make the catalog screen grow into one long permissions form.
 
 Discovery metadata for future entries is maintained in
-`apps/desktop/src-tauri/resources/mcp/registry.json`. Only entries marked
-`available` by Vaak policy may appear as installable cards; candidates are not
-rendered as install actions until their runtime adapter and tool policies are
-implemented.
+`apps/desktop/src-tauri/resources/mcp/registry.json`. The catalog is now
+registry-driven: every non-deferred, Windows-compatible entry renders as a card.
+Only entries marked `available` by Vaak policy render an Install action;
+`candidate` entries show an Under review badge and cannot be installed until
+their runtime adapter and tool policies are implemented.
 
 ## User flow
 
@@ -41,10 +42,10 @@ Each card contains only information needed to compare and open a connector:
 
 - connector icon and name;
 - one-line purpose;
-- Installed or Available status;
+- status: Installed, Available, or Under review;
 - transport label, currently Local;
 - version and tool count;
-- Manage for installed connectors or View for available connectors.
+- Manage for installed connectors or View for other connectors.
 
 Cards use the existing shadcn `Card`, `Badge`, and `Button` components and form a
 responsive one-column/two-column list. The action is a real button with a
@@ -106,23 +107,26 @@ owns the data, and catalog/detail navigation is temporary screen state.
 
 ## Adding the second connector
 
-The catalog UI can already render multiple `McpConnector` values, but the Rust
-backend still models FlaUI as the only connector. Before a second connector is
-exposed, complete these backend changes:
+The catalog is registry-driven: `McpStateStore::list_connectors` iterates every
+non-deferred Windows registry entry and merges per-connector SQLite state
+(installed, enabled, bound, grants) into the returned cards. The Rust backend
+still executes FlaUI as the only installable runtime. Before a second connector
+can be installed, complete these backend changes:
 
-1. Promote the candidate from the reviewed registry and replace
+1. ~~Promote the candidate from the reviewed registry and replace
    `McpStateStore::list_connectors` construction of one hard-coded
-   `DEFAULT_CONNECTOR_ID` result with catalog-backed iteration.
+   `DEFAULT_CONNECTOR_ID` result with catalog-backed iteration.~~ Done: the
+   catalog lists every reviewed entry; only `available` entries show Install.
 2. Route install, uninstall, runtime start/stop, tool discovery, and tool calls
    through the selected connector's runtime rather than the single FlaUI runtime.
 3. Add `connectorId` to `test_mcp_connector`; the current command tests the
    global FlaUI runtime and cannot safely test a selected second connector.
-4. Return display metadata from Rust instead of adding frontend ID checks:
-   description, publisher, platform, transport, trust source, and compatibility.
+4. Display metadata already returns from Rust (description, repository URL,
+   status); no frontend ID checks are needed for the current card surface.
 5. Keep binding and grant records connector-scoped. Never infer grants from
    installation or copy grants between connectors.
-6. Add one Rust catalog test and one frontend multi-connector interaction test
-   for the new entry.
+6. One Rust catalog test and one frontend multi-connector interaction test
+   already cover the registry-driven list.
 
 Do not add remote search, categories, ratings, or arbitrary URL installation
 until Vaak has a reviewed-source policy, signature/digest verification, update

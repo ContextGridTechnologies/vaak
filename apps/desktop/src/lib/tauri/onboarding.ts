@@ -6,7 +6,8 @@ export type OnboardingStep =
   | "modeChoice"
   | "microphoneReadiness"
   | "providerSetup"
-  | "hotkeyReadiness";
+  | "hotkeyReadiness"
+  | "analyticsConsent";
 
 export type OnboardingState = {
   completed: boolean;

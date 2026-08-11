@@ -13,6 +13,7 @@ import { OnboardingGate } from "./OnboardingFlow";
 const analyticsState = vi.hoisted(() => ({
   analytics: {
     capture: vi.fn(),
+    captureAppOpened: vi.fn(),
     captureError: vi.fn(),
     errorTelemetryEnabled: false,
     setErrorTelemetryEnabled: vi.fn(),
@@ -68,6 +69,7 @@ function setMediaDevices(value: Partial<MediaDevices> | undefined) {
 describe("OnboardingGate", () => {
   beforeEach(() => {
     analyticsState.analytics.capture.mockReset();
+    analyticsState.analytics.captureAppOpened.mockReset();
     analyticsState.analytics.captureError.mockReset();
     analyticsState.analytics.setErrorTelemetryEnabled.mockReset();
     analyticsState.analytics.setUsageAnalyticsEnabled.mockReset();
@@ -280,7 +282,7 @@ describe("OnboardingGate", () => {
     ).toBeInTheDocument();
   });
 
-  it("completes onboarding from hotkey readiness and enters the app shell", async () => {
+  it("moves from hotkey readiness to analytics consent before completing setup", async () => {
     const user = userEvent.setup();
     const tauri = createTauriCommandHarness();
     tauri.resolveCommand("get_onboarding_state", {
@@ -288,9 +290,9 @@ describe("OnboardingGate", () => {
       currentStep: "hotkeyReadiness",
       selectedMode: "local",
     });
-    tauri.resolveCommand("complete_onboarding", {
-      completed: true,
-      currentStep: "hotkeyReadiness",
+    tauri.resolveCommand("save_onboarding_step", {
+      completed: false,
+      currentStep: "analyticsConsent",
       selectedMode: "local",
     });
 
@@ -302,11 +304,107 @@ describe("OnboardingGate", () => {
 
     await user.click(await screen.findByRole("button", { name: "Continue" }));
 
+    expectTauriCommand(tauri, "save_onboarding_step", {
+      step: "analyticsConsent",
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Optional usage analytics" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Voice app shell")).not.toBeInTheDocument();
+  });
+
+  it("offers usage analytics consent before completing setup", async () => {
+    const user = userEvent.setup();
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "analyticsConsent",
+      selectedMode: "local",
+    });
+    tauri.resolveCommand("complete_onboarding", {
+      completed: true,
+      currentStep: "analyticsConsent",
+      selectedMode: "local",
+    });
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Optional usage analytics" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("analytics-consent-card")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Allow Vaak to send anonymous product-usage events when you use the app?",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This helps us understand feature usage and reliability.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("You can change this later in Settings."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Audio, transcripts, API keys, and file paths stay on your device.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("onboarding-split-layout")).not.toBeInTheDocument();
+    expect(screen.queryByText("How consent works")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Enable analytics" }),
+    );
+
+    expect(analyticsState.analytics.setUsageAnalyticsEnabled).toHaveBeenCalledWith(
+      true,
+    );
+    expect(analyticsState.analytics.captureAppOpened).toHaveBeenCalledOnce();
     expectTauriCommand(tauri, "complete_onboarding", undefined);
     expect(analyticsState.analytics.capture).toHaveBeenCalledWith(
       "onboarding_completed",
       { mode: "local" },
     );
+    expect(await screen.findByText("Voice app shell")).toBeInTheDocument();
+  });
+
+  it("can finish setup without enabling usage analytics", async () => {
+    const user = userEvent.setup();
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("get_onboarding_state", {
+      completed: false,
+      currentStep: "analyticsConsent",
+      selectedMode: "local",
+    });
+    tauri.resolveCommand("complete_onboarding", {
+      completed: true,
+      currentStep: "analyticsConsent",
+      selectedMode: "local",
+    });
+
+    renderApp(
+      <OnboardingGate>
+        <div>Voice app shell</div>
+      </OnboardingGate>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Optional usage analytics" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Not now" }));
+
+    expect(analyticsState.analytics.setUsageAnalyticsEnabled).toHaveBeenCalledWith(
+      false,
+    );
+    expect(analyticsState.analytics.captureAppOpened).not.toHaveBeenCalled();
+    expectTauriCommand(tauri, "complete_onboarding", undefined);
     expect(await screen.findByText("Voice app shell")).toBeInTheDocument();
   });
 

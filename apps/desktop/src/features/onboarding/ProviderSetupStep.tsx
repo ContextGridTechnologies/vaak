@@ -28,7 +28,7 @@ export function ProviderSetupStep({
       header={
         <OnboardingProgressHeader
           step={3}
-          totalSteps={4}
+          totalSteps={5}
           title="Connect a speech provider"
           description="Vaak sends audio only to the provider you choose."
         />

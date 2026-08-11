@@ -44,15 +44,11 @@ struct McpRegistry {
 #[serde(rename_all = "camelCase")]
 struct McpRegistryEntry {
     id: String,
-    #[allow(dead_code)]
     name: String,
-    #[allow(dead_code)]
     description: String,
-    #[allow(dead_code)]
     repository_url: String,
     #[allow(dead_code)]
     license: String,
-    #[allow(dead_code)]
     platforms: Vec<String>,
     transport: String,
     release: McpRegistryRelease,
@@ -98,6 +94,9 @@ pub struct McpToolView {
 pub struct McpConnectorView {
     pub connector_id: String,
     pub name: String,
+    pub description: String,
+    pub repository_url: String,
+    pub status: String,
     pub version: String,
     pub installed: bool,
     pub enabled: bool,
@@ -161,65 +160,86 @@ impl McpStateStore {
     }
 
     pub fn list_connectors(&self, agent_id: &str) -> Result<Vec<McpConnectorView>, ProviderError> {
+        let registry = load_registry()?;
         let _guard = self.lock()?;
         let conn = self.open_connection()?;
-        let state: Option<(Option<String>, bool)> = conn
-            .query_row(
-                "SELECT installed_version, enabled FROM connectors WHERE connector_id = ?1",
-                [DEFAULT_CONNECTOR_ID],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-            .map_err(sqlite_error)?;
-        let Some((installed_version, enabled)) = state else {
-            return Ok(Vec::new());
-        };
-        let bound = conn
-            .query_row(
-                r#"SELECT enabled FROM agent_connector_bindings
-                   WHERE agent_id = ?1 AND connector_id = ?2"#,
-                params![agent_id, DEFAULT_CONNECTOR_ID],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(sqlite_error)?
-            .unwrap_or(false);
-        let tools = FLAUI_TOOLS
-            .iter()
-            .map(|(name, risk)| {
-                let grant = conn
-                    .query_row(
-                        r#"SELECT grant_state FROM tool_grants
-                           WHERE agent_id = ?1 AND connector_id = ?2 AND tool_name = ?3"#,
-                        params![agent_id, DEFAULT_CONNECTOR_ID, name],
-                        |row| row.get(0),
-                    )
-                    .optional()
-                    .map_err(sqlite_error)?
-                    .unwrap_or_else(|| {
-                        if is_blocked_raw_tool(name) {
-                            "deny".to_string()
-                        } else {
-                            "notGranted".to_string()
-                        }
-                    });
-                Ok(McpToolView {
-                    name: (*name).to_string(),
-                    risk: (*risk).to_string(),
-                    grant,
-                })
-            })
-            .collect::<Result<Vec<_>, ProviderError>>()?;
 
-        Ok(vec![McpConnectorView {
-            connector_id: DEFAULT_CONNECTOR_ID.to_string(),
-            name: "Windows Desktop (FlaUI)".to_string(),
-            version: installed_version.unwrap_or_else(|| DEFAULT_CONNECTOR_VERSION.to_string()),
-            installed: state_is_installed(&conn)?,
-            enabled,
-            bound,
-            tools,
-        }])
+        let mut views = Vec::new();
+        for entry in registry
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry.vaak.status != "deferred"
+                    && entry.platforms.iter().any(|p| p == "windows")
+            })
+        {
+            let state: Option<(Option<String>, bool, bool)> = conn
+                .query_row(
+                    "SELECT installed_version, enabled, tombstoned FROM connectors WHERE connector_id = ?1",
+                    [&entry.id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()
+                .map_err(sqlite_error)?;
+            let installed_version = state.as_ref().and_then(|(version, _, _)| version.clone());
+            let enabled = state.as_ref().is_some_and(|(_, enabled, _)| *enabled);
+            let tombstoned = state.as_ref().is_some_and(|(_, _, tombstoned)| *tombstoned);
+            let installed = installed_version.is_some() && !tombstoned;
+            let bound = conn
+                .query_row(
+                    r#"SELECT enabled FROM agent_connector_bindings
+                       WHERE agent_id = ?1 AND connector_id = ?2"#,
+                    params![agent_id, entry.id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(sqlite_error)?
+                .unwrap_or(false);
+            let tools = if entry.id == DEFAULT_CONNECTOR_ID {
+                FLAUI_TOOLS
+                    .iter()
+                    .map(|(name, risk)| {
+                        let grant = conn
+                            .query_row(
+                                r#"SELECT grant_state FROM tool_grants
+                                   WHERE agent_id = ?1 AND connector_id = ?2 AND tool_name = ?3"#,
+                                params![agent_id, entry.id, name],
+                                |row| row.get(0),
+                            )
+                            .optional()
+                            .map_err(sqlite_error)?
+                            .unwrap_or_else(|| {
+                                if is_blocked_raw_tool(name) {
+                                    "deny".to_string()
+                                } else {
+                                    "notGranted".to_string()
+                                }
+                            });
+                        Ok(McpToolView {
+                            name: (*name).to_string(),
+                            risk: (*risk).to_string(),
+                            grant,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, ProviderError>>()?
+            } else {
+                Vec::new()
+            };
+            views.push(McpConnectorView {
+                connector_id: entry.id.clone(),
+                name: entry.name.clone(),
+                description: entry.description.clone(),
+                repository_url: entry.repository_url.clone(),
+                status: entry.vaak.status.clone(),
+                version: installed_version
+                    .unwrap_or_else(|| entry.release.version.clone()),
+                installed,
+                enabled,
+                bound,
+                tools,
+            });
+        }
+        Ok(views)
     }
 
     pub fn set_installed(&self, connector_id: &str, installed: bool) -> Result<(), ProviderError> {
@@ -776,9 +796,11 @@ mod tests {
         store.set_installed(DEFAULT_CONNECTOR_ID, true).unwrap();
 
         let connectors = store.list_connectors(DEFAULT_AGENT_ID).unwrap();
-        assert_eq!(connectors.len(), 1);
-        let connector = &connectors[0];
-        assert_eq!(connector.connector_id, DEFAULT_CONNECTOR_ID);
+        assert!(!connectors.is_empty());
+        let connector = connectors
+            .iter()
+            .find(|connector| connector.connector_id == DEFAULT_CONNECTOR_ID)
+            .unwrap();
         assert_eq!(connector.version, "0.2.0");
         assert!(connector.installed);
         assert!(!connector.enabled);
@@ -797,6 +819,49 @@ mod tests {
             .iter()
             .filter(|tool| matches!(tool.name.as_str(), "windows_batch" | "windows_close"))
             .all(|tool| tool.grant == "deny"));
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn catalog_lists_every_reviewed_candidate_from_the_registry() {
+        let (dir, store) = store("catalog");
+        store.reconcile_catalog().unwrap();
+        store.set_installed(DEFAULT_CONNECTOR_ID, true).unwrap();
+
+        let connectors = store.list_connectors(DEFAULT_AGENT_ID).unwrap();
+        let registry = load_registry().unwrap();
+        let expected: Vec<&str> = registry
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry.vaak.status != "deferred"
+                    && entry.platforms.iter().any(|platform| platform == "windows")
+            })
+            .map(|entry| entry.id.as_str())
+            .collect();
+        let listed: Vec<&str> = connectors
+            .iter()
+            .map(|connector| connector.connector_id.as_str())
+            .collect();
+        assert_eq!(listed, expected);
+        assert!(connectors.len() > 1);
+
+        for connector in &connectors {
+            assert!(!connector.enabled);
+            assert!(!connector.bound);
+            if connector.connector_id == DEFAULT_CONNECTOR_ID {
+                assert_eq!(connector.status, "available");
+                assert!(connector.installed);
+                assert_eq!(connector.tools.len(), 12);
+            } else {
+                assert_eq!(connector.status, "candidate");
+                assert!(!connector.installed);
+                assert!(connector.tools.is_empty());
+            }
+            assert!(!connector.description.trim().is_empty());
+            assert!(connector.repository_url.starts_with("https://github.com/"));
+        }
 
         fs::remove_dir_all(dir).unwrap();
     }

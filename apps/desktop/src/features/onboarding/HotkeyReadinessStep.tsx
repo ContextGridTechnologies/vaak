@@ -146,7 +146,7 @@ export function HotkeyReadinessStep({
       header={
         <OnboardingProgressHeader
           step={4}
-          totalSteps={4}
+          totalSteps={5}
           title="Set your hold-to-talk shortcut"
           description="Pick the shortcut you want to hold when you speak, then verify it once."
         />

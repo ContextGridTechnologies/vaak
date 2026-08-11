@@ -8,9 +8,14 @@ export type McpTool = {
   grant: McpToolGrant;
 };
 
+export type McpConnectorStatus = "available" | "candidate" | "deferred";
+
 export type McpConnector = {
   connectorId: string;
   name: string;
+  description: string;
+  repositoryUrl: string;
+  status: McpConnectorStatus;
   version: string;
   installed: boolean;
   enabled: boolean;

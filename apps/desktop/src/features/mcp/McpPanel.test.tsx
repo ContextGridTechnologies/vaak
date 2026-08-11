@@ -16,6 +16,9 @@ describe("McpPanel", () => {
       {
         connectorId,
         name: "Windows Desktop (FlaUI)",
+        description: "Control Windows apps through a reviewed local accessibility connector.",
+        repositoryUrl: "https://github.com/shanselman/FlaUI-MCP",
+        status: "available",
         version: "0.2.0",
         installed: true,
         enabled: false,
@@ -75,6 +78,9 @@ describe("McpPanel", () => {
       {
         connectorId,
         name: "Windows Desktop (FlaUI)",
+        description: "Control Windows apps through a reviewed local accessibility connector.",
+        repositoryUrl: "https://github.com/shanselman/FlaUI-MCP",
+        status: "available",
         version: "0.2.0",
         installed: true,
         enabled: false,
@@ -84,6 +90,9 @@ describe("McpPanel", () => {
       {
         connectorId: "com.example.second-mcp",
         name: "Second MCP",
+        description: "A second reviewed connector.",
+        repositoryUrl: "https://github.com/example/second-mcp",
+        status: "candidate",
         version: "1.0.0",
         installed: false,
         enabled: false,

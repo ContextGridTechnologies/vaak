@@ -66,7 +66,9 @@ and session lifetime.
 The official MCP reference servers **Memory**, **Time**, and **Sequential
 Thinking** are not first-wave connectors for Vaak: memory overlaps with local
 skills/state, time is a small native utility, and sequential thinking is an
-agent behavior rather than an external Windows capability.
+agent behavior rather than an external Windows capability. Memory and
+Sequential Thinking are recorded as keyless candidates for discovery; Time is
+not worth listing.
 
 ## Admission checklist for a new `available` entry
 

@@ -604,6 +604,7 @@ fn normalize_onboarding_step(step: &str) -> Option<&'static str> {
         "desktopReadiness" | "microphoneReadiness" => Some("microphoneReadiness"),
         "providerSetup" => Some("providerSetup"),
         "providerTest" | "tryDictation" | "hotkeyReadiness" => Some("hotkeyReadiness"),
+        "analyticsConsent" => Some("analyticsConsent"),
         _ => None,
     }
 }
@@ -1040,6 +1041,22 @@ mod tests {
         let reloaded = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
         assert_eq!(reloaded.current_step, "hotkeyReadiness");
         assert_eq!(reloaded.selected_mode.as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn persists_analytics_consent_step_in_local_settings() {
+        let dir = temp_config_dir("onboarding-analytics-consent");
+        let store = LocalSettingsStore::new(&dir);
+
+        store.save_onboarding_mode("local").unwrap();
+        let saved = store.save_onboarding_step("analyticsConsent").unwrap();
+
+        assert!(!saved.completed);
+        assert_eq!(saved.current_step, "analyticsConsent");
+        assert_eq!(saved.selected_mode.as_deref(), Some("local"));
+
+        let reloaded = LocalSettingsStore::new(&dir).onboarding_state().unwrap();
+        assert_eq!(reloaded.current_step, "analyticsConsent");
     }
 
     #[test]

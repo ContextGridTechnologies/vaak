@@ -169,62 +169,81 @@ export function McpPanel() {
             contentClassName="gap-4"
             actions={
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {connector.installed ? (
-                  <>
+                  {connector.installed ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setHealth("Testing…");
+                          void run(async () => {
+                            const result = await testMcpConnector();
+                            setHealth(
+                              result.ready
+                                ? `Ready · ${result.discoveredTools.length} tools discovered`
+                                : "Not ready",
+                            );
+                          });
+                        }}
+                      >
+                        Test connection
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void run(() => uninstallMcpConnector(connector.connectorId))}
+                      >
+                        Uninstall
+                      </Button>
+                    </>
+                  ) : connector.status === "available" ? (
                     <Button
                       type="button"
                       size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setHealth("Testing…");
-                        void run(async () => {
-                          const result = await testMcpConnector();
-                          setHealth(
-                            result.ready
-                              ? `Ready · ${result.discoveredTools.length} tools discovered`
-                              : "Not ready",
-                          );
-                        });
-                      }}
+                      onClick={() => void run(() => installMcpConnector(connector.connectorId))}
                     >
-                      Test connection
+                      Install
                     </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void run(() => uninstallMcpConnector(connector.connectorId))}
-                    >
-                      Uninstall
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => void run(() => installMcpConnector(connector.connectorId))}
-                  >
-                    Install
-                  </Button>
-                )}
+                  ) : (
+                    <Badge variant="outline">Under review</Badge>
+                  )}
               </div>
             }
           >
-            <div className="flex flex-wrap items-start gap-3 rounded-lg border border-border/70 bg-muted/25 p-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/8 text-primary">
-                <PlugZapIcon className="size-5" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={connector.installed ? "secondary" : "outline"}>
-                    {connector.installed ? "Installed" : "Not installed"}
-                  </Badge>
-                  <Badge variant="outline">v{connector.version}</Badge>
-                  <Badge variant="outline">Local</Badge>
+            <div className="overflow-hidden rounded-lg bg-primary text-primary-foreground">
+              <div className="flex flex-wrap items-center gap-4 p-4 sm:p-5">
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary-foreground/14 text-primary-foreground ring-1 ring-primary-foreground/25">
+                  <PlugZapIcon className="size-6" aria-hidden="true" />
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Pinned local stdio server · no shell permission exposed to the WebView
-                </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="border-0 bg-primary-foreground/18 text-primary-foreground"
+                    >
+                      {connector.installed
+                        ? "Installed"
+                        : connector.status === "candidate"
+                          ? "Under review"
+                          : "Available"}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className="border-0 bg-primary-foreground/12 text-primary-foreground/90"
+                    >
+                      v{connector.version}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className="border-0 bg-primary-foreground/12 text-primary-foreground/90"
+                    >
+                      Local
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-5 opacity-85">{connector.description}</p>
+                </div>
               </div>
             </div>
 

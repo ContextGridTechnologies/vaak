@@ -86,4 +86,23 @@ describe("onboarding Tauri API", () => {
       selection: { mode: "manual", deviceId: "usb-mic" },
     });
   });
+
+  it("supports the analytics consent onboarding step", async () => {
+    const tauri = createTauriCommandHarness();
+    tauri.resolveCommand("save_onboarding_step", {
+      completed: false,
+      currentStep: "analyticsConsent",
+      selectedMode: "local",
+    });
+
+    await expect(
+      saveOnboardingStep("analyticsConsent" satisfies OnboardingStep),
+    ).resolves.toMatchObject({
+      currentStep: "analyticsConsent",
+    });
+
+    expectTauriCommand(tauri, "save_onboarding_step", {
+      step: "analyticsConsent",
+    });
+  });
 });

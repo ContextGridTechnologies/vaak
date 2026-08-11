@@ -84,7 +84,7 @@ export function MicrophoneReadinessStep({
       header={
         <OnboardingProgressHeader
           step={2}
-          totalSteps={4}
+          totalSteps={5}
           title="Check microphone readiness"
           description="Vaak needs microphone access before you can test dictation."
         />
